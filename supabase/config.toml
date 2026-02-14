@@ -1,1 +1,4 @@
 project_id = "kdwmetjwxfzovdmarijl"
+
+[functions.import-xpm]
+verify_jwt = false
