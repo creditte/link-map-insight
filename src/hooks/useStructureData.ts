@@ -5,6 +5,7 @@ export interface EntityNode {
   id: string;
   name: string;
   entity_type: string;
+  trust_subtype: string | null;
   xpm_uuid: string | null;
 }
 
@@ -55,7 +56,7 @@ export function useStructureData(structureId: string | undefined) {
 
       const { data: entitiesData } = await supabase
         .from("entities")
-        .select("id, name, entity_type, xpm_uuid")
+        .select("id, name, entity_type, trust_subtype, xpm_uuid")
         .in("id", entityIds);
       setEntities((entitiesData as EntityNode[]) ?? []);
 

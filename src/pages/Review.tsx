@@ -82,6 +82,7 @@ export default function Review() {
     }
     const { error } = await supabase.from("entities").update(updates).eq("id", entityId);
     if (error) {
+      console.error("Entity type update failed:", error);
       toast({ title: "Update failed", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Entity updated" });
@@ -107,6 +108,7 @@ export default function Review() {
       .update({ trust_subtype: subtype as any })
       .eq("id", entityId);
     if (error) {
+      console.error("Trust subtype update failed:", error);
       toast({ title: "Update failed", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Trust subtype updated" });

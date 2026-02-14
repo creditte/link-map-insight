@@ -36,6 +36,7 @@ export default function RelationshipDetailPanel({ relationship, allEntities, onC
       .update({ relationship_type: editType as any })
       .eq("id", relationship.id);
     if (error) {
+      console.error("Relationship update failed:", error);
       toast({ title: "Update failed", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Relationship updated" });

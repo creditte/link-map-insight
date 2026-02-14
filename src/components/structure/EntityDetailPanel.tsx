@@ -17,6 +17,7 @@ const ENTITY_TYPES = [
 const TRUST_SUBTYPES = [
   "Discretionary", "Unit", "Hybrid", "Bare",
   "Testamentary", "Deceased Estate", "Family Trust", "SMSF",
+  "Trust-Unknown", "Unclassified",
 ] as const;
 
 const iconMap: Record<string, React.ElementType> = {
@@ -47,6 +48,7 @@ export default function EntityDetailPanel({
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(entity.name);
   const [editType, setEditType] = useState(entity.entity_type);
+  const [editTrustSubtype, setEditTrustSubtype] = useState(entity.trust_subtype ?? "");
   const [saving, setSaving] = useState(false);
 
   const related = relationships
@@ -59,11 +61,21 @@ export default function EntityDetailPanel({
 
   const handleSave = async () => {
     setSaving(true);
+    const updates: Record<string, unknown> = {
+      name: editName,
+      entity_type: editType,
+    };
+    if (editType === "Trust") {
+      updates.trust_subtype = editTrustSubtype || null;
+    } else {
+      updates.trust_subtype = null;
+    }
     const { error } = await supabase
       .from("entities")
-      .update({ name: editName, entity_type: editType as any })
+      .update(updates as any)
       .eq("id", entity.id);
     if (error) {
+      console.error("Entity update failed:", error);
       toast({ title: "Update failed", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Entity updated" });
@@ -79,7 +91,7 @@ export default function EntityDetailPanel({
         <h3 className="font-semibold text-sm">Entity Details</h3>
         <div className="flex items-center gap-1">
           {!editing && (
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditName(entity.name); setEditType(entity.entity_type); }}>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditName(entity.name); setEditType(entity.entity_type); setEditTrustSubtype(entity.trust_subtype ?? ""); }}>
               <Pencil className="h-3.5 w-3.5" />
             </Button>
           )}
@@ -97,7 +109,7 @@ export default function EntityDetailPanel({
             </div>
             <div>
               <Label className="text-xs">Entity Type</Label>
-              <Select value={editType} onValueChange={setEditType}>
+              <Select value={editType} onValueChange={(v) => { setEditType(v); if (v !== "Trust") setEditTrustSubtype(""); }}>
                 <SelectTrigger className="h-9 mt-1">
                   <SelectValue />
                 </SelectTrigger>
@@ -108,6 +120,21 @@ export default function EntityDetailPanel({
                 </SelectContent>
               </Select>
             </div>
+            {editType === "Trust" && (
+              <div>
+                <Label className="text-xs">Trust Subtype</Label>
+                <Select value={editTrustSubtype} onValueChange={setEditTrustSubtype}>
+                  <SelectTrigger className="h-9 mt-1">
+                    <SelectValue placeholder="Select subtype" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TRUST_SUBTYPES.map((t) => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex gap-2">
               <Button size="sm" onClick={handleSave} disabled={saving} className="flex-1">
                 {saving ? "Saving..." : "Save"}
@@ -126,6 +153,11 @@ export default function EntityDetailPanel({
               <div>
                 <p className="font-medium leading-tight">{entity.name}</p>
                 <p className="text-xs text-muted-foreground">{entity.entity_type}</p>
+                {entity.entity_type === "Trust" && entity.trust_subtype && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 mt-0.5">
+                    {entity.trust_subtype}
+                  </Badge>
+                )}
               </div>
             </div>
 
