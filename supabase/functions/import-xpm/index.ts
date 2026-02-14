@@ -55,14 +55,42 @@ interface RawRow {
   relatedClient: string;
 }
 
+function stripQuotes(s: string): string {
+  return s.replace(/^"+|"+$/g, '').trim();
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
 function parseCSV(text: string): RawRow[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return [];
 
-  const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  const header = parseCSVLine(lines[0]).map((h) => stripQuotes(h).toLowerCase());
   const idx = {
     groups: header.findIndex((h) => h.includes("group")),
-    client: header.findIndex((h) => h === "client" || h.includes("client-client") || h === "client-client"),
+    client: header.findIndex((h) => h === "client" || h.includes("client-client") || h === "[client] client"),
     uuid: header.findIndex((h) => h.includes("uuid")),
     bs: header.findIndex((h) => h.includes("business") || h.includes("structure")),
     rel: header.findIndex((h) => h.includes("relationship")),
@@ -72,7 +100,7 @@ function parseCSV(text: string): RawRow[] {
 
   const rows: RawRow[] = [];
   for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",").map((c) => c.trim());
+    const cols = parseCSVLine(lines[i]).map((c) => stripQuotes(c));
     if (cols.length < 3) continue;
     rows.push({
       rowNum: i + 1,
