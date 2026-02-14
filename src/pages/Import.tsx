@@ -80,15 +80,19 @@ export default function Import() {
           <CardContent className="space-y-2 text-sm">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>Entities created/updated: <strong>{result.entitiesCreated ?? 0}</strong></span>
+              <span>Rows parsed: <strong>{result.totalRowsParsed ?? 0}</strong></span>
             </div>
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>Relationships created: <strong>{result.relationshipsCreated ?? 0}</strong></span>
+              <span>Entities created: <strong>{result.entitiesCreated ?? 0}</strong> | updated: <strong>{result.entitiesUpdated ?? 0}</strong></span>
             </div>
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>Structures created/updated: <strong>{result.structuresCreated ?? 0}</strong></span>
+              <span>Relationships created: <strong>{result.relationshipsCreated ?? 0}</strong> | skipped: <strong>{result.relationshipsSkipped ?? 0}</strong></span>
+            </div>
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <span>Structures created: <strong>{result.structuresCreated ?? 0}</strong></span>
             </div>
             {result.warnings?.length > 0 && (
               <div className="mt-3 space-y-1 rounded-md bg-destructive/10 p-3">

@@ -7,15 +7,9 @@ const corsHeaders = {
 };
 
 // ── Canonical relationship mapping ──────────────────────────────────────
-// "X Of" means the Client is X of the RelatedClient  → from=Client, to=RelatedClient
-// Plain "X" means the RelatedClient is X of the Client → from=RelatedClient, to=Client
-// We normalise so from→to always means "from IS relationship_type OF to"
-// e.g. "Director Of" → director, from=client, to=related   (client is director of related)
-//      "Director"    → director, from=related, to=client    (related is director of client)
-
 interface CanonicalRule {
   type: string;
-  reverse: boolean; // true = swap from/to compared to default (client→related)
+  reverse: boolean;
 }
 
 const RELATIONSHIP_MAP: Record<string, CanonicalRule> = {
@@ -52,6 +46,7 @@ const ENTITY_TYPE_MAP: Record<string, string> = {
 // ── Parsing helpers ─────────────────────────────────────────────────────
 
 interface RawRow {
+  rowNum: number;
   groups: string;
   client: string;
   uuid: string;
@@ -64,7 +59,6 @@ function parseCSV(text: string): RawRow[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return [];
 
-  // Detect header positions
   const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
   const idx = {
     groups: header.findIndex((h) => h.includes("group")),
@@ -80,6 +74,7 @@ function parseCSV(text: string): RawRow[] {
     const cols = lines[i].split(",").map((c) => c.trim());
     if (cols.length < 3) continue;
     rows.push({
+      rowNum: i + 1,
       groups: cols[idx.groups] ?? "",
       client: cols[idx.client] ?? "",
       uuid: cols[idx.uuid] ?? "",
@@ -101,9 +96,11 @@ function parseXML(text: string): RawRow[] {
   const rows: RawRow[] = [];
   const recordRe = /<Record>([\s\S]*?)<\/Record>/gi;
   let m: RegExpExecArray | null;
+  let rowNum = 1;
   while ((m = recordRe.exec(text)) !== null) {
     const rec = m[1];
     rows.push({
+      rowNum: rowNum++,
       groups: getTagText(rec, "Client-Groups"),
       client: getTagText(rec, "Client-Client"),
       uuid: getTagText(rec, "Client-UUID"),
@@ -170,107 +167,112 @@ Deno.serve(async (req) => {
     }
 
     const warnings: string[] = [];
-
-    // ── 1. Collect unique entities ──────────────────────────────────────
-    // key = xpm_uuid or name (for related clients without uuid)
-    interface EntityInfo {
-      name: string;
-      xpm_uuid: string | null;
-      entity_type: string;
-    }
-    const entityMap = new Map<string, EntityInfo>();
-
-    for (const row of rows) {
-      // Client entity (has UUID)
-      if (row.client) {
-        const key = row.uuid || row.client;
-        if (!entityMap.has(key)) {
-          const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
-          entityMap.set(key, {
-            name: row.client,
-            xpm_uuid: row.uuid || null,
-            entity_type: et,
-          });
-        }
-      }
-      // Related entity (no UUID from this row)
-      if (row.relatedClient && !entityMap.has(row.relatedClient)) {
-        entityMap.set(row.relatedClient, {
-          name: row.relatedClient,
-          xpm_uuid: null,
-          entity_type: "Unclassified",
-        });
-      }
-    }
-
-    // ── 2. Upsert entities ─────────────────────────────────────────────
-    // For entities with xpm_uuid, upsert by uuid; otherwise by name+tenant
-    const entityIdByKey = new Map<string, string>(); // key → db id
     let entitiesCreated = 0;
+    let entitiesUpdated = 0;
+    let relationshipsCreated = 0;
+    let relationshipsSkipped = 0;
+    let structuresCreated = 0;
 
-    for (const [key, info] of entityMap) {
-      let existing: { id: string; entity_type: string } | null = null;
+    // ── Helper: resolve or create an entity by uuid/name ────────────────
+    // Returns the DB id or null on failure. Caches results.
+    const entityIdCache = new Map<string, string>(); // cacheKey → db id
 
-      if (info.xpm_uuid) {
+    async function resolveEntity(
+      name: string,
+      xpmUuid: string | null,
+      entityType: string,
+      rowNum: number,
+    ): Promise<string | null> {
+      if (!name) return null;
+
+      // Check cache first (by uuid, then by name)
+      const cacheKey = xpmUuid || name;
+      if (entityIdCache.has(cacheKey)) return entityIdCache.get(cacheKey)!;
+      // Also check name cache in case we stored it under uuid previously
+      if (xpmUuid && entityIdCache.has(name)) return entityIdCache.get(name)!;
+
+      let existing: { id: string; entity_type: string; xpm_uuid: string | null } | null = null;
+
+      // Look up by xpm_uuid first
+      if (xpmUuid) {
         const { data } = await supabase
           .from("entities")
-          .select("id, entity_type")
+          .select("id, entity_type, xpm_uuid")
           .eq("tenant_id", tenantId)
-          .eq("xpm_uuid", info.xpm_uuid)
+          .eq("xpm_uuid", xpmUuid)
           .maybeSingle();
         existing = data;
       }
+
+      // Fall back to name match
       if (!existing) {
         const { data } = await supabase
           .from("entities")
-          .select("id, entity_type")
+          .select("id, entity_type, xpm_uuid")
           .eq("tenant_id", tenantId)
-          .eq("name", info.name)
+          .eq("name", name)
           .maybeSingle();
         existing = data;
       }
 
       if (existing) {
-        // Update entity_type if we have a better one
-        if (info.entity_type !== "Unclassified" && existing.entity_type === "Unclassified") {
-          await supabase
-            .from("entities")
-            .update({ entity_type: info.entity_type, xpm_uuid: info.xpm_uuid, source: "imported" })
-            .eq("id", existing.id);
-        } else if (info.xpm_uuid && !existing.entity_type) {
-          await supabase.from("entities").update({ xpm_uuid: info.xpm_uuid }).eq("id", existing.id);
+        // Update entity_type / xpm_uuid if we have better info
+        const updates: Record<string, string> = {};
+        if (entityType !== "Unclassified" && existing.entity_type === "Unclassified") {
+          updates.entity_type = entityType;
+          updates.source = "imported";
         }
-        entityIdByKey.set(key, existing.id);
-      } else {
-        const { data, error } = await supabase
-          .from("entities")
-          .insert({
-            tenant_id: tenantId,
-            name: info.name,
-            xpm_uuid: info.xpm_uuid,
-            entity_type: info.entity_type,
-            source: "imported",
-          })
-          .select("id")
-          .single();
-        if (error) {
-          warnings.push(`Failed to create entity "${info.name}": ${error.message}`);
-          continue;
+        if (xpmUuid && !existing.xpm_uuid) {
+          updates.xpm_uuid = xpmUuid;
         }
-        entityIdByKey.set(key, data.id);
-        entitiesCreated++;
+        if (Object.keys(updates).length > 0) {
+          await supabase.from("entities").update(updates).eq("id", existing.id);
+          entitiesUpdated++;
+        }
+
+        entityIdCache.set(cacheKey, existing.id);
+        if (cacheKey !== name) entityIdCache.set(name, existing.id);
+        return existing.id;
       }
 
-      // Also map by name so related-client lookups work
-      if (key !== info.name) {
-        entityIdByKey.set(info.name, entityIdByKey.get(key)!);
+      // Create new entity
+      const { data, error } = await supabase
+        .from("entities")
+        .insert({
+          tenant_id: tenantId,
+          name,
+          xpm_uuid: xpmUuid,
+          entity_type: entityType,
+          source: "imported",
+        })
+        .select("id")
+        .single();
+
+      if (error) {
+        warnings.push(`Row ${rowNum}: Failed to create entity "${name}": ${error.message}`);
+        return null;
+      }
+
+      entityIdCache.set(cacheKey, data.id);
+      if (cacheKey !== name) entityIdCache.set(name, data.id);
+      entitiesCreated++;
+      return data.id;
+    }
+
+    // ── 1. First pass: resolve all entities ─────────────────────────────
+    for (const row of rows) {
+      if (row.client) {
+        const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
+        await resolveEntity(row.client, row.uuid || null, et, row.rowNum);
+      }
+      if (row.relatedClient) {
+        await resolveEntity(row.relatedClient, null, "Unclassified", row.rowNum);
       }
     }
 
-    // ── 3. Structures from Group(s) ────────────────────────────────────
+    // ── 2. Structures from Group(s) ────────────────────────────────────
     const structureIdByName = new Map<string, string>();
     const structureEntityPairs = new Set<string>();
-    let structuresCreated = 0;
 
     for (const row of rows) {
       if (!row.groups) continue;
@@ -292,29 +294,29 @@ Deno.serve(async (req) => {
               .select("id")
               .single();
             if (error) {
-              warnings.push(`Failed to create structure "${gn}": ${error.message}`);
+              warnings.push(`Row ${row.rowNum}: Failed to create structure "${gn}": ${error.message}`);
               continue;
             }
             structureIdByName.set(gn, data.id);
             structuresCreated++;
           }
         }
+
         // Link client entity to structure
-        const clientKey = row.uuid || row.client;
-        const entityId = entityIdByKey.get(clientKey);
+        const clientId = entityIdCache.get(row.uuid || row.client);
         const structureId = structureIdByName.get(gn);
-        if (entityId && structureId) {
-          const pairKey = `${structureId}:${entityId}`;
+        if (clientId && structureId) {
+          const pairKey = `${structureId}:${clientId}`;
           if (!structureEntityPairs.has(pairKey)) {
             structureEntityPairs.add(pairKey);
-            const { error } = await supabase
+            await supabase
               .from("structure_entities")
-              .upsert({ structure_id: structureId, entity_id: entityId }, { onConflict: "structure_id,entity_id", ignoreDuplicates: true });
-            if (error) warnings.push(`structure_entities link error: ${error.message}`);
+              .upsert({ structure_id: structureId, entity_id: clientId }, { onConflict: "structure_id,entity_id", ignoreDuplicates: true });
           }
         }
-        // Link related entity to structure too
-        const relatedId = entityIdByKey.get(row.relatedClient);
+
+        // Link related entity to structure
+        const relatedId = entityIdCache.get(row.relatedClient);
         if (relatedId && structureId) {
           const pairKey = `${structureId}:${relatedId}`;
           if (!structureEntityPairs.has(pairKey)) {
@@ -327,24 +329,37 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ── 4. Relationships ───────────────────────────────────────────────
+    // ── 3. Relationships – iterate EVERY row ───────────────────────────
     const relDedupeSet = new Set<string>();
-    let relationshipsCreated = 0;
 
     for (const row of rows) {
+      // Skip rows with no relationship data
       if (!row.relationshipType || !row.client || !row.relatedClient) continue;
 
       const rule = RELATIONSHIP_MAP[row.relationshipType.toLowerCase()];
       if (!rule) {
-        warnings.push(`Unknown relationship type: "${row.relationshipType}"`);
+        warnings.push(`Row ${row.rowNum}: Unknown relationship type "${row.relationshipType}"`);
+        relationshipsSkipped++;
         continue;
       }
 
+      // Resolve entities (will create if missing)
       const clientKey = row.uuid || row.client;
-      let fromId = entityIdByKey.get(clientKey);
-      let toId = entityIdByKey.get(row.relatedClient);
+      let fromId = entityIdCache.get(clientKey);
+      let toId = entityIdCache.get(row.relatedClient);
+
+      // If still missing, try to create on-the-fly
+      if (!fromId) {
+        const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
+        fromId = await resolveEntity(row.client, row.uuid || null, et, row.rowNum) ?? undefined;
+      }
+      if (!toId) {
+        toId = await resolveEntity(row.relatedClient, null, "Unclassified", row.rowNum) ?? undefined;
+      }
+
       if (!fromId || !toId) {
-        warnings.push(`Missing entity for relationship: "${row.client}" → "${row.relatedClient}"`);
+        warnings.push(`Row ${row.rowNum}: Could not resolve entities for "${row.client}" → "${row.relatedClient}"`);
+        relationshipsSkipped++;
         continue;
       }
 
@@ -353,16 +368,19 @@ Deno.serve(async (req) => {
         [fromId, toId] = [toId, fromId];
       }
 
-      // For symmetric relationships (spouse, partner), order alphabetically to dedupe
+      // For symmetric relationships, order alphabetically to dedupe
       if (rule.type === "spouse" || rule.type === "partner") {
         if (fromId > toId) [fromId, toId] = [toId, fromId];
       }
 
       const dedupeKey = `${rule.type}:${fromId}:${toId}`;
-      if (relDedupeSet.has(dedupeKey)) continue;
+      if (relDedupeSet.has(dedupeKey)) {
+        // Already processed this exact relationship in this import
+        continue;
+      }
       relDedupeSet.add(dedupeKey);
 
-      // Check existing
+      // Check if relationship already exists in DB
       const { data: existingRel } = await supabase
         .from("relationships")
         .select("id")
@@ -372,45 +390,63 @@ Deno.serve(async (req) => {
         .eq("relationship_type", rule.type)
         .maybeSingle();
 
-      if (!existingRel) {
-        const { data: relData, error: relErr } = await supabase
-          .from("relationships")
-          .insert({
-            tenant_id: tenantId,
-            from_entity_id: fromId,
-            to_entity_id: toId,
-            relationship_type: rule.type,
-            source: "imported",
-            confidence: "imported",
-          })
-          .select("id")
-          .single();
+      if (existingRel) {
+        // Already exists in DB, skip creation but still link to structures
+        await linkRelToStructures(existingRel.id, row);
+        continue;
+      }
 
-        if (relErr) {
-          warnings.push(`Failed to create relationship ${rule.type}: ${relErr.message}`);
-          continue;
-        }
-        relationshipsCreated++;
+      // Insert new relationship
+      const { data: relData, error: relErr } = await supabase
+        .from("relationships")
+        .insert({
+          tenant_id: tenantId,
+          from_entity_id: fromId,
+          to_entity_id: toId,
+          relationship_type: rule.type,
+          source: "imported",
+          confidence: "imported",
+        })
+        .select("id")
+        .single();
 
-        // Link to structures
-        if (relData) {
-          for (const [, structureId] of structureIdByName) {
-            await supabase
-              .from("structure_relationships")
-              .upsert(
-                { structure_id: structureId, relationship_id: relData.id },
-                { onConflict: "structure_id,relationship_id", ignoreDuplicates: true }
-              );
-          }
+      if (relErr) {
+        warnings.push(`Row ${row.rowNum}: Failed to create relationship ${rule.type} "${row.client}" → "${row.relatedClient}": ${relErr.message}`);
+        relationshipsSkipped++;
+        continue;
+      }
+
+      relationshipsCreated++;
+
+      // Link to structures from this row's groups
+      await linkRelToStructures(relData.id, row);
+    }
+
+    // Helper: link a relationship to all structures from a row's groups
+    async function linkRelToStructures(relationshipId: string, row: RawRow) {
+      if (!row.groups) return;
+      const groupNames = row.groups.split(";").map((g) => g.trim()).filter(Boolean);
+      for (const gn of groupNames) {
+        const structureId = structureIdByName.get(gn);
+        if (structureId) {
+          await supabase
+            .from("structure_relationships")
+            .upsert(
+              { structure_id: structureId, relationship_id: relationshipId },
+              { onConflict: "structure_id,relationship_id", ignoreDuplicates: true }
+            );
         }
       }
     }
 
-    // ── 5. Import log ──────────────────────────────────────────────────
+    // ── 4. Import log ──────────────────────────────────────────────────
     const result = {
       entitiesCreated,
+      entitiesUpdated,
       relationshipsCreated,
+      relationshipsSkipped,
       structuresCreated,
+      totalRowsParsed: rows.length,
       warnings,
     };
 
