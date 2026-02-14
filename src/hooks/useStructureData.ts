@@ -23,6 +23,9 @@ export function useStructureData(structureId: string | undefined) {
   const [relationships, setRelationships] = useState<RelationshipEdge[]>([]);
   const [structureName, setStructureName] = useState("");
   const [loading, setLoading] = useState(true);
+  const [version, setVersion] = useState(0);
+
+  const reload = () => setVersion((v) => v + 1);
 
   useEffect(() => {
     if (!structureId) return;
@@ -30,7 +33,6 @@ export function useStructureData(structureId: string | undefined) {
     async function load() {
       setLoading(true);
 
-      // Load structure name
       const { data: struct } = await supabase
         .from("structures")
         .select("name")
@@ -38,7 +40,6 @@ export function useStructureData(structureId: string | undefined) {
         .single();
       setStructureName(struct?.name ?? "");
 
-      // Load entities linked to structure
       const { data: seRows } = await supabase
         .from("structure_entities")
         .select("entity_id")
@@ -58,7 +59,6 @@ export function useStructureData(structureId: string | undefined) {
         .in("id", entityIds);
       setEntities((entitiesData as EntityNode[]) ?? []);
 
-      // Load relationships linked to structure
       const { data: srRows } = await supabase
         .from("structure_relationships")
         .select("relationship_id")
@@ -87,9 +87,9 @@ export function useStructureData(structureId: string | undefined) {
     }
 
     load();
-  }, [structureId]);
+  }, [structureId, version]);
 
-  return { entities, relationships, structureName, loading };
+  return { entities, relationships, structureName, loading, reload };
 }
 
 export function useFilteredGraph(
