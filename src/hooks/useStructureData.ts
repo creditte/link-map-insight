@@ -6,6 +6,7 @@ export interface EntityNode {
   name: string;
   entity_type: string;
   xpm_uuid: string | null;
+  is_operating_entity: boolean;
 }
 
 export interface RelationshipEdge {
@@ -55,7 +56,7 @@ export function useStructureData(structureId: string | undefined) {
 
       const { data: entitiesData } = await supabase
         .from("entities")
-        .select("id, name, entity_type, xpm_uuid")
+        .select("id, name, entity_type, xpm_uuid, is_operating_entity")
         .in("id", entityIds);
       setEntities((entitiesData as EntityNode[]) ?? []);
 

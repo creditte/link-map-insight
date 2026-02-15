@@ -1,0 +1,1 @@
+ALTER TABLE public.entities ADD COLUMN is_operating_entity boolean NOT NULL DEFAULT false;

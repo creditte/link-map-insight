@@ -50,8 +50,13 @@ function dagreLayout(
   const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: "TB", nodesep: 80, ranksep: 100, edgesep: 40 });
 
+  // Operating entities get rank 0 (top tier)
   entities.forEach((e) => {
-    g.setNode(e.id, { width: 180, height: 70 });
+    const nodeOpts: Record<string, unknown> = { width: 180, height: 70 };
+    if (e.is_operating_entity) {
+      nodeOpts.rank = 0;
+    }
+    g.setNode(e.id, nodeOpts);
   });
 
   relationships.forEach((r) => {
@@ -70,7 +75,7 @@ function dagreLayout(
         id: e.id,
         type: "entity",
         position: pinned,
-        data: { label: e.name, entity_type: e.entity_type, pinned: true },
+        data: { label: e.name, entity_type: e.entity_type, pinned: true, is_operating_entity: e.is_operating_entity },
       };
     }
     const node = g.node(e.id);
@@ -78,7 +83,7 @@ function dagreLayout(
       id: e.id,
       type: "entity",
       position: { x: (node?.x ?? 0) - 90, y: (node?.y ?? 0) - 35 },
-      data: { label: e.name, entity_type: e.entity_type, pinned: false },
+      data: { label: e.name, entity_type: e.entity_type, pinned: false, is_operating_entity: e.is_operating_entity },
     };
   });
 }
