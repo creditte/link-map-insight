@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, LayoutGrid, Palette, Pin, Eye } from "lucide-react";
+import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -27,6 +27,7 @@ export default function StructureView() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [showLegend, setShowLegend] = useState(false);
   const [autoLayoutTrigger, setAutoLayoutTrigger] = useState(0);
+  const [fitViewTrigger, setFitViewTrigger] = useState(0);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("balanced");
   const [pinnedNodeIds, setPinnedNodeIds] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<ViewMode>("ownership");
@@ -35,8 +36,16 @@ export default function StructureView() {
 
   const { visibleEntities, visibleRelationships } = useFilteredGraph(
     entities, relationships,
-    { search, showFamily, filterRelType: filterRelType === "all" ? "" : filterRelType, depth, selectedEntityId, viewMode }
+    { search: "", showFamily, filterRelType: filterRelType === "all" ? "" : filterRelType, depth, selectedEntityId, viewMode }
   );
+
+  // Search highlight: find matching entity but don't filter the graph
+  const searchHighlightId = useMemo(() => {
+    if (!search) return null;
+    const q = search.toLowerCase();
+    const match = visibleEntities.find((e) => e.name.toLowerCase().includes(q));
+    return match?.id ?? null;
+  }, [search, visibleEntities]);
 
   const selectedEntity = selectedEntityId ? entities.find((e) => e.id === selectedEntityId) ?? null : null;
   const selectedRelationship = selectedEdgeId ? relationships.find((r) => r.id === selectedEdgeId) ?? null : null;
@@ -56,6 +65,23 @@ export default function StructureView() {
       return next;
     });
   }, [toast]);
+
+  const handleResetFilters = useCallback(() => {
+    setSearch("");
+    setFilterRelType("all");
+    setShowFamily(false);
+    setDepth(2);
+    setSelectedEntityId(null);
+    setSelectedEdgeId(null);
+    toast({ title: "Filters reset" });
+  }, [toast]);
+
+  const handleCopyLink = useCallback(() => {
+    const url = `${window.location.origin}/structures/${id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      toast({ title: "Link copied", description: "Structure link copied to clipboard" });
+    });
+  }, [id, toast]);
 
   if (loading) {
     return (
@@ -102,8 +128,16 @@ export default function StructureView() {
             </SelectContent>
           </Select>
 
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setFitViewTrigger((c) => c + 1)}>
+            <Maximize className="h-3.5 w-3.5" /> Fit View
+          </Button>
+
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setAutoLayoutTrigger((c) => c + 1)}>
             <LayoutGrid className="h-3.5 w-3.5" /> Auto-layout
+          </Button>
+
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleResetFilters}>
+            <RotateCcw className="h-3.5 w-3.5" /> Reset
           </Button>
 
           {pinnedNodeIds.size > 0 && (
@@ -111,6 +145,10 @@ export default function StructureView() {
               <Pin className="h-3.5 w-3.5" /> Clear pins ({pinnedNodeIds.size})
             </Button>
           )}
+
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCopyLink}>
+            <LinkIcon className="h-3.5 w-3.5" /> Copy link
+          </Button>
 
           <Button variant={showLegend ? "secondary" : "outline"} size="sm" className="gap-1.5" onClick={() => setShowLegend(!showLegend)}>
             <Palette className="h-3.5 w-3.5" /> Legend
@@ -153,6 +191,8 @@ export default function StructureView() {
             pinnedNodeIds={pinnedNodeIds}
             onTogglePin={handleTogglePin}
             viewMode={viewMode}
+            searchHighlightId={searchHighlightId}
+            fitViewTrigger={fitViewTrigger}
           />
         )}
 

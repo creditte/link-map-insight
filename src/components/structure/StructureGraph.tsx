@@ -131,11 +131,14 @@ interface Props {
   pinnedNodeIds: Set<string>;
   onTogglePin: (id: string) => void;
   viewMode: string;
+  searchHighlightId: string | null;
+  fitViewTrigger: number;
 }
 
 function StructureGraphInner({
   entities, relationships, selectedEntityId, onSelectEntity, onSelectEdge,
   autoLayoutTrigger, layoutMode, pinnedNodeIds, onTogglePin, viewMode,
+  searchHighlightId, fitViewTrigger,
 }: Props) {
   const { fitView } = useReactFlow();
   const prevLayoutTrigger = useRef(0);
@@ -201,10 +204,30 @@ function StructureGraphInner({
       nds.map((n) => ({
         ...n,
         selected: n.id === selectedEntityId,
+        style: {
+          opacity: searchHighlightId && n.id !== searchHighlightId ? 0.25 : 1,
+          transition: "opacity 0.2s ease",
+        },
         data: { ...n.data, pinned: pinnedNodeIds.has(n.id) },
       }))
     );
-  }, [selectedEntityId, pinnedNodeIds, setNodes]);
+  }, [selectedEntityId, pinnedNodeIds, searchHighlightId, setNodes]);
+
+  // Zoom to highlighted search node
+  useEffect(() => {
+    if (searchHighlightId) {
+      setTimeout(() => fitView({ padding: 0.5, nodes: [{ id: searchHighlightId }], duration: 300 }), 50);
+    }
+  }, [searchHighlightId, fitView]);
+
+  // Fit view trigger from parent
+  const prevFitViewTrigger = useRef(0);
+  useEffect(() => {
+    if (fitViewTrigger > 0 && fitViewTrigger !== prevFitViewTrigger.current) {
+      prevFitViewTrigger.current = fitViewTrigger;
+      setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 50);
+    }
+  }, [fitViewTrigger, fitView]);
 
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
