@@ -70,7 +70,8 @@ export function useStructureData(structureId: string | undefined) {
         const { data: relData } = await supabase
           .from("relationships")
           .select("id, from_entity_id, to_entity_id, relationship_type, source")
-          .in("id", relIds);
+          .in("id", relIds)
+          .is("deleted_at", null);
         setRelationships(
           (relData ?? []).map((r) => ({
             id: r.id,

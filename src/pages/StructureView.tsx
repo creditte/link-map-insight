@@ -126,6 +126,7 @@ export default function StructureView() {
             entity={selectedEntity}
             relationships={relationships}
             allEntities={entities}
+            structureId={id!}
             onClose={() => setSelectedEntityId(null)}
             onSelectEntity={setSelectedEntityId}
             onEntityUpdated={handleEntityUpdated}
