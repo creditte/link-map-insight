@@ -31,12 +31,16 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
   const { user } = useAuth();
   const [exporting, setExporting] = useState(false);
   const [tenantName, setTenantName] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const prefix = structureName.replace(/\s+/g, "_");
 
   useEffect(() => {
     if (!user) return;
-    supabase.from("tenants").select("name").limit(1).single().then(({ data }) => {
-      if (data) setTenantName(data.name);
+    supabase.from("tenants").select("name, logo_url").limit(1).single().then(({ data }) => {
+      if (data) {
+        setTenantName(data.name);
+        setLogoUrl((data as any).logo_url ?? null);
+      }
     });
   }, [user]);
 
@@ -61,6 +65,8 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
     return el;
   };
 
+  const meta = { userName, tenantName, logoUrl: logoUrl ?? undefined };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -70,10 +76,10 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => wrap("PNG", () => exportImage(getEl(), "png", prefix))}>
+        <DropdownMenuItem onClick={() => wrap("PNG", () => exportImage(getEl(), "png", prefix, meta))}>
           <Image className="h-4 w-4 mr-2" /> PNG Image
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => wrap("SVG", () => exportImage(getEl(), "svg", prefix))}>
+        <DropdownMenuItem onClick={() => wrap("SVG", () => exportImage(getEl(), "svg", prefix, meta))}>
           <Image className="h-4 w-4 mr-2" /> SVG Image
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -84,7 +90,7 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
           <Table className="h-4 w-4 mr-2" /> Relationships CSV
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => wrap("PDF", () => exportPdf(getEl(), entities, relationships, structureName, { userName, tenantName }))}>
+        <DropdownMenuItem onClick={() => wrap("PDF", () => exportPdf(getEl(), entities, relationships, structureName, meta))}>
           <FileText className="h-4 w-4 mr-2" /> Full PDF Pack
         </DropdownMenuItem>
       </DropdownMenuContent>
