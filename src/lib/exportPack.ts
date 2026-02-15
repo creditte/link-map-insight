@@ -5,6 +5,8 @@ import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 import { getEntityLabel } from "@/lib/entityTypes";
 import { EDGE_COLORS } from "@/components/structure/StructureGraph";
 
+/* ── Helpers ── */
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -29,6 +31,33 @@ function fmtPercent(v: number | null | undefined): string {
   if (v == null) return "";
   return `${Number(v).toFixed(2).replace(/\.?0+$/, "")}%`;
 }
+
+/* ── Load image as data URL ── */
+async function loadImageAsDataUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, { mode: "cors" });
+    const blob = await res.blob();
+    return await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/* ── Get image natural dimensions ── */
+function getImageDims(dataUrl: string): Promise<{ w: number; h: number }> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+    img.onerror = () => resolve({ w: 100, h: 40 });
+    img.src = dataUrl;
+  });
+}
+
+/* ── CSV exports ── */
 
 export function exportEntitiesCsv(entities: EntityNode[], prefix: string) {
   const header = "name,entity_type,abn,acn,xpm_uuid,created_at";
@@ -64,10 +93,19 @@ export function exportRelationshipsCsv(
   downloadText([header, ...rows].join("\n"), `${prefix}_relationships.csv`);
 }
 
+/* ── Image export (PNG / SVG) ── */
+
+export interface ExportMeta {
+  userName?: string;
+  tenantName?: string;
+  logoUrl?: string;
+}
+
 export async function exportImage(
   element: HTMLElement,
   format: "png" | "svg",
-  filename: string
+  filename: string,
+  meta?: ExportMeta
 ) {
   const fn = format === "png" ? toPng : toSvg;
   const dataUrl = await fn(element, {
@@ -75,20 +113,92 @@ export async function exportImage(
     quality: 1,
     pixelRatio: 2,
   });
-  const a = document.createElement("a");
-  a.href = dataUrl;
-  a.download = `${filename}.${format}`;
-  a.click();
+
+  if (!meta?.logoUrl) {
+    // No logo — direct download
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = `${filename}.${format}`;
+    a.click();
+    return;
+  }
+
+  // Load logo
+  const logoDataUrl = await loadImageAsDataUrl(meta.logoUrl);
+  if (!logoDataUrl) {
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = `${filename}.${format}`;
+    a.click();
+    return;
+  }
+
+  if (format === "png") {
+    // Overlay logo on PNG canvas
+    const logoDims = await getImageDims(logoDataUrl);
+    const graphImg = new Image();
+    graphImg.src = dataUrl;
+    await new Promise((r) => { graphImg.onload = r; });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = graphImg.naturalWidth;
+    canvas.height = graphImg.naturalHeight;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(graphImg, 0, 0);
+
+    const logoImg = new Image();
+    logoImg.src = logoDataUrl;
+    await new Promise((r) => { logoImg.onload = r; });
+
+    const maxH = 80; // 40px at 2x pixel ratio
+    const scale = Math.min(1, maxH / logoDims.h);
+    const drawW = logoDims.w * scale;
+    const drawH = logoDims.h * scale;
+    const margin = 20;
+    ctx.drawImage(logoImg, canvas.width - drawW - margin, margin, drawW, drawH);
+
+    const pngUrl = canvas.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.href = pngUrl;
+    a.download = `${filename}.png`;
+    a.click();
+  } else {
+    // SVG: inject <image> element
+    const logoDims = await getImageDims(logoDataUrl);
+    const maxH = 40;
+    const scale = Math.min(1, maxH / logoDims.h);
+    const drawW = logoDims.w * scale;
+    const drawH = logoDims.h * scale;
+
+    // Parse SVG, add image before closing </svg>
+    let svgText: string;
+    if (dataUrl.startsWith("data:image/svg+xml;")) {
+      const encoded = dataUrl.split(",")[1];
+      svgText = decodeURIComponent(encoded);
+    } else {
+      svgText = dataUrl;
+    }
+
+    // Extract width from SVG for positioning
+    const widthMatch = svgText.match(/width="(\d+)"/);
+    const svgWidth = widthMatch ? parseInt(widthMatch[1]) : 800;
+
+    const imageEl = `<image href="${logoDataUrl}" x="${svgWidth - drawW - 10}" y="10" width="${drawW}" height="${drawH}" />`;
+    svgText = svgText.replace("</svg>", `${imageEl}</svg>`);
+
+    const blob = new Blob([svgText], { type: "image/svg+xml" });
+    downloadBlob(blob, `${filename}.svg`);
+  }
 }
 
-/* ── Legend groups for PDF ── */
+/* ── PDF export ── */
+
 const LEGEND_GROUPS: { title: string; types: string[] }[] = [
   { title: "Ownership", types: ["shareholder", "beneficiary", "partner", "member"] },
   { title: "Control", types: ["director", "trustee", "appointer", "settlor"] },
   { title: "Family", types: ["spouse", "parent", "child"] },
 ];
 
-/* ── Sort helpers ── */
 const TYPE_ORDER = ["shareholder", "beneficiary", "partner", "member", "director", "trustee", "appointer", "settlor", "spouse", "parent", "child"];
 
 function relSortKey(r: { fromName: string; relType: string; toName: string }) {
@@ -96,22 +206,24 @@ function relSortKey(r: { fromName: string; relType: string; toName: string }) {
   return `${String(typeIdx < 0 ? 99 : typeIdx).padStart(2, "0")}_${r.fromName}_${r.toName}`;
 }
 
-/* ── Footer helper ── */
-function addFooter(pdf: jsPDF, structureName: string, pageNum: number, totalPages: number) {
+function addFooter(pdf: jsPDF, structureName: string, pageNum: number, totalPages: number, logoDataUrl?: string | null) {
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   pdf.setDrawColor(200);
-  pdf.line(14, pageH - 12, pageW - 14, pageH - 12);
+  pdf.line(14, pageH - 14, pageW - 14, pageH - 14);
   pdf.setFontSize(7);
   pdf.setTextColor(140);
-  pdf.text(structureName, 14, pageH - 7);
-  pdf.text(`Page ${pageNum} of ${totalPages}`, pageW - 14, pageH - 7, { align: "right" });
-  pdf.setTextColor(0);
-}
+  pdf.text(structureName, 14, pageH - 8);
+  pdf.text(`Page ${pageNum} of ${totalPages}`, pageW - 14, pageH - 8, { align: "right" });
 
-export interface PdfMeta {
-  userName?: string;
-  tenantName?: string;
+  // Small logo in footer on pages 2+
+  if (logoDataUrl && pageNum > 1) {
+    try {
+      pdf.addImage(logoDataUrl, "PNG", pageW / 2 - 10, pageH - 13, 20, 8);
+    } catch { /* skip */ }
+  }
+
+  pdf.setTextColor(0);
 }
 
 export async function exportPdf(
@@ -119,7 +231,7 @@ export async function exportPdf(
   entities: EntityNode[],
   relationships: RelationshipEdge[],
   structureName: string,
-  meta?: PdfMeta
+  meta?: ExportMeta
 ) {
   const exportDate = new Date().toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
@@ -127,8 +239,13 @@ export async function exportPdf(
   const pageH = pdf.internal.pageSize.getHeight();
   const totalPages = 3;
 
+  // Pre-load logo
+  let logoDataUrl: string | null = null;
+  if (meta?.logoUrl) {
+    logoDataUrl = await loadImageAsDataUrl(meta.logoUrl);
+  }
+
   // ─── Page 1: Diagram + title block + legend ───
-  // Title block
   pdf.setFontSize(20);
   pdf.text(structureName, 14, 16);
   pdf.setFontSize(9);
@@ -138,15 +255,27 @@ export async function exportPdf(
     `Exported ${exportDate}`,
   ];
   if (meta?.userName) subtitleParts.push(`by ${meta.userName}`);
-  if (meta?.tenantName) subtitleParts.push(`${meta.tenantName}`);
+  if (meta?.tenantName) subtitleParts.push(meta.tenantName);
   pdf.text(subtitleParts.join("  |  "), 14, 23);
   pdf.setTextColor(0);
 
-  // Diagram image with more padding
+  // Logo top-right on page 1
+  if (logoDataUrl) {
+    try {
+      const dims = await getImageDims(logoDataUrl);
+      const maxH = 14; // ~40px at PDF scale
+      const scale = Math.min(1, maxH / dims.h, 50 / dims.w);
+      const drawW = dims.w * scale;
+      const drawH = dims.h * scale;
+      pdf.addImage(logoDataUrl, "PNG", pageW - 14 - drawW, 8, drawW, drawH);
+    } catch { /* skip gracefully */ }
+  }
+
+  // Diagram image
   try {
     const imgData = await toPng(graphElement, { backgroundColor: "#ffffff", pixelRatio: 2 });
     const imgW = pageW - 28;
-    const imgH = pageH - 70; // more padding for legend
+    const imgH = pageH - 72;
     pdf.addImage(imgData, "PNG", 14, 28, imgW, imgH);
   } catch {
     pdf.setFontSize(10);
@@ -154,7 +283,7 @@ export async function exportPdf(
   }
 
   // Legend: 2-column grouped table
-  const legendStartY = pageH - 38;
+  const legendStartY = pageH - 40;
   pdf.setFillColor(245, 245, 248);
   pdf.roundedRect(14, legendStartY - 4, pageW - 28, 22, 2, 2, "F");
 
@@ -164,7 +293,6 @@ export async function exportPdf(
   let itemCount = 0;
 
   for (const group of LEGEND_GROUPS) {
-    // Group title
     pdf.setFontSize(7);
     pdf.setTextColor(100);
     pdf.setFont("helvetica", "bold");
@@ -183,7 +311,6 @@ export async function exportPdf(
       rowY += 3.5;
       itemCount++;
 
-      // Switch to second column
       if (itemCount === 6) {
         colX = 18 + colWidth;
         rowY = legendStartY;
@@ -192,7 +319,7 @@ export async function exportPdf(
   }
 
   pdf.setTextColor(0);
-  addFooter(pdf, structureName, 1, totalPages);
+  addFooter(pdf, structureName, 1, totalPages, logoDataUrl);
 
   // ─── Page 2: Relationships table ───
   pdf.addPage();
@@ -220,12 +347,9 @@ export async function exportPdf(
     body: relRows.map((r) => [r.fromName, r.relType, r.toName, r.pct, r.units, r.cls]),
     styles: { fontSize: 8.5, cellPadding: 2 },
     headStyles: { fillColor: [59, 130, 246], fontSize: 9 },
-    columnStyles: {
-      3: { halign: "right" },
-      4: { halign: "right" },
-    },
+    columnStyles: { 3: { halign: "right" }, 4: { halign: "right" } },
   });
-  addFooter(pdf, structureName, 2, totalPages);
+  addFooter(pdf, structureName, 2, totalPages, logoDataUrl);
 
   // ─── Page 3: Entities table ───
   pdf.addPage();
@@ -253,7 +377,7 @@ export async function exportPdf(
     styles: { fontSize: 8.5, cellPadding: 2 },
     headStyles: { fillColor: [59, 130, 246], fontSize: 9 },
   });
-  addFooter(pdf, structureName, 3, totalPages);
+  addFooter(pdf, structureName, 3, totalPages, logoDataUrl);
 
   pdf.save(`${structureName.replace(/\s+/g, "_")}_pack.pdf`);
 }
