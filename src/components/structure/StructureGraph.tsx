@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, forwardRef, useImperativeHandle } from "react";
 import {
   ReactFlow,
   Background,
@@ -12,6 +12,7 @@ import {
   type Edge,
   type OnSelectionChangeParams,
   type EdgeMouseHandler,
+  type NodeMouseHandler,
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -35,38 +36,49 @@ export const EDGE_COLORS: Record<string, string> = {
   child: "#06b6d4",
 };
 
-function gridLayout(entities: EntityNode[]): Node[] {
-  const cols = Math.max(3, Math.ceil(Math.sqrt(entities.length)));
-  const xGap = 220;
-  const yGap = 140;
-  return entities.map((e, i) => ({
-    id: e.id,
-    type: "entity",
-    position: { x: (i % cols) * xGap, y: Math.floor(i / cols) * yGap },
-    data: { label: e.name, entity_type: e.entity_type },
-  }));
-}
+export type LayoutMode = "balanced" | "ownership" | "control";
 
-function dagreLayout(entities: EntityNode[], relationships: RelationshipEdge[]): Node[] {
+const OWNERSHIP_TYPES = new Set(["shareholder", "beneficiary"]);
+const CONTROL_TYPES = new Set(["director", "trustee", "appointer", "settlor"]);
+
+function dagreLayout(
+  entities: EntityNode[],
+  relationships: RelationshipEdge[],
+  mode: LayoutMode = "balanced",
+  pinnedPositions: Map<string, { x: number; y: number }> = new Map()
+): Node[] {
   const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: "TB", nodesep: 80, ranksep: 100, edgesep: 40 });
 
   entities.forEach((e) => {
     g.setNode(e.id, { width: 180, height: 70 });
   });
+
   relationships.forEach((r) => {
-    g.setEdge(r.from_entity_id, r.to_entity_id);
+    let weight = 1;
+    if (mode === "ownership" && OWNERSHIP_TYPES.has(r.relationship_type)) weight = 10;
+    if (mode === "control" && CONTROL_TYPES.has(r.relationship_type)) weight = 10;
+    g.setEdge(r.from_entity_id, r.to_entity_id, { weight });
   });
 
   Dagre.layout(g);
 
   return entities.map((e) => {
+    const pinned = pinnedPositions.get(e.id);
+    if (pinned) {
+      return {
+        id: e.id,
+        type: "entity",
+        position: pinned,
+        data: { label: e.name, entity_type: e.entity_type, pinned: true },
+      };
+    }
     const node = g.node(e.id);
     return {
       id: e.id,
       type: "entity",
       position: { x: (node?.x ?? 0) - 90, y: (node?.y ?? 0) - 35 },
-      data: { label: e.name, entity_type: e.entity_type },
+      data: { label: e.name, entity_type: e.entity_type, pinned: false },
     };
   });
 }
@@ -99,39 +111,84 @@ interface Props {
   onSelectEntity: (id: string | null) => void;
   onSelectEdge: (id: string | null) => void;
   autoLayoutTrigger: number;
+  layoutMode: LayoutMode;
+  pinnedNodeIds: Set<string>;
+  onTogglePin: (id: string) => void;
 }
 
 function StructureGraphInner({
-  entities, relationships, selectedEntityId, onSelectEntity, onSelectEdge, autoLayoutTrigger,
+  entities, relationships, selectedEntityId, onSelectEntity, onSelectEdge,
+  autoLayoutTrigger, layoutMode, pinnedNodeIds, onTogglePin,
 }: Props) {
   const { fitView } = useReactFlow();
   const prevLayoutTrigger = useRef(0);
+  const nodePositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
-  const initialNodes = useMemo(() => dagreLayout(entities, relationships), [entities, relationships]);
+  const getPinnedPositions = useCallback(() => {
+    const map = new Map<string, { x: number; y: number }>();
+    for (const id of pinnedNodeIds) {
+      const pos = nodePositionsRef.current.get(id);
+      if (pos) map.set(id, pos);
+    }
+    return map;
+  }, [pinnedNodeIds]);
+
+  const initialNodes = useMemo(
+    () => dagreLayout(entities, relationships, layoutMode, getPinnedPositions()),
+    [entities, relationships, layoutMode, getPinnedPositions]
+  );
   const initialEdges = useMemo(() => buildEdges(relationships), [relationships]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
+  // Track positions on drag
+  const handleNodesChange = useCallback(
+    (changes: any) => {
+      onNodesChange(changes);
+      for (const change of changes) {
+        if (change.type === "position" && change.position) {
+          nodePositionsRef.current.set(change.id, change.position);
+        }
+      }
+    },
+    [onNodesChange]
+  );
+
   useEffect(() => {
-    setNodes(dagreLayout(entities, relationships));
+    const newNodes = dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
+    setNodes(newNodes);
     setEdges(buildEdges(relationships));
-  }, [entities, relationships, setNodes, setEdges]);
+    // Store initial positions
+    for (const n of newNodes) {
+      if (!nodePositionsRef.current.has(n.id)) {
+        nodePositionsRef.current.set(n.id, n.position);
+      }
+    }
+  }, [entities, relationships, layoutMode, setNodes, setEdges, getPinnedPositions]);
 
   // Auto-layout button trigger
   useEffect(() => {
     if (autoLayoutTrigger > 0 && autoLayoutTrigger !== prevLayoutTrigger.current) {
       prevLayoutTrigger.current = autoLayoutTrigger;
-      setNodes(dagreLayout(entities, relationships));
+      const newNodes = dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
+      setNodes(newNodes);
+      for (const n of newNodes) {
+        nodePositionsRef.current.set(n.id, n.position);
+      }
       setTimeout(() => fitView({ padding: 0.2 }), 50);
     }
-  }, [autoLayoutTrigger, entities, relationships, setNodes, fitView]);
+  }, [autoLayoutTrigger, entities, relationships, layoutMode, setNodes, fitView, getPinnedPositions]);
 
   useEffect(() => {
     setNodes((nds) =>
-      nds.map((n) => ({ ...n, selected: n.id === selectedEntityId }))
+      nds.map((n) => ({
+        ...n,
+        selected: n.id === selectedEntityId,
+        data: { ...n.data, pinned: pinnedNodeIds.has(n.id) },
+      }))
     );
-  }, [selectedEntityId, setNodes]);
+  }, [selectedEntityId, pinnedNodeIds, setNodes]);
 
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
@@ -156,15 +213,23 @@ function StructureGraphInner({
     onSelectEdge(null);
   }, [onSelectEntity, onSelectEdge]);
 
+  const onNodeDoubleClick: NodeMouseHandler = useCallback(
+    (_event, node) => {
+      onTogglePin(node.id);
+    },
+    [onTogglePin]
+  );
+
   return (
     <ReactFlow
       nodes={nodes}
       edges={edges}
-      onNodesChange={onNodesChange}
+      onNodesChange={handleNodesChange}
       onEdgesChange={onEdgesChange}
       onSelectionChange={onSelectionChange}
       onEdgeClick={onEdgeClick}
       onPaneClick={onPaneClick}
+      onNodeDoubleClick={onNodeDoubleClick}
       nodeTypes={nodeTypes}
       fitView
       fitViewOptions={{ padding: 0.2 }}
@@ -183,10 +248,14 @@ function StructureGraphInner({
   );
 }
 
-export default function StructureGraph(props: Props) {
+const StructureGraph = forwardRef<HTMLDivElement, Props>(function StructureGraph(props, ref) {
   return (
     <ReactFlowProvider>
-      <StructureGraphInner {...props} />
+      <div ref={ref} className="h-full w-full">
+        <StructureGraphInner {...props} />
+      </div>
     </ReactFlowProvider>
   );
-}
+});
+
+export default StructureGraph;
