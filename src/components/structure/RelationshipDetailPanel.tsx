@@ -10,7 +10,7 @@ import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 
 const RELATIONSHIP_TYPES = [
   "director", "shareholder", "beneficiary", "trustee",
-  "appointer", "settlor", "partner", "spouse", "parent", "child",
+  "appointer", "settlor", "partner", "member", "spouse", "parent", "child",
 ] as const;
 
 interface Props {

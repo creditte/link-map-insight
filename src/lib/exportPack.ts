@@ -26,9 +26,9 @@ function escapeCsv(val: string) {
 }
 
 export function exportEntitiesCsv(entities: EntityNode[], prefix: string) {
-  const header = "id,name,entity_type";
+  const header = "name,entity_type,abn,acn,xpm_uuid,created_at";
   const rows = entities.map(
-    (e) => `${e.id},${escapeCsv(e.name)},${escapeCsv(getEntityLabel(e.entity_type))}`
+    (e) => `${escapeCsv(e.name)},${escapeCsv(getEntityLabel(e.entity_type))},${escapeCsv(e.abn ?? "")},${escapeCsv(e.acn ?? "")},${escapeCsv(e.xpm_uuid ?? "")},${e.created_at}`
   );
   downloadText([header, ...rows].join("\n"), `${prefix}_entities.csv`);
 }
@@ -38,14 +38,24 @@ export function exportRelationshipsCsv(
   entities: EntityNode[],
   prefix: string
 ) {
-  const entityMap = new Map(entities.map((e) => [e.id, e.name]));
-  const header = "id,from_entity,to_entity,relationship_type,source";
-  const rows = relationships.map(
-    (r) =>
-      `${r.id},${escapeCsv(entityMap.get(r.from_entity_id) ?? r.from_entity_id)},${escapeCsv(
-        entityMap.get(r.to_entity_id) ?? r.to_entity_id
-      )},${r.relationship_type},${r.source_data}`
-  );
+  const entityMap = new Map(entities.map((e) => [e.id, e]));
+  const header = "from_entity_name,from_entity_type,relationship_type,to_entity_name,to_entity_type,ownership_percent,ownership_units,ownership_class,source,created_at";
+  const rows = relationships.map((r) => {
+    const from = entityMap.get(r.from_entity_id);
+    const to = entityMap.get(r.to_entity_id);
+    return [
+      escapeCsv(from?.name ?? r.from_entity_id),
+      escapeCsv(getEntityLabel(from?.entity_type ?? "Unclassified")),
+      r.relationship_type,
+      escapeCsv(to?.name ?? r.to_entity_id),
+      escapeCsv(getEntityLabel(to?.entity_type ?? "Unclassified")),
+      r.ownership_percent ?? "",
+      r.ownership_units ?? "",
+      escapeCsv(r.ownership_class ?? ""),
+      r.source_data,
+      r.created_at,
+    ].join(",");
+  });
   downloadText([header, ...rows].join("\n"), `${prefix}_relationships.csv`);
 }
 

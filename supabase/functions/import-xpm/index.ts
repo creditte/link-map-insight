@@ -32,6 +32,8 @@ const RELATIONSHIP_MAP: Record<string, CanonicalRule> = {
   "parent":           { type: "parent",        reverse: true  },
   "child of":         { type: "child",         reverse: false },
   "child":            { type: "child",         reverse: true  },
+  "member of":        { type: "member",        reverse: false },
+  "member":           { type: "member",        reverse: true  },
 };
 
 // Flat entity_type mapping from business structure strings
@@ -404,6 +406,20 @@ Deno.serve(async (req) => {
 
       if (rule.type === "spouse" || rule.type === "partner") {
         if (fromId > toId) [fromId, toId] = [toId, fromId];
+      }
+
+      // Enforce Individual → SMSF direction for member relationships
+      if (rule.type === "member") {
+        const fromEntity = entityIdCache.get(row.client) || entityIdCache.get(row.uuid);
+        const toEntity = entityIdCache.get(row.relatedClient);
+        // Look up entity types to check if we need to flip
+        if (fromId && toId) {
+          const { data: fromEnt } = await supabase.from("entities").select("entity_type").eq("id", fromId).single();
+          const { data: toEnt } = await supabase.from("entities").select("entity_type").eq("id", toId).single();
+          if (fromEnt?.entity_type === "smsf" && toEnt?.entity_type === "Individual") {
+            [fromId, toId] = [toId, fromId];
+          }
+        }
       }
 
       const dedupeKey = `${rule.type}:${fromId}:${toId}`;

@@ -6,6 +6,7 @@ const EDGE_COLORS: Record<string, string> = {
   appointer: "#ec4899",
   settlor: "#6366f1",
   partner: "#14b8a6",
+  member: "#0ea5e9",
   spouse: "#f43f5e",
   parent: "#a855f7",
   child: "#06b6d4",

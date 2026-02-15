@@ -6,7 +6,10 @@ export interface EntityNode {
   name: string;
   entity_type: string;
   xpm_uuid: string | null;
+  abn: string | null;
+  acn: string | null;
   is_operating_entity: boolean;
+  created_at: string;
 }
 
 export interface RelationshipEdge {
@@ -15,6 +18,10 @@ export interface RelationshipEdge {
   to_entity_id: string;
   relationship_type: string;
   source_data: string;
+  ownership_percent: number | null;
+  ownership_units: number | null;
+  ownership_class: string | null;
+  created_at: string;
 }
 
 const FAMILY_TYPES = new Set(["spouse", "parent", "child"]);
@@ -56,7 +63,7 @@ export function useStructureData(structureId: string | undefined) {
 
       const { data: entitiesData } = await supabase
         .from("entities")
-        .select("id, name, entity_type, xpm_uuid, is_operating_entity")
+        .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, created_at")
         .in("id", entityIds)
         .is("deleted_at", null);
       setEntities((entitiesData as EntityNode[]) ?? []);
@@ -70,7 +77,7 @@ export function useStructureData(structureId: string | undefined) {
       if (relIds.length > 0) {
         const { data: relData } = await supabase
           .from("relationships")
-          .select("id, from_entity_id, to_entity_id, relationship_type, source")
+          .select("id, from_entity_id, to_entity_id, relationship_type, source, ownership_percent, ownership_units, ownership_class, created_at")
           .in("id", relIds)
           .is("deleted_at", null);
         setRelationships(
@@ -80,6 +87,10 @@ export function useStructureData(structureId: string | undefined) {
             to_entity_id: r.to_entity_id,
             relationship_type: r.relationship_type,
             source_data: r.source,
+            ownership_percent: r.ownership_percent,
+            ownership_units: r.ownership_units,
+            ownership_class: r.ownership_class,
+            created_at: r.created_at,
           }))
         );
       } else {
@@ -95,7 +106,7 @@ export function useStructureData(structureId: string | undefined) {
   return { entities, relationships, structureName, loading, reload };
 }
 
-const OWNERSHIP_VIEW_TYPES = new Set(["shareholder", "beneficiary", "partner"]);
+const OWNERSHIP_VIEW_TYPES = new Set(["shareholder", "beneficiary", "partner", "member"]);
 const CONTROL_VIEW_TYPES = new Set(["director", "trustee", "appointer", "settlor"]);
 
 export function useFilteredGraph(

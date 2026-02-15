@@ -31,6 +31,7 @@ export const EDGE_COLORS: Record<string, string> = {
   appointer: "#ec4899",
   settlor: "#6366f1",
   partner: "#14b8a6",
+  member: "#0ea5e9",
   spouse: "#f43f5e",
   parent: "#a855f7",
   child: "#06b6d4",
@@ -90,6 +91,16 @@ function dagreLayout(
 
 const CONTROL_EDGE_TYPES = new Set(["director", "trustee", "appointer", "settlor"]);
 
+function buildEdgeLabel(r: RelationshipEdge): string {
+  let label = r.relationship_type;
+  const parts: string[] = [];
+  if (r.ownership_percent != null) parts.push(`${r.ownership_percent}%`);
+  if (r.ownership_units != null) parts.push(`${r.ownership_units} units`);
+  if (r.ownership_class) parts.push(`(${r.ownership_class})`);
+  if (parts.length > 0) label += " " + parts.join(" ");
+  return label;
+}
+
 function buildEdges(relationships: RelationshipEdge[], viewMode: string = "full"): Edge[] {
   return relationships.map((r) => {
     const isControl = CONTROL_EDGE_TYPES.has(r.relationship_type);
@@ -98,7 +109,7 @@ function buildEdges(relationships: RelationshipEdge[], viewMode: string = "full"
       id: r.id,
       source: r.from_entity_id,
       target: r.to_entity_id,
-      label: r.relationship_type,
+      label: buildEdgeLabel(r),
       type: "default",
       animated: false,
       style: {
