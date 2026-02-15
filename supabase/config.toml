@@ -2,3 +2,6 @@ project_id = "kdwmetjwxfzovdmarijl"
 
 [functions.import-xpm]
 verify_jwt = false
+
+[functions.invite-user]
+verify_jwt = false
