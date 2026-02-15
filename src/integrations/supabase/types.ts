@@ -127,6 +127,57 @@ export type Database = {
           },
         ]
       }
+      feedback: {
+        Row: {
+          created_at: string
+          id: string
+          message: string
+          metadata: Json | null
+          page: string | null
+          status: string
+          structure_id: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message: string
+          metadata?: Json | null
+          page?: string | null
+          status?: string
+          structure_id?: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string
+          metadata?: Json | null
+          page?: string | null
+          status?: string
+          structure_id?: string | null
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_structure_id_fkey"
+            columns: ["structure_id"]
+            isOneToOne: false
+            referencedRelation: "structures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feedback_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       import_logs: {
         Row: {
           created_at: string
@@ -218,6 +269,7 @@ export type Database = {
           full_name: string | null
           id: string
           last_sign_in_at: string | null
+          onboarding_complete: boolean
           status: string
           tenant_id: string
           updated_at: string
@@ -228,6 +280,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           last_sign_in_at?: string | null
+          onboarding_complete?: boolean
           status?: string
           tenant_id: string
           updated_at?: string
@@ -238,6 +291,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           last_sign_in_at?: string | null
+          onboarding_complete?: boolean
           status?: string
           tenant_id?: string
           updated_at?: string

@@ -1,6 +1,7 @@
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import FeedbackModal from "@/components/FeedbackModal";
 import {
   LayoutDashboard,
   Network,
@@ -40,8 +41,9 @@ export default function AppSidebar() {
           </NavLink>
         ))}
       </nav>
-      <div className="border-t p-3">
-        <p className="mb-2 truncate text-xs text-sidebar-foreground/50">{user?.email}</p>
+      <div className="border-t p-3 space-y-1">
+        <p className="mb-1 truncate text-xs text-sidebar-foreground/50">{user?.email}</p>
+        <FeedbackModal />
         <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={signOut}>
           <LogOut className="h-4 w-4" />
           Sign Out

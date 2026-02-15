@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useStructureData, useFilteredGraph } from "@/hooks/useStructureData";
+import { useOnboarding } from "@/hooks/useOnboarding";
 import StructureGraph, { type LayoutMode } from "@/components/structure/StructureGraph";
 import GraphControls from "@/components/structure/GraphControls";
 import EntityDetailPanel from "@/components/structure/EntityDetailPanel";
 import RelationshipDetailPanel from "@/components/structure/RelationshipDetailPanel";
 import RelationshipLegend from "@/components/structure/RelationshipLegend";
 import ExportMenu from "@/components/structure/ExportMenu";
+import ExportBlockedBanner from "@/components/structure/ExportBlockedBanner";
+import OnboardingTooltips from "@/components/structure/OnboardingTooltips";
 
 export type ViewMode = "ownership" | "control" | "full";
 
@@ -18,6 +21,7 @@ export default function StructureView() {
   const { id } = useParams();
   const { entities, relationships, structureName, loading, reload } = useStructureData(id);
   const { toast } = useToast();
+  const { showOnboarding, dismiss: dismissOnboarding } = useOnboarding();
 
   const [search, setSearch] = useState("");
   const [filterRelType, setFilterRelType] = useState("all");
@@ -172,8 +176,12 @@ export default function StructureView() {
         hasSelection={!!selectedEntityId}
       />
 
+      {/* Export blocked banner */}
+      <ExportBlockedBanner entities={entities} />
+
       {/* Graph + Panel */}
       <div className="relative mt-3 flex-1 rounded-lg border bg-card overflow-hidden">
+        {showOnboarding && <OnboardingTooltips onDismiss={dismissOnboarding} />}
         {visibleEntities.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm text-muted-foreground">No entities to display.</p>

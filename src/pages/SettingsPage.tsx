@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Building2, Shield } from "lucide-react";
+import { Users, Building2, Shield, MessageSquare } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import UsersSettings from "@/components/settings/UsersSettings";
 import TenantSettings from "@/components/settings/TenantSettings";
+import FeedbackSettings from "@/components/settings/FeedbackSettings";
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -44,6 +45,11 @@ export default function SettingsPage() {
           <TabsTrigger value="tenant" className="gap-1.5">
             <Building2 className="h-3.5 w-3.5" /> Organisation
           </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="feedback" className="gap-1.5">
+              <MessageSquare className="h-3.5 w-3.5" /> Feedback
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {isAdmin && (
@@ -55,6 +61,12 @@ export default function SettingsPage() {
         <TabsContent value="tenant" className="mt-4">
           <TenantSettings />
         </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="feedback" className="mt-4">
+            <FeedbackSettings />
+          </TabsContent>
+        )}
       </Tabs>
 
       {!isAdmin && (
