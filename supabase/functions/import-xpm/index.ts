@@ -34,13 +34,25 @@ const RELATIONSHIP_MAP: Record<string, CanonicalRule> = {
   "child":            { type: "child",         reverse: true  },
 };
 
+// Flat entity_type mapping from business structure strings
 const ENTITY_TYPE_MAP: Record<string, string> = {
   individual: "Individual",
   company: "Company",
-  trust: "Trust",
   partnership: "Partnership",
   "sole trader": "Sole Trader",
   "incorporated association/club": "Incorporated Association/Club",
+  // Trust types - map directly to flat entity_type values
+  "discretionary trust": "trust_discretionary",
+  "unit trust": "trust_unit",
+  "hybrid trust": "trust_hybrid",
+  "bare trust": "trust_bare",
+  "testamentary trust": "trust_testamentary",
+  "deceased estate": "trust_deceased_estate",
+  "family trust": "trust_family",
+  "self managed superannuation fund": "smsf",
+  smsf: "smsf",
+  // Generic trust → Unclassified (needs manual review)
+  trust: "Unclassified",
 };
 
 // ── Parsing helpers ─────────────────────────────────────────────────────
@@ -203,8 +215,7 @@ Deno.serve(async (req) => {
     let structuresCreated = 0;
 
     // ── Helper: resolve or create an entity by uuid/name ────────────────
-    // Returns the DB id or null on failure. Caches results.
-    const entityIdCache = new Map<string, string>(); // cacheKey → db id
+    const entityIdCache = new Map<string, string>();
 
     async function resolveEntity(
       name: string,
@@ -214,15 +225,12 @@ Deno.serve(async (req) => {
     ): Promise<string | null> {
       if (!name) return null;
 
-      // Check cache first (by uuid, then by name)
       const cacheKey = xpmUuid || name;
       if (entityIdCache.has(cacheKey)) return entityIdCache.get(cacheKey)!;
-      // Also check name cache in case we stored it under uuid previously
       if (xpmUuid && entityIdCache.has(name)) return entityIdCache.get(name)!;
 
       let existing: { id: string; entity_type: string; xpm_uuid: string | null } | null = null;
 
-      // Look up by xpm_uuid first
       if (xpmUuid) {
         const { data } = await supabase
           .from("entities")
@@ -233,7 +241,6 @@ Deno.serve(async (req) => {
         existing = data;
       }
 
-      // Fall back to name match
       if (!existing) {
         const { data } = await supabase
           .from("entities")
@@ -245,7 +252,6 @@ Deno.serve(async (req) => {
       }
 
       if (existing) {
-        // Update entity_type / xpm_uuid if we have better info
         const updates: Record<string, string> = {};
         if (entityType !== "Unclassified" && existing.entity_type === "Unclassified") {
           updates.entity_type = entityType;
@@ -264,7 +270,6 @@ Deno.serve(async (req) => {
         return existing.id;
       }
 
-      // Create new entity
       const { data, error } = await supabase
         .from("entities")
         .insert({
@@ -331,7 +336,6 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Link client entity to structure
         const clientId = entityIdCache.get(row.uuid || row.client);
         const structureId = structureIdByName.get(gn);
         if (clientId && structureId) {
@@ -344,7 +348,6 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Link related entity to structure
         const relatedId = entityIdCache.get(row.relatedClient);
         if (relatedId && structureId) {
           const pairKey = `${structureId}:${relatedId}`;
@@ -362,10 +365,8 @@ Deno.serve(async (req) => {
     const relDedupeSet = new Set<string>();
 
     for (const row of rows) {
-      // Skip rows with no relationship data
       if (!row.relationshipType || !row.client || !row.relatedClient) continue;
 
-      // Normalize relationshipType: strip quotes, trim, lowercase
       const normalizedRelType = row.relationshipType
         .replace(/^"+|"+$/g, '')
         .replace(/""+/g, '"')
@@ -379,12 +380,10 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Resolve entities (will create if missing)
       const clientKey = row.uuid || row.client;
       let fromId = entityIdCache.get(clientKey);
       let toId = entityIdCache.get(row.relatedClient);
 
-      // If still missing, try to create on-the-fly
       if (!fromId) {
         const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
         fromId = await resolveEntity(row.client, row.uuid || null, et, row.rowNum) ?? undefined;
@@ -399,24 +398,20 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Apply direction rule
       if (rule.reverse) {
         [fromId, toId] = [toId, fromId];
       }
 
-      // For symmetric relationships, order alphabetically to dedupe
       if (rule.type === "spouse" || rule.type === "partner") {
         if (fromId > toId) [fromId, toId] = [toId, fromId];
       }
 
       const dedupeKey = `${rule.type}:${fromId}:${toId}`;
       if (relDedupeSet.has(dedupeKey)) {
-        // Already processed this exact relationship in this import
         continue;
       }
       relDedupeSet.add(dedupeKey);
 
-      // Check if relationship already exists in DB
       const { data: existingRel } = await supabase
         .from("relationships")
         .select("id")
@@ -427,12 +422,10 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (existingRel) {
-        // Already exists in DB, skip creation but still link to structures
         await linkRelToStructures(existingRel.id, row);
         continue;
       }
 
-      // Insert new relationship
       const { data: relData, error: relErr } = await supabase
         .from("relationships")
         .insert({
@@ -453,12 +446,9 @@ Deno.serve(async (req) => {
       }
 
       relationshipsCreated++;
-
-      // Link to structures from this row's groups
       await linkRelToStructures(relData.id, row);
     }
 
-    // Helper: link a relationship to all structures from a row's groups
     async function linkRelToStructures(relationshipId: string, row: RawRow) {
       if (!row.groups) return;
       const groupNames = row.groups.split(";").map((g) => g.trim()).filter(Boolean);

@@ -423,6 +423,14 @@ export type Database = {
         | "Sole Trader"
         | "Incorporated Association/Club"
         | "Unclassified"
+        | "trust_discretionary"
+        | "trust_unit"
+        | "trust_hybrid"
+        | "trust_bare"
+        | "trust_testamentary"
+        | "trust_deceased_estate"
+        | "trust_family"
+        | "smsf"
       import_status: "pending" | "processing" | "completed" | "failed"
       relationship_type:
         | "director"
@@ -584,6 +592,14 @@ export const Constants = {
         "Sole Trader",
         "Incorporated Association/Club",
         "Unclassified",
+        "trust_discretionary",
+        "trust_unit",
+        "trust_hybrid",
+        "trust_bare",
+        "trust_testamentary",
+        "trust_deceased_estate",
+        "trust_family",
+        "smsf",
       ],
       import_status: ["pending", "processing", "completed", "failed"],
       relationship_type: [

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { getEntityLabel } from "@/lib/entityTypes";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 
 const RELATIONSHIP_TYPES = [
@@ -86,7 +87,6 @@ export default function RelationshipDetailPanel({ relationship, allEntities, onC
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Confirm delete */}
         {confirmDelete && (
           <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 space-y-2">
             <p className="text-xs font-medium">Delete this relationship?</p>
@@ -101,16 +101,14 @@ export default function RelationshipDetailPanel({ relationship, allEntities, onC
           </div>
         )}
 
-        {/* From entity */}
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-1">From</p>
           <div className="rounded-md border p-3">
             <p className="font-medium text-sm">{fromEntity?.name ?? "Unknown"}</p>
-            <p className="text-xs text-muted-foreground">{fromEntity?.entity_type}</p>
+            <p className="text-xs text-muted-foreground">{getEntityLabel(fromEntity?.entity_type ?? "Unclassified")}</p>
           </div>
         </div>
 
-        {/* Relationship type */}
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-1">Type</p>
           {editing ? (
@@ -127,16 +125,14 @@ export default function RelationshipDetailPanel({ relationship, allEntities, onC
           )}
         </div>
 
-        {/* To entity */}
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-1">To</p>
           <div className="rounded-md border p-3">
             <p className="font-medium text-sm">{toEntity?.name ?? "Unknown"}</p>
-            <p className="text-xs text-muted-foreground">{toEntity?.entity_type}</p>
+            <p className="text-xs text-muted-foreground">{getEntityLabel(toEntity?.entity_type ?? "Unclassified")}</p>
           </div>
         </div>
 
-        {/* Source */}
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-1">Source</p>
           <Badge variant="outline" className="text-xs">{relationship.source_data}</Badge>
