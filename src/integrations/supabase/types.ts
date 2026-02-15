@@ -171,11 +171,54 @@ export type Database = {
           },
         ]
       }
+      invitations: {
+        Row: {
+          accepted_at: string | null
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          invited_by: string
+          role: Database["public"]["Enums"]["app_role"]
+          tenant_id: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          created_at?: string
+          email: string
+          expires_at?: string
+          id?: string
+          invited_by: string
+          role?: Database["public"]["Enums"]["app_role"]
+          tenant_id: string
+        }
+        Update: {
+          accepted_at?: string | null
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          invited_by?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invitations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
           full_name: string | null
           id: string
+          last_sign_in_at: string | null
+          status: string
           tenant_id: string
           updated_at: string
           user_id: string
@@ -184,6 +227,8 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          last_sign_in_at?: string | null
+          status?: string
           tenant_id: string
           updated_at?: string
           user_id: string
@@ -192,6 +237,8 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          last_sign_in_at?: string | null
+          status?: string
           tenant_id?: string
           updated_at?: string
           user_id?: string

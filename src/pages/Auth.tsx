@@ -11,10 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 export default function Auth() {
   const { user, loading } = useAuth();
   const { toast } = useToast();
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   if (loading) {
@@ -32,27 +30,11 @@ export default function Auth() {
     setSubmitting(true);
 
     try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { full_name: fullName },
-            emailRedirectTo: window.location.origin,
-          },
-        });
-        if (error) throw error;
-        toast({
-          title: "Check your email",
-          description: "We sent you a confirmation link to verify your account.",
-        });
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
     } catch (err: any) {
       toast({
-        title: "Error",
+        title: "Sign in failed",
         description: err.message,
         variant: "destructive",
       });
@@ -66,24 +48,10 @@ export default function Auth() {
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold tracking-tight">Strukcha</CardTitle>
-          <CardDescription>
-            {isLogin ? "Sign in to your account" : "Create a new account"}
-          </CardDescription>
+          <CardDescription>Sign in to your account</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {!isLogin && (
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
-                <Input
-                  id="fullName"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Jane Smith"
-                  required
-                />
-              </div>
-            )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -108,18 +76,12 @@ export default function Auth() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? "Please wait..." : isLogin ? "Sign In" : "Sign Up"}
+              {submitting ? "Signing in..." : "Sign In"}
             </Button>
           </form>
-          <div className="mt-4 text-center text-sm">
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-              onClick={() => setIsLogin(!isLogin)}
-            >
-              {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
-            </button>
-          </div>
+          <p className="mt-4 text-center text-xs text-muted-foreground">
+            Access is by invitation only. Contact your administrator.
+          </p>
         </CardContent>
       </Card>
     </div>
