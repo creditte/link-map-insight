@@ -463,6 +463,15 @@ Deno.serve(async (req) => {
 
       relationshipsCreated++;
       await linkRelToStructures(relData.id, row);
+
+      // Auto-set is_trustee_company for companies acting as trustee for a trust
+      if (rule.type === "trustee") {
+        // fromId is the trustee entity (person/company acting as trustee)
+        const { data: trusteeEnt } = await supabase.from("entities").select("entity_type, is_trustee_company").eq("id", fromId).single();
+        if (trusteeEnt && trusteeEnt.entity_type === "Company" && !trusteeEnt.is_trustee_company) {
+          await supabase.from("entities").update({ is_trustee_company: true }).eq("id", fromId);
+        }
+      }
     }
 
     async function linkRelToStructures(relationshipId: string, row: RawRow) {

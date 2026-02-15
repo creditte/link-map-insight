@@ -1,0 +1,1 @@
+ALTER TABLE public.entities ADD COLUMN is_trustee_company boolean NOT NULL DEFAULT false;

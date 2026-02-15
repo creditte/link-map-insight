@@ -84,7 +84,7 @@ function dagreLayout(
       id: e.id,
       type: "entity",
       position: { x: (node?.x ?? 0) - 90, y: (node?.y ?? 0) - 35 },
-      data: { label: e.name, entity_type: e.entity_type, pinned: false, is_operating_entity: e.is_operating_entity },
+      data: { label: e.name, entity_type: e.entity_type, pinned: false, is_operating_entity: e.is_operating_entity, is_trustee_company: e.is_trustee_company },
     };
   });
 }

@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Pin, Star } from "lucide-react";
+import { Pin, Star, Shield } from "lucide-react";
 import { getEntityIcon, getEntityColor, getEntityLabel } from "@/lib/entityTypes";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -8,6 +8,7 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
   const entityType = (data.entity_type as string) ?? "Unclassified";
   const pinned = data.pinned as boolean;
   const isOperating = data.is_operating_entity as boolean;
+  const isTrusteeCompany = data.is_trustee_company as boolean;
   const Icon = getEntityIcon(entityType);
   const colorClass = getEntityColor(entityType);
   const label = data.label as string;
@@ -19,11 +20,26 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
         <Tooltip>
           <TooltipTrigger asChild>
             <div
-              className={`rounded-lg border-2 px-4 py-3 shadow-sm transition-shadow ${colorClass} ${
+              className={`relative rounded-lg border-2 px-4 py-3 shadow-sm transition-shadow ${colorClass} ${
                 selected ? "ring-2 ring-ring shadow-md" : ""
               }`}
               style={{ minWidth: 100, maxWidth: 180 }}
             >
+              {/* Trustee Company badge */}
+              {isTrusteeCompany && (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-violet-500 text-white shadow-sm">
+                        <Shield className="h-3 w-3" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      Trustee Company
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
               <div className="flex items-center gap-2">
                 <Icon className="h-4 w-4 shrink-0 opacity-70" />
                 <span
@@ -45,7 +61,10 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-[250px]">
             <p className="font-medium text-sm">{label}</p>
-            <p className="text-xs text-muted-foreground">{getEntityLabel(entityType)}</p>
+            <p className="text-xs text-muted-foreground">
+              {getEntityLabel(entityType)}
+              {isTrusteeCompany && " · Trustee Company"}
+            </p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

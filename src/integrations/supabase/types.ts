@@ -67,6 +67,7 @@ export type Database = {
           entity_type: Database["public"]["Enums"]["entity_type"]
           id: string
           is_operating_entity: boolean
+          is_trustee_company: boolean
           merged_into_entity_id: string | null
           name: string
           source: Database["public"]["Enums"]["data_source"]
@@ -84,6 +85,7 @@ export type Database = {
           entity_type?: Database["public"]["Enums"]["entity_type"]
           id?: string
           is_operating_entity?: boolean
+          is_trustee_company?: boolean
           merged_into_entity_id?: string | null
           name: string
           source?: Database["public"]["Enums"]["data_source"]
@@ -101,6 +103,7 @@ export type Database = {
           entity_type?: Database["public"]["Enums"]["entity_type"]
           id?: string
           is_operating_entity?: boolean
+          is_trustee_company?: boolean
           merged_into_entity_id?: string | null
           name?: string
           source?: Database["public"]["Enums"]["data_source"]

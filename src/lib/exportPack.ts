@@ -60,9 +60,9 @@ function getImageDims(dataUrl: string): Promise<{ w: number; h: number }> {
 /* ── CSV exports ── */
 
 export function exportEntitiesCsv(entities: EntityNode[], prefix: string) {
-  const header = "name,entity_type,abn,acn,xpm_uuid,created_at";
+  const header = "name,entity_type,is_trustee_company,abn,acn,xpm_uuid,created_at";
   const rows = entities.map(
-    (e) => `${escapeCsv(e.name)},${escapeCsv(getEntityLabel(e.entity_type))},${escapeCsv(e.abn ?? "")},${escapeCsv(e.acn ?? "")},${escapeCsv(e.xpm_uuid ?? "")},${e.created_at}`
+    (e) => `${escapeCsv(e.name)},${escapeCsv(getEntityLabel(e.entity_type))},${e.is_trustee_company ? "Yes" : "No"},${escapeCsv(e.abn ?? "")},${escapeCsv(e.acn ?? "")},${escapeCsv(e.xpm_uuid ?? "")},${e.created_at}`
   );
   downloadText([header, ...rows].join("\n"), `${prefix}_entities.csv`);
 }
@@ -359,12 +359,15 @@ export async function exportPdf(
   const hasAbn = entities.some((e) => e.abn);
   const hasAcn = entities.some((e) => e.acn);
 
-  const entHead = ["Name", "Type", "Operating"];
+  const entHead = ["Name", "Type", "Operating", "Trustee Co."];
   if (hasAbn) entHead.push("ABN");
   if (hasAcn) entHead.push("ACN");
 
   const entBody = entities.map((e) => {
-    const row = [e.name, getEntityLabel(e.entity_type), e.is_operating_entity ? "Yes" : "No"];
+    const typeLabel = e.is_trustee_company
+      ? `${getEntityLabel(e.entity_type)} (Trustee)`
+      : getEntityLabel(e.entity_type);
+    const row = [e.name, typeLabel, e.is_operating_entity ? "Yes" : "No", e.is_trustee_company ? "Yes" : ""];
     if (hasAbn) row.push(e.abn ?? "");
     if (hasAcn) row.push(e.acn ?? "");
     return row;
