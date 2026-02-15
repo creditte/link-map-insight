@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Building2, User, Landmark, Users, Store, Building, Pencil, Plus } from "lucide-react";
+import { X, Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -7,18 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { ENTITY_TYPES, getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
-
-const ENTITY_TYPES = [
-  "Individual", "Company", "Trust", "Partnership",
-  "Sole Trader", "Incorporated Association/Club",
-] as const;
-
-const TRUST_SUBTYPES = [
-  "Discretionary", "Unit", "Hybrid", "Bare",
-  "Testamentary", "Deceased Estate", "Family Trust", "SMSF",
-  "Trust-Unknown", "Unclassified",
-] as const;
 
 const RELATIONSHIP_TYPES = [
   "director", "shareholder", "beneficiary", "trustee",
@@ -26,16 +16,6 @@ const RELATIONSHIP_TYPES = [
 ] as const;
 
 const OWNERSHIP_REL_TYPES = new Set(["shareholder", "beneficiary", "partner"]);
-
-const iconMap: Record<string, React.ElementType> = {
-  Individual: User,
-  Company: Building2,
-  Trust: Landmark,
-  Partnership: Users,
-  "Sole Trader": Store,
-  "Incorporated Association/Club": Building,
-  Unclassified: User,
-};
 
 interface Props {
   entity: EntityNode;
@@ -52,11 +32,10 @@ export default function EntityDetailPanel({
 }: Props) {
   const { toast } = useToast();
   const entityMap = new Map(allEntities.map((e) => [e.id, e]));
-  const Icon = iconMap[entity.entity_type] ?? User;
+  const Icon = getEntityIcon(entity.entity_type);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(entity.name);
   const [editType, setEditType] = useState(entity.entity_type);
-  const [editTrustSubtype, setEditTrustSubtype] = useState(entity.trust_subtype ?? "");
   const [saving, setSaving] = useState(false);
 
   // Add relationship state
@@ -84,11 +63,6 @@ export default function EntityDetailPanel({
       name: editName,
       entity_type: editType,
     };
-    if (editType === "Trust") {
-      updates.trust_subtype = editTrustSubtype || null;
-    } else {
-      updates.trust_subtype = null;
-    }
     const { error } = await supabase
       .from("entities")
       .update(updates as any)
@@ -108,7 +82,6 @@ export default function EntityDetailPanel({
     if (!newRelTarget || !newRelType) return;
     setAddingRel(true);
 
-    // Get tenant_id from the current entity
     const { data: entityData } = await supabase
       .from("entities")
       .select("tenant_id")
@@ -145,7 +118,6 @@ export default function EntityDetailPanel({
       console.error("Add relationship failed:", error);
       toast({ title: "Failed to add relationship", description: error.message, variant: "destructive" });
     } else if (newRel) {
-      // Link to structure
       const { error: linkError } = await supabase
         .from("structure_relationships")
         .insert({ structure_id: structureId, relationship_id: newRel.id });
@@ -172,7 +144,7 @@ export default function EntityDetailPanel({
         <h3 className="font-semibold text-sm">Entity Details</h3>
         <div className="flex items-center gap-1">
           {!editing && (
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditName(entity.name); setEditType(entity.entity_type); setEditTrustSubtype(entity.trust_subtype ?? ""); }}>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditName(entity.name); setEditType(entity.entity_type); }}>
               <Pencil className="h-3.5 w-3.5" />
             </Button>
           )}
@@ -190,24 +162,15 @@ export default function EntityDetailPanel({
             </div>
             <div>
               <Label className="text-xs">Entity Type</Label>
-              <Select value={editType} onValueChange={(v) => { setEditType(v); if (v !== "Trust") setEditTrustSubtype(""); }}>
+              <Select value={editType} onValueChange={setEditType}>
                 <SelectTrigger className="h-9 mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {ENTITY_TYPES.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
+                  {ENTITY_TYPES.filter(t => t !== "Unclassified").map((t) => (
+                    <SelectItem key={t} value={t}>{getEntityLabel(t)}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            {editType === "Trust" && (
-              <div>
-                <Label className="text-xs">Trust Subtype</Label>
-                <Select value={editTrustSubtype} onValueChange={setEditTrustSubtype}>
-                  <SelectTrigger className="h-9 mt-1"><SelectValue placeholder="Select subtype" /></SelectTrigger>
-                  <SelectContent>
-                    {TRUST_SUBTYPES.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
             <div className="flex gap-2">
               <Button size="sm" onClick={handleSave} disabled={saving} className="flex-1">
                 {saving ? "Saving..." : "Save"}
@@ -225,12 +188,7 @@ export default function EntityDetailPanel({
               </div>
               <div>
                 <p className="font-medium leading-tight">{entity.name}</p>
-                <p className="text-xs text-muted-foreground">{entity.entity_type}</p>
-                {entity.entity_type === "Trust" && entity.trust_subtype && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 mt-0.5">
-                    {entity.trust_subtype}
-                  </Badge>
-                )}
+                <p className="text-xs text-muted-foreground">{getEntityLabel(entity.entity_type)}</p>
               </div>
             </div>
 
