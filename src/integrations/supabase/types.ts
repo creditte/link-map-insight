@@ -63,9 +63,11 @@ export type Database = {
           abn: string | null
           acn: string | null
           created_at: string
+          deleted_at: string | null
           entity_type: Database["public"]["Enums"]["entity_type"]
           id: string
           is_operating_entity: boolean
+          merged_into_entity_id: string | null
           name: string
           source: Database["public"]["Enums"]["data_source"]
           tenant_id: string
@@ -78,9 +80,11 @@ export type Database = {
           abn?: string | null
           acn?: string | null
           created_at?: string
+          deleted_at?: string | null
           entity_type?: Database["public"]["Enums"]["entity_type"]
           id?: string
           is_operating_entity?: boolean
+          merged_into_entity_id?: string | null
           name: string
           source?: Database["public"]["Enums"]["data_source"]
           tenant_id: string
@@ -93,9 +97,11 @@ export type Database = {
           abn?: string | null
           acn?: string | null
           created_at?: string
+          deleted_at?: string | null
           entity_type?: Database["public"]["Enums"]["entity_type"]
           id?: string
           is_operating_entity?: boolean
+          merged_into_entity_id?: string | null
           name?: string
           source?: Database["public"]["Enums"]["data_source"]
           tenant_id?: string
@@ -105,6 +111,13 @@ export type Database = {
           xpm_uuid?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "entities_merged_into_entity_id_fkey"
+            columns: ["merged_into_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "entities_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -405,6 +418,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      find_duplicate_entities: {
+        Args: { _tenant_id: string }
+        Returns: {
+          entity_id_a: string
+          entity_id_b: string
+          name_a: string
+          name_b: string
+          normalized_name: string
+          type_a: string
+          type_b: string
+        }[]
+      }
       get_user_tenant_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
