@@ -72,16 +72,17 @@ export async function exportPdf(
   relationships: RelationshipEdge[],
   structureName: string
 ) {
+  const exportDate = new Date().toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
 
-  // Page 1: Diagram + title + legend
+  // Page 1: Diagram + title block + legend
   pdf.setFontSize(18);
   pdf.text(structureName, 14, 16);
   pdf.setFontSize(9);
   pdf.setTextColor(120);
-  pdf.text(`${entities.length} entities · ${relationships.length} relationships`, 14, 23);
+  pdf.text(`${entities.length} entities · ${relationships.length} relationships  |  Exported ${exportDate}`, 14, 23);
   pdf.setTextColor(0);
 
   try {

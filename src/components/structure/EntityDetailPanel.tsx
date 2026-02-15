@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { X, Pencil, Plus } from "lucide-react";
+import { X, Pencil, Plus, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +38,7 @@ export default function EntityDetailPanel({
   const [editName, setEditName] = useState(entity.name);
   const [editType, setEditType] = useState(entity.entity_type);
   const [saving, setSaving] = useState(false);
+  const [editIsOperating, setEditIsOperating] = useState(entity.is_operating_entity);
 
   // Add relationship state
   const [showAddRel, setShowAddRel] = useState(false);
@@ -62,6 +64,7 @@ export default function EntityDetailPanel({
     const updates: Record<string, unknown> = {
       name: editName,
       entity_type: editType,
+      is_operating_entity: editIsOperating,
     };
     const { error } = await supabase
       .from("entities")
@@ -144,7 +147,7 @@ export default function EntityDetailPanel({
         <h3 className="font-semibold text-sm">Entity Details</h3>
         <div className="flex items-center gap-1">
           {!editing && (
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditName(entity.name); setEditType(entity.entity_type); }}>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditName(entity.name); setEditType(entity.entity_type); setEditIsOperating(entity.is_operating_entity); }}>
               <Pencil className="h-3.5 w-3.5" />
             </Button>
           )}
@@ -171,6 +174,10 @@ export default function EntityDetailPanel({
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center gap-2">
+              <Switch id="is-operating" checked={editIsOperating} onCheckedChange={setEditIsOperating} />
+              <Label htmlFor="is-operating" className="text-xs">Operating Entity</Label>
+            </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleSave} disabled={saving} className="flex-1">
                 {saving ? "Saving..." : "Save"}
@@ -189,6 +196,11 @@ export default function EntityDetailPanel({
               <div>
                 <p className="font-medium leading-tight">{entity.name}</p>
                 <p className="text-xs text-muted-foreground">{getEntityLabel(entity.entity_type)}</p>
+                {entity.is_operating_entity && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-1 mt-0.5">
+                    <Star className="h-2.5 w-2.5" /> Operating Entity
+                  </Badge>
+                )}
               </div>
             </div>
 

@@ -65,6 +65,7 @@ export type Database = {
           created_at: string
           entity_type: Database["public"]["Enums"]["entity_type"]
           id: string
+          is_operating_entity: boolean
           name: string
           source: Database["public"]["Enums"]["data_source"]
           tenant_id: string
@@ -79,6 +80,7 @@ export type Database = {
           created_at?: string
           entity_type?: Database["public"]["Enums"]["entity_type"]
           id?: string
+          is_operating_entity?: boolean
           name: string
           source?: Database["public"]["Enums"]["data_source"]
           tenant_id: string
@@ -93,6 +95,7 @@ export type Database = {
           created_at?: string
           entity_type?: Database["public"]["Enums"]["entity_type"]
           id?: string
+          is_operating_entity?: boolean
           name?: string
           source?: Database["public"]["Enums"]["data_source"]
           tenant_id?: string
