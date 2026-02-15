@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Download, Image, FileText, Table } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +16,8 @@ import {
   exportPdf,
 } from "@/lib/exportPack";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Props {
   graphRef: React.RefObject<HTMLElement | null>;
@@ -26,8 +28,19 @@ interface Props {
 
 export default function ExportMenu({ graphRef, entities, relationships, structureName }: Props) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [exporting, setExporting] = useState(false);
+  const [tenantName, setTenantName] = useState("");
   const prefix = structureName.replace(/\s+/g, "_");
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("tenants").select("name").limit(1).single().then(({ data }) => {
+      if (data) setTenantName(data.name);
+    });
+  }, [user]);
+
+  const userName = user?.user_metadata?.full_name || user?.email || "";
 
   const wrap = async (label: string, fn: () => Promise<void>) => {
     setExporting(true);
@@ -71,7 +84,7 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
           <Table className="h-4 w-4 mr-2" /> Relationships CSV
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => wrap("PDF", () => exportPdf(getEl(), entities, relationships, structureName))}>
+        <DropdownMenuItem onClick={() => wrap("PDF", () => exportPdf(getEl(), entities, relationships, structureName, { userName, tenantName }))}>
           <FileText className="h-4 w-4 mr-2" /> Full PDF Pack
         </DropdownMenuItem>
       </DropdownMenuContent>
