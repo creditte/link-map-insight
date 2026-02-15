@@ -194,6 +194,7 @@ export type Database = {
         Row: {
           confidence: Database["public"]["Enums"]["confidence_level"]
           created_at: string
+          deleted_at: string | null
           end_date: string | null
           from_entity_id: string
           id: string
@@ -210,6 +211,7 @@ export type Database = {
         Insert: {
           confidence?: Database["public"]["Enums"]["confidence_level"]
           created_at?: string
+          deleted_at?: string | null
           end_date?: string | null
           from_entity_id: string
           id?: string
@@ -226,6 +228,7 @@ export type Database = {
         Update: {
           confidence?: Database["public"]["Enums"]["confidence_level"]
           created_at?: string
+          deleted_at?: string | null
           end_date?: string | null
           from_entity_id?: string
           id?: string

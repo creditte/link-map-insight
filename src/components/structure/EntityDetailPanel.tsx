@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Building2, User, Landmark, Users, Store, Building, Pencil } from "lucide-react";
+import { X, Building2, User, Landmark, Users, Store, Building, Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,13 @@ const TRUST_SUBTYPES = [
   "Trust-Unknown", "Unclassified",
 ] as const;
 
+const RELATIONSHIP_TYPES = [
+  "director", "shareholder", "beneficiary", "trustee",
+  "appointer", "settlor", "partner", "spouse", "parent", "child",
+] as const;
+
+const OWNERSHIP_REL_TYPES = new Set(["shareholder", "beneficiary", "partner"]);
+
 const iconMap: Record<string, React.ElementType> = {
   Individual: User,
   Company: Building2,
@@ -34,13 +41,14 @@ interface Props {
   entity: EntityNode;
   relationships: RelationshipEdge[];
   allEntities: EntityNode[];
+  structureId: string;
   onClose: () => void;
   onSelectEntity: (id: string) => void;
   onEntityUpdated: () => void;
 }
 
 export default function EntityDetailPanel({
-  entity, relationships, allEntities, onClose, onSelectEntity, onEntityUpdated,
+  entity, relationships, allEntities, structureId, onClose, onSelectEntity, onEntityUpdated,
 }: Props) {
   const { toast } = useToast();
   const entityMap = new Map(allEntities.map((e) => [e.id, e]));
@@ -51,6 +59,15 @@ export default function EntityDetailPanel({
   const [editTrustSubtype, setEditTrustSubtype] = useState(entity.trust_subtype ?? "");
   const [saving, setSaving] = useState(false);
 
+  // Add relationship state
+  const [showAddRel, setShowAddRel] = useState(false);
+  const [newRelTarget, setNewRelTarget] = useState("");
+  const [newRelType, setNewRelType] = useState("");
+  const [newRelOwnershipPercent, setNewRelOwnershipPercent] = useState("");
+  const [newRelOwnershipUnits, setNewRelOwnershipUnits] = useState("");
+  const [newRelOwnershipClass, setNewRelOwnershipClass] = useState("");
+  const [addingRel, setAddingRel] = useState(false);
+
   const related = relationships
     .filter((r) => r.from_entity_id === entity.id || r.to_entity_id === entity.id)
     .map((r) => {
@@ -58,6 +75,8 @@ export default function EntityDetailPanel({
       const direction = r.from_entity_id === entity.id ? "outgoing" : "incoming";
       return { ...r, otherId, otherName: entityMap.get(otherId)?.name ?? "Unknown", direction };
     });
+
+  const otherEntities = allEntities.filter((e) => e.id !== entity.id);
 
   const handleSave = async () => {
     setSaving(true);
@@ -85,6 +104,68 @@ export default function EntityDetailPanel({
     setSaving(false);
   };
 
+  const handleAddRelationship = async () => {
+    if (!newRelTarget || !newRelType) return;
+    setAddingRel(true);
+
+    // Get tenant_id from the current entity
+    const { data: entityData } = await supabase
+      .from("entities")
+      .select("tenant_id")
+      .eq("id", entity.id)
+      .single();
+
+    if (!entityData) {
+      toast({ title: "Error", description: "Could not determine tenant", variant: "destructive" });
+      setAddingRel(false);
+      return;
+    }
+
+    const insertData: Record<string, unknown> = {
+      from_entity_id: entity.id,
+      to_entity_id: newRelTarget,
+      relationship_type: newRelType,
+      tenant_id: entityData.tenant_id,
+      source: "manual",
+    };
+
+    if (OWNERSHIP_REL_TYPES.has(newRelType)) {
+      if (newRelOwnershipPercent) insertData.ownership_percent = parseFloat(newRelOwnershipPercent);
+      if (newRelOwnershipUnits) insertData.ownership_units = parseFloat(newRelOwnershipUnits);
+      if (newRelOwnershipClass) insertData.ownership_class = newRelOwnershipClass;
+    }
+
+    const { data: newRel, error } = await supabase
+      .from("relationships")
+      .insert(insertData as any)
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error("Add relationship failed:", error);
+      toast({ title: "Failed to add relationship", description: error.message, variant: "destructive" });
+    } else if (newRel) {
+      // Link to structure
+      const { error: linkError } = await supabase
+        .from("structure_relationships")
+        .insert({ structure_id: structureId, relationship_id: newRel.id });
+
+      if (linkError) {
+        console.error("Failed to link relationship to structure:", linkError);
+      }
+
+      toast({ title: "Relationship added" });
+      setShowAddRel(false);
+      setNewRelTarget("");
+      setNewRelType("");
+      setNewRelOwnershipPercent("");
+      setNewRelOwnershipUnits("");
+      setNewRelOwnershipClass("");
+      onEntityUpdated();
+    }
+    setAddingRel(false);
+  };
+
   return (
     <div className="absolute right-0 top-0 z-10 flex h-full w-80 flex-col border-l bg-card shadow-lg">
       <div className="flex items-center justify-between border-b p-4">
@@ -110,13 +191,9 @@ export default function EntityDetailPanel({
             <div>
               <Label className="text-xs">Entity Type</Label>
               <Select value={editType} onValueChange={(v) => { setEditType(v); if (v !== "Trust") setEditTrustSubtype(""); }}>
-                <SelectTrigger className="h-9 mt-1">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="h-9 mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {ENTITY_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
+                  {ENTITY_TYPES.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
                 </SelectContent>
               </Select>
             </div>
@@ -124,13 +201,9 @@ export default function EntityDetailPanel({
               <div>
                 <Label className="text-xs">Trust Subtype</Label>
                 <Select value={editTrustSubtype} onValueChange={setEditTrustSubtype}>
-                  <SelectTrigger className="h-9 mt-1">
-                    <SelectValue placeholder="Select subtype" />
-                  </SelectTrigger>
+                  <SelectTrigger className="h-9 mt-1"><SelectValue placeholder="Select subtype" /></SelectTrigger>
                   <SelectContent>
-                    {TRUST_SUBTYPES.map((t) => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
+                    {TRUST_SUBTYPES.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
                   </SelectContent>
                 </Select>
               </div>
@@ -172,9 +245,69 @@ export default function EntityDetailPanel({
 
         {/* Relationships */}
         <div>
-          <p className="text-xs font-medium text-muted-foreground mb-2">
-            Relationships ({related.length})
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              Relationships ({related.length})
+            </p>
+            {!showAddRel && (
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs gap-1" onClick={() => setShowAddRel(true)}>
+                <Plus className="h-3 w-3" /> Add
+              </Button>
+            )}
+          </div>
+
+          {/* Add relationship form */}
+          {showAddRel && (
+            <div className="rounded-md border p-3 space-y-2 mb-3">
+              <div>
+                <Label className="text-xs">Target Entity</Label>
+                <Select value={newRelTarget} onValueChange={setNewRelTarget}>
+                  <SelectTrigger className="h-8 mt-1 text-xs"><SelectValue placeholder="Select entity" /></SelectTrigger>
+                  <SelectContent>
+                    {otherEntities.map((e) => (
+                      <SelectItem key={e.id} value={e.id} className="text-xs">{e.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Type</Label>
+                <Select value={newRelType} onValueChange={setNewRelType}>
+                  <SelectTrigger className="h-8 mt-1 text-xs"><SelectValue placeholder="Select type" /></SelectTrigger>
+                  <SelectContent>
+                    {RELATIONSHIP_TYPES.map((t) => (
+                      <SelectItem key={t} value={t} className="text-xs">{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {OWNERSHIP_REL_TYPES.has(newRelType) && (
+                <>
+                  <div>
+                    <Label className="text-xs">Ownership %</Label>
+                    <Input type="number" value={newRelOwnershipPercent} onChange={(e) => setNewRelOwnershipPercent(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. 50" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Units</Label>
+                    <Input type="number" value={newRelOwnershipUnits} onChange={(e) => setNewRelOwnershipUnits(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. 100" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Class</Label>
+                    <Input value={newRelOwnershipClass} onChange={(e) => setNewRelOwnershipClass(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. Ordinary" />
+                  </div>
+                </>
+              )}
+              <div className="flex gap-2 pt-1">
+                <Button size="sm" className="flex-1 h-7 text-xs" onClick={handleAddRelationship} disabled={addingRel || !newRelTarget || !newRelType}>
+                  {addingRel ? "Adding..." : "Add"}
+                </Button>
+                <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => setShowAddRel(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             {related.length === 0 && (
               <p className="text-xs text-muted-foreground">No relationships</p>
