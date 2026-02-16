@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles } from "lucide-react";
+import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles, AlertTriangle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -13,6 +13,7 @@ import RelationshipDetailPanel from "@/components/structure/RelationshipDetailPa
 import RelationshipLegend from "@/components/structure/RelationshipLegend";
 import ExportMenu from "@/components/structure/ExportMenu";
 import ExportBlockedBanner from "@/components/structure/ExportBlockedBanner";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import OnboardingTooltips from "@/components/structure/OnboardingTooltips";
 import AiAssistantPanel from "@/components/structure/AiAssistantPanel";
 
@@ -20,7 +21,7 @@ export type ViewMode = "ownership" | "control" | "full";
 
 export default function StructureView() {
   const { id } = useParams();
-  const { entities, relationships, structureName, loading, reload } = useStructureData(id);
+  const { entities, relationships, structureName, loading, reload, ownershipValidation } = useStructureData(id);
   const { toast } = useToast();
   const { showOnboarding, dismiss: dismissOnboarding } = useOnboarding();
 
@@ -184,6 +185,25 @@ export default function StructureView() {
 
       {/* Export blocked banner */}
       <ExportBlockedBanner entities={entities} />
+
+      {/* Ownership validation banners */}
+      {ownershipValidation.errors.map((e) => (
+        <Alert key={e.entityId} variant="destructive" className="flex items-center gap-2 py-2 px-3 mt-1">
+          <XCircle className="h-4 w-4 shrink-0" />
+          <AlertDescription className="text-xs">
+            <strong>{e.entityName}</strong>: ownership totals {e.total}% (exceeds 100%)
+          </AlertDescription>
+        </Alert>
+      ))}
+      {ownershipValidation.warnings.map((w) => (
+        <Alert key={w.entityId} className="flex items-center gap-2 py-2 px-3 mt-1 border-destructive/30 text-muted-foreground">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <AlertDescription className="text-xs">
+            <strong>{w.entityName}</strong>: ownership totals {w.total}%
+            {w.missing > 0 ? ` (${w.missing} shareholder(s) missing %)` : " (does not sum to 100%)"}
+          </AlertDescription>
+        </Alert>
+      ))}
 
       {/* Graph + Panel */}
       <div className="relative mt-3 flex-1 rounded-lg border bg-card overflow-hidden">
