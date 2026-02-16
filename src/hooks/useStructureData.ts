@@ -1,19 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
-
-export interface OwnershipError { entityId: string; entityName: string; total: number }
-export interface OwnershipWarning { entityId: string; entityName: string; total: number; missing: number }
-export interface OwnershipValidation { errors: OwnershipError[]; warnings: OwnershipWarning[]; infoOnly: string[] }
-
-export interface EntityIssue {
-  entity_id: string;
-  entity_name: string;
-  issue_type: "missing_trustee" | "missing_member" | "missing_shareholder";
-  severity: "error" | "warning";
-  message: string;
-}
 import { supabase } from "@/integrations/supabase/client";
 
-export interface OwnershipCycle { entityNames: string[] }
+// ── Types ──────────────────────────────────────────────────────────
 
 export interface EntityNode {
   id: string;
@@ -39,7 +27,31 @@ export interface RelationshipEdge {
   created_at: string;
 }
 
+export interface ValidationIssue {
+  code: string;
+  severity: "error" | "warning" | "info";
+  message: string;
+  entity_id?: string;
+  entity_name?: string;
+  relationship_id?: string;
+  details?: any;
+}
+
+export interface StructureHealth {
+  score: number;
+  status: "good" | "warning" | "critical";
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
+  info: ValidationIssue[];
+}
+
+// ── Constants ──────────────────────────────────────────────────────
+
 const FAMILY_TYPES = new Set(["spouse", "parent", "child"]);
+const OWNERSHIP_VIEW_TYPES = new Set(["shareholder", "beneficiary", "partner", "member"]);
+const CONTROL_VIEW_TYPES = new Set(["director", "trustee", "appointer", "settlor"]);
+
+// ── Hook: useStructureData ─────────────────────────────────────────
 
 export function useStructureData(structureId: string | undefined) {
   const [entities, setEntities] = useState<EntityNode[]>([]);
@@ -118,11 +130,16 @@ export function useStructureData(structureId: string | undefined) {
     load();
   }, [structureId, version]);
 
-  const ownershipValidation = useMemo<OwnershipValidation>(() => {
-    const errors: OwnershipError[] = [];
-    const warnings: OwnershipWarning[] = [];
-    const infoOnly: string[] = [];
+  // ── Compute unified StructureHealth ─────────────────────────────
 
+  const structureHealth = useMemo<StructureHealth>(() => {
+    const errors: ValidationIssue[] = [];
+    const warnings: ValidationIssue[] = [];
+    const info: ValidationIssue[] = [];
+
+    const entityMap = new Map(entities.map((e) => [e.id, e]));
+
+    // --- A) Ownership % checks ---
     const byCompany = new Map<string, RelationshipEdge[]>();
     for (const rel of relationships) {
       if (rel.relationship_type !== "shareholder") continue;
@@ -131,109 +148,98 @@ export function useStructureData(structureId: string | undefined) {
       byCompany.set(rel.to_entity_id, arr);
     }
 
-    const entityMap = new Map(entities.map((e) => [e.id, e]));
-
     for (const [companyId, rels] of byCompany) {
       const withPercent = rels.filter((r) => r.ownership_percent != null);
       const withoutPercent = rels.filter((r) => r.ownership_percent == null);
       const companyName = entityMap.get(companyId)?.name ?? companyId;
 
       if (withPercent.length === 0) {
-        infoOnly.push(companyName);
+        info.push({
+          code: "ownership_no_percent",
+          severity: "info",
+          message: `"${companyName}" has shareholders but no ownership % recorded`,
+          entity_id: companyId,
+          entity_name: companyName,
+        });
         continue;
       }
 
       const total = Math.round(withPercent.reduce((s, r) => s + (r.ownership_percent ?? 0), 0) * 100) / 100;
 
       if (withoutPercent.length > 0) {
-        warnings.push({ entityId: companyId, entityName: companyName, total, missing: withoutPercent.length });
+        warnings.push({
+          code: "ownership_incomplete",
+          severity: "warning",
+          message: `"${companyName}": ownership data incomplete — ${withoutPercent.length} shareholder(s) missing %`,
+          entity_id: companyId,
+          entity_name: companyName,
+          details: { total, missing: withoutPercent.length },
+        });
       } else if (total > 100) {
-        errors.push({ entityId: companyId, entityName: companyName, total });
+        errors.push({
+          code: "ownership_exceeds",
+          severity: "error",
+          message: `"${companyName}": ownership totals ${total}% (exceeds 100%)`,
+          entity_id: companyId,
+          entity_name: companyName,
+          details: { total },
+        });
       } else if (total < 100) {
-        warnings.push({ entityId: companyId, entityName: companyName, total, missing: 0 });
+        warnings.push({
+          code: "ownership_under",
+          severity: "warning",
+          message: `"${companyName}": ownership totals ${total}% (does not sum to 100%)`,
+          entity_id: companyId,
+          entity_name: companyName,
+          details: { total },
+        });
       }
     }
 
-    if (errors.length || warnings.length) {
-      console.log("[Ownership Validation]", { errors, warnings, infoOnly });
-    }
-
-    return { errors, warnings, infoOnly };
-  }, [entities, relationships]);
-
-  const entityIntegrity = useMemo<EntityIssue[]>(() => {
-    const issues: EntityIssue[] = [];
-
-    // Build lookup: entity_id -> set of inbound relationship types (where entity is to_entity)
+    // --- B) Required relationship checks ---
     const inboundTypes = new Map<string, Set<string>>();
     for (const rel of relationships) {
       const s = inboundTypes.get(rel.to_entity_id) ?? new Set();
       s.add(rel.relationship_type);
       inboundTypes.set(rel.to_entity_id, s);
     }
-    // Also check from_entity side for trustee (trustee points FROM entity TO trust)
-    const outboundTypes = new Map<string, Set<string>>();
-    for (const rel of relationships) {
-      const s = outboundTypes.get(rel.from_entity_id) ?? new Set();
-      s.add(rel.relationship_type);
-      outboundTypes.set(rel.from_entity_id, s);
-    }
 
     for (const entity of entities) {
       const t = entity.entity_type;
       const inbound = inboundTypes.get(entity.id) ?? new Set();
-      const outbound = outboundTypes.get(entity.id) ?? new Set();
 
-      // Trusts must have at least one trustee relationship pointing to them
-      if (t.startsWith("trust_") || t === "Trust") {
-        if (!inbound.has("trustee")) {
-          issues.push({
-            entity_id: entity.id,
-            entity_name: entity.name,
-            issue_type: "missing_trustee",
-            severity: "error",
-            message: `Trust "${entity.name}" has no trustee assigned`,
-          });
-        }
+      if ((t.startsWith("trust_") || t === "Trust") && !inbound.has("trustee")) {
+        errors.push({
+          code: "missing_trustee",
+          severity: "error",
+          message: `Trust "${entity.name}" has no trustee assigned`,
+          entity_id: entity.id,
+          entity_name: entity.name,
+        });
       }
 
-      // SMSF must have at least one member
-      if (t === "smsf") {
-        if (!inbound.has("member")) {
-          issues.push({
-            entity_id: entity.id,
-            entity_name: entity.name,
-            issue_type: "missing_member",
-            severity: "error",
-            message: `SMSF "${entity.name}" has no members assigned`,
-          });
-        }
+      if (t === "smsf" && !inbound.has("member")) {
+        errors.push({
+          code: "missing_member",
+          severity: "error",
+          message: `SMSF "${entity.name}" has no members assigned`,
+          entity_id: entity.id,
+          entity_name: entity.name,
+        });
       }
 
-      // Company must have at least one shareholder
-      if (t === "Company") {
-        if (!inbound.has("shareholder")) {
-          issues.push({
-            entity_id: entity.id,
-            entity_name: entity.name,
-            issue_type: "missing_shareholder",
-            severity: "warning",
-            message: `Company "${entity.name}" has no shareholders`,
-          });
-        }
+      if (t === "Company" && !inbound.has("shareholder")) {
+        warnings.push({
+          code: "missing_shareholder",
+          severity: "warning",
+          message: `Company "${entity.name}" has no shareholders`,
+          entity_id: entity.id,
+          entity_name: entity.name,
+        });
       }
     }
 
-    if (issues.length) {
-      console.log("[Entity Integrity]", issues);
-    }
-
-    return issues;
-  }, [entities, relationships]);
-
-  // Circular ownership detection via DFS
-  const ownershipCycles = useMemo<OwnershipCycle[]>(() => {
-    // Build adjacency list from shareholder relationships (from_entity owns to_entity)
+    // --- C) Circular ownership ---
     const adj = new Map<string, string[]>();
     for (const rel of relationships) {
       if (rel.relationship_type !== "shareholder") continue;
@@ -242,37 +248,35 @@ export function useStructureData(structureId: string | undefined) {
       adj.set(rel.from_entity_id, arr);
     }
 
-    const entityMap = new Map(entities.map((e) => [e.id, e.name]));
     const visited = new Set<string>();
     const inStack = new Set<string>();
     const stack: string[] = [];
-    const cycles: OwnershipCycle[] = [];
     const reportedSets = new Set<string>();
 
     function dfs(node: string) {
       if (inStack.has(node)) {
-        // Extract cycle from stack
         const cycleStart = stack.indexOf(node);
         const cycleIds = stack.slice(cycleStart);
         const key = [...cycleIds].sort().join(",");
         if (!reportedSets.has(key)) {
           reportedSets.add(key);
-          cycles.push({
-            entityNames: cycleIds.map((id) => entityMap.get(id) ?? id),
+          const names = cycleIds.map((id) => entityMap.get(id)?.name ?? id);
+          errors.push({
+            code: "circular_ownership",
+            severity: "error",
+            message: `Circular ownership: ${names.join(" → ")} → ${names[0]}`,
+            entity_id: cycleIds[0],
+            entity_name: names[0],
+            details: { cycle: cycleIds },
           });
         }
         return;
       }
       if (visited.has(node)) return;
-
       visited.add(node);
       inStack.add(node);
       stack.push(node);
-
-      for (const neighbor of adj.get(node) ?? []) {
-        dfs(neighbor);
-      }
-
+      for (const neighbor of adj.get(node) ?? []) dfs(neighbor);
       stack.pop();
       inStack.delete(node);
     }
@@ -281,18 +285,45 @@ export function useStructureData(structureId: string | undefined) {
       if (!visited.has(nodeId)) dfs(nodeId);
     }
 
-    if (cycles.length) {
-      console.log("[Circular Ownership]", cycles);
+    // --- D) Unclassified entities ---
+    for (const entity of entities) {
+      if (entity.entity_type === "Unclassified") {
+        warnings.push({
+          code: "unclassified",
+          severity: "warning",
+          message: `"${entity.name}" is unclassified — resolve via Review & Fix`,
+          entity_id: entity.id,
+          entity_name: entity.name,
+        });
+      }
     }
 
-    return cycles;
+    // --- Score calculation ---
+    const errorDeduction = errors.length * 25;
+    const warningDeduction = warnings.length * 10;
+    const infoDeduction = info.length * 2;
+    const score = Math.max(0, 100 - errorDeduction - warningDeduction - infoDeduction);
+
+    let status: StructureHealth["status"];
+    if (errors.length > 0 || score < 60) {
+      status = "critical";
+    } else if (warnings.length > 0 || score < 85) {
+      status = "warning";
+    } else {
+      status = "good";
+    }
+
+    if (errors.length || warnings.length) {
+      console.log("[Structure Health]", { score, status, errors, warnings, info });
+    }
+
+    return { score, status, errors, warnings, info };
   }, [entities, relationships]);
 
-  return { entities, relationships, structureName, loading, reload, ownershipValidation, entityIntegrity, ownershipCycles };
+  return { entities, relationships, structureName, loading, reload, structureHealth };
 }
 
-const OWNERSHIP_VIEW_TYPES = new Set(["shareholder", "beneficiary", "partner", "member"]);
-const CONTROL_VIEW_TYPES = new Set(["director", "trustee", "appointer", "settlor"]);
+// ── Hook: useFilteredGraph ─────────────────────────────────────────
 
 export function useFilteredGraph(
   entities: EntityNode[],
@@ -309,7 +340,6 @@ export function useFilteredGraph(
   return useMemo(() => {
     const { search, showFamily, filterRelType, depth, selectedEntityId, viewMode } = options;
 
-    // Filter relationships by view mode first
     let filteredRels = relationships.filter((r) => {
       if (viewMode === "ownership" && !OWNERSHIP_VIEW_TYPES.has(r.relationship_type)) return false;
       if (viewMode === "control" && !CONTROL_VIEW_TYPES.has(r.relationship_type)) return false;
@@ -318,7 +348,6 @@ export function useFilteredGraph(
       return true;
     });
 
-    // If an entity is selected, do BFS for depth hops
     let visibleEntityIds: Set<string>;
     if (selectedEntityId) {
       visibleEntityIds = new Set<string>();
@@ -343,7 +372,6 @@ export function useFilteredGraph(
       visibleEntityIds = new Set(entities.map((e) => e.id));
     }
 
-    // Search filter
     let visibleEntities = entities.filter((e) => visibleEntityIds.has(e.id));
     if (search) {
       const q = search.toLowerCase();
@@ -365,4 +393,82 @@ export function useFilteredGraph(
 
     return { visibleEntities, visibleRelationships: filteredRels };
   }, [entities, relationships, options.search, options.showFamily, options.filterRelType, options.depth, options.selectedEntityId, options.viewMode]);
+}
+
+// ── Standalone health computation for list page ────────────────────
+
+export function computeStructureHealth(
+  entities: EntityNode[],
+  relationships: RelationshipEdge[]
+): Pick<StructureHealth, "score" | "status"> {
+  let errorCount = 0;
+  let warningCount = 0;
+  let infoCount = 0;
+
+  const entityMap = new Map(entities.map((e) => [e.id, e]));
+
+  // Ownership checks
+  const byCompany = new Map<string, RelationshipEdge[]>();
+  for (const rel of relationships) {
+    if (rel.relationship_type !== "shareholder") continue;
+    const arr = byCompany.get(rel.to_entity_id) ?? [];
+    arr.push(rel);
+    byCompany.set(rel.to_entity_id, arr);
+  }
+  for (const [, rels] of byCompany) {
+    const withPercent = rels.filter((r) => r.ownership_percent != null);
+    const withoutPercent = rels.filter((r) => r.ownership_percent == null);
+    if (withPercent.length === 0) { infoCount++; continue; }
+    const total = Math.round(withPercent.reduce((s, r) => s + (r.ownership_percent ?? 0), 0) * 100) / 100;
+    if (withoutPercent.length > 0) warningCount++;
+    else if (total > 100) errorCount++;
+    else if (total < 100) warningCount++;
+  }
+
+  // Required relationships
+  const inboundTypes = new Map<string, Set<string>>();
+  for (const rel of relationships) {
+    const s = inboundTypes.get(rel.to_entity_id) ?? new Set();
+    s.add(rel.relationship_type);
+    inboundTypes.set(rel.to_entity_id, s);
+  }
+  for (const entity of entities) {
+    const t = entity.entity_type;
+    const inbound = inboundTypes.get(entity.id) ?? new Set();
+    if ((t.startsWith("trust_") || t === "Trust") && !inbound.has("trustee")) errorCount++;
+    if (t === "smsf" && !inbound.has("member")) errorCount++;
+    if (t === "Company" && !inbound.has("shareholder")) warningCount++;
+    if (t === "Unclassified") warningCount++;
+  }
+
+  // Circular ownership (quick DFS)
+  const adj = new Map<string, string[]>();
+  for (const rel of relationships) {
+    if (rel.relationship_type !== "shareholder") continue;
+    const arr = adj.get(rel.from_entity_id) ?? [];
+    arr.push(rel.to_entity_id);
+    adj.set(rel.from_entity_id, arr);
+  }
+  const visited = new Set<string>();
+  const inStack = new Set<string>();
+  let hasCycle = false;
+  function dfs(node: string) {
+    if (hasCycle) return;
+    if (inStack.has(node)) { hasCycle = true; return; }
+    if (visited.has(node)) return;
+    visited.add(node);
+    inStack.add(node);
+    for (const n of adj.get(node) ?? []) dfs(n);
+    inStack.delete(node);
+  }
+  for (const nodeId of adj.keys()) { if (!visited.has(nodeId)) dfs(nodeId); }
+  if (hasCycle) errorCount++;
+
+  const score = Math.max(0, 100 - errorCount * 25 - warningCount * 10 - infoCount * 2);
+  let status: StructureHealth["status"];
+  if (errorCount > 0 || score < 60) status = "critical";
+  else if (warningCount > 0 || score < 85) status = "warning";
+  else status = "good";
+
+  return { score, status };
 }
