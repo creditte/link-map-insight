@@ -2,6 +2,8 @@ import { useState } from "react";
 import { X, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -12,6 +14,8 @@ const RELATIONSHIP_TYPES = [
   "director", "shareholder", "beneficiary", "trustee",
   "appointer", "settlor", "partner", "member", "spouse", "parent", "child",
 ] as const;
+
+const OWNERSHIP_REL_TYPES = new Set(["shareholder", "beneficiary", "partner", "member"]);
 
 interface Props {
   relationship: RelationshipEdge;
@@ -28,15 +32,29 @@ export default function RelationshipDetailPanel({ relationship, allEntities, onC
 
   const [editing, setEditing] = useState(false);
   const [editType, setEditType] = useState(relationship.relationship_type);
+  const [editPercent, setEditPercent] = useState(relationship.ownership_percent?.toString() ?? "");
+  const [editUnits, setEditUnits] = useState(relationship.ownership_units?.toString() ?? "");
+  const [editClass, setEditClass] = useState(relationship.ownership_class ?? "");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const handleSave = async () => {
+    const pctVal = editPercent ? parseFloat(editPercent) : null;
+    if (pctVal != null && (pctVal < 0 || pctVal > 100)) {
+      toast({ title: "Invalid percentage", description: "Must be between 0 and 100", variant: "destructive" });
+      return;
+    }
     setSaving(true);
+    const updates: Record<string, unknown> = { relationship_type: editType };
+    if (OWNERSHIP_REL_TYPES.has(editType)) {
+      updates.ownership_percent = pctVal;
+      updates.ownership_units = editUnits ? parseFloat(editUnits) : null;
+      updates.ownership_class = editClass || null;
+    }
     const { error } = await supabase
       .from("relationships")
-      .update({ relationship_type: editType as any })
+      .update(updates as any)
       .eq("id", relationship.id);
     if (error) {
       console.error("Relationship update failed:", error);
@@ -73,7 +91,7 @@ export default function RelationshipDetailPanel({ relationship, allEntities, onC
         <div className="flex items-center gap-1">
           {!editing && (
             <>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditType(relationship.relationship_type); }}>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditType(relationship.relationship_type); setEditPercent(relationship.ownership_percent?.toString() ?? ""); setEditUnits(relationship.ownership_units?.toString() ?? ""); setEditClass(relationship.ownership_class ?? ""); }}>
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
               <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setConfirmDelete(true)}>
@@ -124,6 +142,47 @@ export default function RelationshipDetailPanel({ relationship, allEntities, onC
             <Badge variant="secondary" className="text-xs">{relationship.relationship_type}</Badge>
           )}
         </div>
+
+        {/* Ownership fields */}
+        {OWNERSHIP_REL_TYPES.has(editing ? editType : relationship.relationship_type) && (
+          editing ? (
+            <>
+              <div>
+                <Label className="text-xs">Ownership %</Label>
+                <Input type="number" min={0} max={100} value={editPercent} onChange={(e) => setEditPercent(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. 50" />
+              </div>
+              <div>
+                <Label className="text-xs">Units</Label>
+                <Input type="number" value={editUnits} onChange={(e) => setEditUnits(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. 100" />
+              </div>
+              <div>
+                <Label className="text-xs">Class</Label>
+                <Input value={editClass} onChange={(e) => setEditClass(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. Ordinary" />
+              </div>
+            </>
+          ) : (
+            <>
+              {relationship.ownership_percent != null && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Ownership %</p>
+                  <p className="text-sm">{relationship.ownership_percent}%</p>
+                </div>
+              )}
+              {relationship.ownership_units != null && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Units</p>
+                  <p className="text-sm">{relationship.ownership_units}</p>
+                </div>
+              )}
+              {relationship.ownership_class && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Class</p>
+                  <p className="text-sm">{relationship.ownership_class}</p>
+                </div>
+              )}
+            </>
+          )
+        )}
 
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-1">To</p>

@@ -85,6 +85,11 @@ export default function EntityDetailPanel({
 
   const handleAddRelationship = async () => {
     if (!newRelTarget || !newRelType) return;
+    const pctVal = newRelOwnershipPercent ? parseFloat(newRelOwnershipPercent) : null;
+    if (pctVal != null && (pctVal < 0 || pctVal > 100)) {
+      toast({ title: "Invalid percentage", description: "Must be between 0 and 100", variant: "destructive" });
+      return;
+    }
     setAddingRel(true);
 
     const { data: entityData } = await supabase
