@@ -62,6 +62,10 @@ export function useStructureData(structureId: string | undefined) {
   const [version, setVersion] = useState(0);
   const [layoutMode, setLayoutModeState] = useState<LayoutStrategy>("auto");
   const [nodePositions, setNodePositions] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const [isScenario, setIsScenario] = useState(false);
+  const [scenarioLabel, setScenarioLabel] = useState<string | null>(null);
+  const [parentStructureId, setParentStructureId] = useState<string | null>(null);
+  const [parentStructureName, setParentStructureName] = useState<string | null>(null);
 
   const reload = () => setVersion((v) => v + 1);
 
@@ -73,11 +77,27 @@ export function useStructureData(structureId: string | undefined) {
 
       const { data: struct } = await supabase
         .from("structures")
-        .select("name, layout_mode")
+        .select("name, layout_mode, is_scenario, scenario_label, parent_structure_id")
         .eq("id", structureId)
         .single();
       setStructureName(struct?.name ?? "");
       setLayoutModeState((struct?.layout_mode as LayoutStrategy) ?? "auto");
+      setIsScenario(!!(struct as any)?.is_scenario);
+      setScenarioLabel((struct as any)?.scenario_label ?? null);
+      const parentId = (struct as any)?.parent_structure_id ?? null;
+      setParentStructureId(parentId);
+
+      // Fetch parent name if scenario
+      if (parentId) {
+        const { data: parent } = await supabase
+          .from("structures")
+          .select("name")
+          .eq("id", parentId)
+          .single();
+        setParentStructureName(parent?.name ?? null);
+      } else {
+        setParentStructureName(null);
+      }
 
       const { data: seRows } = await supabase
         .from("structure_entities")
@@ -427,7 +447,7 @@ export function useStructureData(structureId: string | undefined) {
     return { score, status, errors, warnings, info };
   }, [entities, relationships]);
 
-  return { entities, relationships, structureName, loading, reload, structureHealth, layoutMode, nodePositions, setLayoutMode, saveNodePositions, clearNodePositions };
+  return { entities, relationships, structureName, loading, reload, structureHealth, layoutMode, nodePositions, setLayoutMode, saveNodePositions, clearNodePositions, isScenario, scenarioLabel, parentStructureId, parentStructureName };
 }
 
 // ── Hook: useFilteredGraph ─────────────────────────────────────────

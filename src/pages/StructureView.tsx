@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles, MousePointer, Grid3x3 } from "lucide-react";
+import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles, MousePointer, Grid3x3, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,6 +20,7 @@ import OnboardingTooltips from "@/components/structure/OnboardingTooltips";
 import AiAssistantPanel from "@/components/structure/AiAssistantPanel";
 import CreateSnapshotDialog from "@/components/structure/CreateSnapshotDialog";
 import SnapshotSelector from "@/components/structure/SnapshotSelector";
+import CreateScenarioDialog from "@/components/structure/CreateScenarioDialog";
 
 export type ViewMode = "ownership" | "control" | "full";
 
@@ -29,6 +30,7 @@ export default function StructureView() {
     entities, relationships, structureName, loading, reload, structureHealth,
     layoutMode: dbLayoutMode, nodePositions, setLayoutMode: setDbLayoutMode,
     saveNodePositions, clearNodePositions,
+    isScenario, scenarioLabel, parentStructureId, parentStructureName,
   } = useStructureData(id);
   const { toast } = useToast();
   const { showOnboarding, dismiss: dismissOnboarding } = useOnboarding();
@@ -189,6 +191,16 @@ export default function StructureView() {
           <Link to="/structures"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <h1 className="text-lg font-bold tracking-tight">{structureName}</h1>
+        {isScenario && (
+          <Badge variant="secondary" className="gap-1 text-xs">
+            <Copy className="h-3 w-3" /> Scenario
+          </Badge>
+        )}
+        {isScenario && parentStructureId && parentStructureName && (
+          <Link to={`/structures/${parentStructureId}`} className="text-xs text-muted-foreground hover:underline">
+            Based on: {parentStructureName}
+          </Link>
+        )}
         <span className="text-xs text-muted-foreground">
           {displayEntities.length} entities · {displayRelationships.length} relationships
         </span>
@@ -278,12 +290,27 @@ export default function StructureView() {
             </Button>
           )}
 
-          {/* Snapshot controls */}
+          {/* Scenario + Snapshot controls */}
+          {!isViewingSnapshot && id && (
+            <CreateScenarioDialog
+              sourceStructureId={id}
+              structureName={structureName}
+            />
+          )}
+
           {!isViewingSnapshot && id && (
             <CreateSnapshotDialog
               structureId={id}
               structureName={structureName}
               onCreated={reloadSnapshots}
+            />
+          )}
+
+          {isViewingSnapshot && activeSnapshotId && (
+            <CreateScenarioDialog
+              snapshotId={activeSnapshotId}
+              structureName={activeSnapshot?.name ?? structureName}
+              triggerLabel="Scenario from Snapshot"
             />
           )}
 
@@ -301,6 +328,8 @@ export default function StructureView() {
             structureName={structureName}
             snapshotName={activeSnapshot?.name}
             snapshotCreatedAt={activeSnapshot?.created_at}
+            isScenario={isScenario}
+            scenarioLabel={scenarioLabel ?? undefined}
           />
         </div>
       </div>

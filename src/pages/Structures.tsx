@@ -18,7 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, Network, Trash2, RotateCcw, History } from "lucide-react";
+import { Search, Network, Trash2, RotateCcw, History, Copy } from "lucide-react";
 import { HealthBadge } from "@/components/structure/StructureHealthPanel";
 import { computeStructureHealth, type EntityNode, type RelationshipEdge, type StructureHealth } from "@/hooks/useStructureData";
 import { getSnapshotCount } from "@/hooks/useSnapshots";
@@ -28,9 +28,13 @@ interface Structure {
   name: string;
   updated_at: string;
   deleted_at: string | null;
+  is_scenario: boolean;
+  scenario_label: string | null;
+  parent_structure_id: string | null;
 }
 
 type SortOption = "updated" | "name" | "health_asc" | "health_desc";
+type FilterOption = "all" | "live" | "scenarios";
 
 export default function Structures() {
   const { user } = useAuth();
@@ -43,6 +47,7 @@ export default function Structures() {
   const [deleteTarget, setDeleteTarget] = useState<Structure | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>("updated");
+  const [filterMode, setFilterMode] = useState<FilterOption>("all");
 
   const [healthMap, setHealthMap] = useState<Map<string, Pick<StructureHealth, "score" | "status">>>(new Map());
   const [snapshotCounts, setSnapshotCounts] = useState<Map<string, number>>(new Map());
@@ -51,7 +56,7 @@ export default function Structures() {
     setLoading(true);
     let query = supabase
       .from("structures")
-      .select("id, name, updated_at, deleted_at")
+      .select("id, name, updated_at, deleted_at, is_scenario, scenario_label, parent_structure_id")
       .order("updated_at", { ascending: false });
 
     if (!showDeleted) {
@@ -187,9 +192,15 @@ export default function Structures() {
   };
 
   const sorted = useMemo(() => {
-    const filtered = structures.filter((s) =>
+    let filtered = structures.filter((s) =>
       s.name.toLowerCase().includes(search.toLowerCase())
     );
+    // Apply scenario filter
+    if (filterMode === "live") {
+      filtered = filtered.filter((s) => !s.is_scenario);
+    } else if (filterMode === "scenarios") {
+      filtered = filtered.filter((s) => s.is_scenario);
+    }
     switch (sortBy) {
       case "name":
         return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
@@ -200,13 +211,23 @@ export default function Structures() {
       default:
         return filtered;
     }
-  }, [structures, search, sortBy, healthMap]);
+  }, [structures, search, sortBy, healthMap, filterMode]);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Structures</h1>
         <div className="flex items-center gap-2">
+          <Select value={filterMode} onValueChange={(v) => setFilterMode(v as FilterOption)}>
+            <SelectTrigger className="h-9 w-[130px] text-xs">
+              <SelectValue placeholder="Filter..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="live">Live only</SelectItem>
+              <SelectItem value="scenarios">Scenarios</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
             <SelectTrigger className="h-9 w-[160px] text-xs">
               <SelectValue placeholder="Sort by..." />
@@ -282,6 +303,11 @@ export default function Structures() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <p className="font-medium truncate">{s.name}</p>
+                            {s.is_scenario && (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0 gap-0.5">
+                                <Copy className="h-2.5 w-2.5" /> Scenario
+                              </Badge>
+                            )}
                             {health && <HealthBadge score={health.score} status={health.status} />}
                           </div>
                           <div className="flex items-center gap-2">

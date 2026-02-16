@@ -26,9 +26,11 @@ interface Props {
   structureName: string;
   snapshotName?: string;
   snapshotCreatedAt?: string;
+  isScenario?: boolean;
+  scenarioLabel?: string;
 }
 
-export default function ExportMenu({ graphRef, entities, relationships, structureName, snapshotName, snapshotCreatedAt }: Props) {
+export default function ExportMenu({ graphRef, entities, relationships, structureName, snapshotName, snapshotCreatedAt, isScenario, scenarioLabel }: Props) {
   const { toast } = useToast();
   const { user } = useAuth();
   const [exporting, setExporting] = useState(false);
@@ -67,7 +69,7 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
     return el;
   };
 
-  const meta = { userName, tenantName, logoUrl: logoUrl ?? undefined, snapshotName, snapshotCreatedAt };
+  const meta = { userName, tenantName, logoUrl: logoUrl ?? undefined, snapshotName, snapshotCreatedAt, isScenario, scenarioLabel };
 
   return (
     <DropdownMenu>

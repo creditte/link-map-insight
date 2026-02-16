@@ -666,8 +666,11 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           id: string
+          is_scenario: boolean
           layout_mode: Database["public"]["Enums"]["layout_mode"]
           name: string
+          parent_structure_id: string | null
+          scenario_label: string | null
           tenant_id: string
           updated_at: string
         }
@@ -675,8 +678,11 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           id?: string
+          is_scenario?: boolean
           layout_mode?: Database["public"]["Enums"]["layout_mode"]
           name: string
+          parent_structure_id?: string | null
+          scenario_label?: string | null
           tenant_id: string
           updated_at?: string
         }
@@ -684,12 +690,22 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           id?: string
+          is_scenario?: boolean
           layout_mode?: Database["public"]["Enums"]["layout_mode"]
           name?: string
+          parent_structure_id?: string | null
+          scenario_label?: string | null
           tenant_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "structures_parent_structure_id_fkey"
+            columns: ["parent_structure_id"]
+            isOneToOne: false
+            referencedRelation: "structures"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "structures_tenant_id_fkey"
             columns: ["tenant_id"]

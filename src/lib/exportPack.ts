@@ -113,6 +113,8 @@ export interface ExportMeta {
   logoUrl?: string;
   snapshotName?: string;
   snapshotCreatedAt?: string;
+  isScenario?: boolean;
+  scenarioLabel?: string;
 }
 
 export async function exportImage(
@@ -265,6 +267,9 @@ export async function exportPdf(
   pdf.setFontSize(9);
   pdf.setTextColor(100);
   const subtitleParts = [];
+  if (meta?.isScenario) {
+    subtitleParts.push(`Scenario${meta.scenarioLabel ? `: ${meta.scenarioLabel}` : ""}`);
+  }
   if (meta?.snapshotName) {
     subtitleParts.push(`Snapshot: ${meta.snapshotName}`);
     if (meta.snapshotCreatedAt) {
