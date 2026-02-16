@@ -128,6 +128,11 @@ export default function StructureView() {
         <span className="text-xs text-muted-foreground">
           {entities.length} entities · {relationships.length} relationships
         </span>
+        {dbLayoutMode === "manual" && (
+          <span className="inline-flex items-center rounded-full bg-accent px-2.5 py-0.5 text-xs font-medium text-accent-foreground">
+            Manual layout
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1">
           {/* View mode selector */}
           <Select value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>

@@ -314,6 +314,7 @@ function StructureGraphInner({
       onPaneClick={onPaneClick}
       onNodeDoubleClick={onNodeDoubleClick}
       nodeTypes={nodeTypes}
+      nodesDraggable={layoutStrategy === "manual"}
       fitView
       fitViewOptions={{ padding: 0.2 }}
       minZoom={0.2}
