@@ -23,8 +23,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CheckCircle, Merge, Loader2, AlertTriangle, Shield, Building2 } from "lucide-react";
+import { CheckCircle, Merge, Loader2, AlertTriangle, Shield, Building2, Undo2 } from "lucide-react";
 import { getEntityLabel } from "@/lib/entityTypes";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface DuplicateEntity {
   id: string;
@@ -32,22 +33,66 @@ interface DuplicateEntity {
   type: string;
   abn?: string | null;
   acn?: string | null;
+  xpm_uuid?: string | null;
   is_trustee_company?: boolean;
   is_operating_entity?: boolean;
   inbound_count?: number;
   outbound_count?: number;
+  updated_at?: string;
+  created_at?: string;
 }
+
+type ConfidenceLevel = "exact" | "high" | "medium";
 
 interface DuplicateGroup {
   normalizedName: string;
   similarity: number;
+  confidence: ConfidenceLevel;
   entities: DuplicateEntity[];
 }
 
 interface MergePreview {
   relationships_to_repoint: number;
   potential_collisions: number;
+  entities_to_delete: number;
 }
+
+function computeConfidence(entities: DuplicateEntity[], similarity: number): ConfidenceLevel {
+  // Check for exact identifier matches across any pair
+  for (let i = 0; i < entities.length; i++) {
+    for (let j = i + 1; j < entities.length; j++) {
+      const a = entities[i], b = entities[j];
+      if ((a.abn && b.abn && a.abn === b.abn) ||
+          (a.acn && b.acn && a.acn === b.acn) ||
+          (a.xpm_uuid && b.xpm_uuid && a.xpm_uuid === b.xpm_uuid)) {
+        return "exact";
+      }
+    }
+  }
+  if (similarity >= 90) return "high";
+  return "medium";
+}
+
+function pickSmartPrimary(entities: DuplicateEntity[]): string {
+  const scored = entities.map((e) => {
+    let score = 0;
+    if (e.abn || e.acn) score += 1000;
+    if (e.xpm_uuid) score += 500;
+    score += (e.inbound_count ?? 0) + (e.outbound_count ?? 0);
+    // Tiny tiebreaker: most recently updated
+    const ts = e.updated_at || e.created_at || "";
+    score += ts ? new Date(ts).getTime() / 1e15 : 0;
+    return { id: e.id, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].id;
+}
+
+const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; variant: "default" | "secondary" | "outline"; helper: string }> = {
+  exact: { label: "Exact match", variant: "default", helper: "Identifiers (ABN/ACN/XPM) match — very likely the same entity." },
+  high: { label: "High similarity", variant: "secondary", helper: "Names are ≥90% similar. Review before merging." },
+  medium: { label: "Medium similarity", variant: "outline", helper: "Names are 85–89% similar. Check carefully." },
+};
 
 export default function DuplicatesTab() {
   const { user } = useAuth();
@@ -109,9 +154,9 @@ export default function DuplicatesTab() {
     if (allEntityIds.size > 0) {
       const { data: entities } = await supabase
         .from("entities")
-        .select("id, name, entity_type, abn, acn, is_trustee_company, is_operating_entity")
-        .in("id", Array.from(allEntityIds))
-        .is("deleted_at", null);
+      .select("id, name, entity_type, abn, acn, xpm_uuid, is_trustee_company, is_operating_entity, updated_at, created_at")
+      .in("id", Array.from(allEntityIds))
+      .is("deleted_at", null);
 
       for (const e of entities ?? []) {
         entityDetails.set(e.id, e);
@@ -195,19 +240,24 @@ export default function DuplicatesTab() {
             type: e.entity_type,
             abn: e.abn,
             acn: e.acn,
+            xpm_uuid: e.xpm_uuid,
             is_trustee_company: e.is_trustee_company,
             is_operating_entity: e.is_operating_entity,
             inbound_count: e.inbound_count ?? 0,
             outbound_count: e.outbound_count ?? 0,
+            updated_at: e.updated_at,
+            created_at: e.created_at,
           };
         })
         .filter(Boolean) as DuplicateEntity[];
 
       if (ents.length < 2) continue;
 
+      const sim = Math.round(cluster.maxSimilarity * 100);
       result.push({
         normalizedName: ents[0].name,
-        similarity: Math.round(cluster.maxSimilarity * 100),
+        similarity: sim,
+        confidence: computeConfidence(ents, sim),
         entities: ents,
       });
     }
@@ -232,7 +282,7 @@ export default function DuplicatesTab() {
       return;
     }
     setMergeGroup(group);
-    setPrimaryId(group.entities[0].id);
+    setPrimaryId(pickSmartPrimary(group.entities));
     setMergePreview(null);
   };
 
@@ -243,7 +293,7 @@ export default function DuplicatesTab() {
 
     const duplicateIds = mergeGroup.entities.filter((e) => e.id !== primaryId).map((e) => e.id);
     if (duplicateIds.length === 0) {
-      setMergePreview({ relationships_to_repoint: 0, potential_collisions: 0 });
+      setMergePreview({ relationships_to_repoint: 0, potential_collisions: 0, entities_to_delete: 0 });
       setLoadingPreview(false);
       return;
     }
@@ -294,7 +344,7 @@ export default function DuplicatesTab() {
       }
     }
 
-    setMergePreview({ relationships_to_repoint: repoints, potential_collisions: collisions });
+    setMergePreview({ relationships_to_repoint: repoints, potential_collisions: collisions, entities_to_delete: duplicateIds.length });
     setLoadingPreview(false);
   }, [mergeGroup, primaryId]);
 
@@ -322,7 +372,17 @@ export default function DuplicatesTab() {
       const primaryName = mergeGroup.entities.find((e) => e.id === primaryId)?.name ?? "entity";
       toast({
         title: `Merged ${duplicateIds.length} ${duplicateIds.length === 1 ? "entity" : "entities"} into "${primaryName}"`,
-        description: `${data.relationships_repointed} relationships re-pointed, ${data.relationships_deduped} deduplicated.`,
+        description: `${data.relationships_repointed} re-pointed, ${data.relationships_deduped} deduplicated.`,
+        action: (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="sm" variant="outline" disabled className="gap-1 opacity-50">
+                <Undo2 className="h-3.5 w-3.5" /> Undo
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Undo is coming soon. Merges are currently final.</TooltipContent>
+          </Tooltip>
+        ),
       });
       setMergeGroup(null);
       loadDuplicates();
@@ -360,90 +420,99 @@ export default function DuplicatesTab() {
   }
 
   return (
-    <>
-      <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          {groups.length} potential duplicate {groups.length === 1 ? "group" : "groups"} detected.
-          Review and merge to keep your data clean.
-        </p>
+    <TooltipProvider>
+      <>
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            {groups.length} potential duplicate {groups.length === 1 ? "group" : "groups"} detected.
+            Review and merge to keep your data clean.
+          </p>
 
-        {groups.map((group, idx) => {
-          const types = new Set(group.entities.map((e) => e.type));
-          const crossType = types.size > 1;
+          {groups.map((group, idx) => {
+            const types = new Set(group.entities.map((e) => e.type));
+            const crossType = types.size > 1;
+            const conf = CONFIDENCE_CONFIG[group.confidence];
 
-          return (
-            <Card key={idx}>
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                      {group.entities.length} likely duplicates
-                    </Badge>
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                      {group.similarity}% match
-                    </Badge>
-                    {crossType && (
-                      <Badge variant="destructive" className="text-[10px] px-1.5 py-0 gap-1">
-                        <AlertTriangle className="h-2.5 w-2.5" />
-                        Mixed types
+            return (
+              <Card key={idx}>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                        {group.entities.length} likely duplicates
                       </Badge>
-                    )}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant={conf.variant} className="text-[10px] px-1.5 py-0 cursor-help">
+                            {conf.label}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[220px] text-xs">
+                          {conf.helper}
+                        </TooltipContent>
+                      </Tooltip>
+                      {crossType && (
+                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 gap-1">
+                          <AlertTriangle className="h-2.5 w-2.5" />
+                          Mixed types
+                        </Badge>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 gap-1.5"
+                      onClick={() => openMergeDialog(group)}
+                      disabled={crossType}
+                    >
+                      <Merge className="h-3.5 w-3.5" /> Merge
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0 gap-1.5"
-                    onClick={() => openMergeDialog(group)}
-                    disabled={crossType}
-                  >
-                    <Merge className="h-3.5 w-3.5" /> Merge
-                  </Button>
-                </div>
 
-                {/* Comparison table */}
-                <div className="rounded-md border overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="text-xs">Name</TableHead>
-                        <TableHead className="text-xs">Type</TableHead>
-                        <TableHead className="text-xs">ABN</TableHead>
-                        <TableHead className="text-xs">ACN</TableHead>
-                        <TableHead className="text-xs text-center">Trustee Co</TableHead>
-                        <TableHead className="text-xs text-center">Operating</TableHead>
-                        <TableHead className="text-xs text-right">Rels (in/out)</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {group.entities.map((e) => (
-                        <TableRow key={e.id}>
-                          <TableCell className="text-xs font-medium py-2">{e.name}</TableCell>
-                          <TableCell className="text-xs py-2">
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                              {getEntityLabel(e.type)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-xs py-2 font-mono">{e.abn || "—"}</TableCell>
-                          <TableCell className="text-xs py-2 font-mono">{e.acn || "—"}</TableCell>
-                          <TableCell className="text-xs py-2 text-center">
-                            {e.is_trustee_company ? <Shield className="h-3.5 w-3.5 text-primary mx-auto" /> : "—"}
-                          </TableCell>
-                          <TableCell className="text-xs py-2 text-center">
-                            {e.is_operating_entity ? <Building2 className="h-3.5 w-3.5 text-primary mx-auto" /> : "—"}
-                          </TableCell>
-                          <TableCell className="text-xs py-2 text-right">
-                            {e.inbound_count ?? 0} / {e.outbound_count ?? 0}
-                          </TableCell>
+                  {/* Comparison table */}
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Name</TableHead>
+                          <TableHead className="text-xs">Type</TableHead>
+                          <TableHead className="text-xs">ABN</TableHead>
+                          <TableHead className="text-xs">ACN</TableHead>
+                          <TableHead className="text-xs text-center">Trustee Co</TableHead>
+                          <TableHead className="text-xs text-center">Operating</TableHead>
+                          <TableHead className="text-xs text-right">Rels (in/out)</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+                      </TableHeader>
+                      <TableBody>
+                        {group.entities.map((e) => (
+                          <TableRow key={e.id}>
+                            <TableCell className="text-xs font-medium py-2">{e.name}</TableCell>
+                            <TableCell className="text-xs py-2">
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                {getEntityLabel(e.type)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs py-2 font-mono">{e.abn || "—"}</TableCell>
+                            <TableCell className="text-xs py-2 font-mono">{e.acn || "—"}</TableCell>
+                            <TableCell className="text-xs py-2 text-center">
+                              {e.is_trustee_company ? <Shield className="h-3.5 w-3.5 text-primary mx-auto" /> : "—"}
+                            </TableCell>
+                            <TableCell className="text-xs py-2 text-center">
+                              {e.is_operating_entity ? <Building2 className="h-3.5 w-3.5 text-primary mx-auto" /> : "—"}
+                            </TableCell>
+                            <TableCell className="text-xs py-2 text-right">
+                              {e.inbound_count ?? 0} / {e.outbound_count ?? 0}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
 
       {/* Merge Dialog */}
       <Dialog open={!!mergeGroup} onOpenChange={(open) => !open && setMergeGroup(null)}>
@@ -494,15 +563,26 @@ export default function DuplicatesTab() {
                     <Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculating...
                   </div>
                 ) : mergePreview ? (
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="text-muted-foreground">Relationships to re-point:</span>{" "}
-                      <span className="font-semibold">{mergePreview.relationships_to_repoint}</span>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <span className="text-muted-foreground">Re-point:</span>{" "}
+                        <span className="font-semibold">{mergePreview.relationships_to_repoint}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Dedupe:</span>{" "}
+                        <span className="font-semibold">{mergePreview.potential_collisions}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Soft-delete:</span>{" "}
+                        <span className="font-semibold">{mergePreview.entities_to_delete}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">Collisions to deduplicate:</span>{" "}
-                      <span className="font-semibold">{mergePreview.potential_collisions}</span>
-                    </div>
+                    {mergePreview.potential_collisions > 0 && (
+                      <p className="text-[10px] text-muted-foreground italic">
+                        Collisions will be deduplicated; ownership fields will be preserved (primary wins unless null).
+                      </p>
+                    )}
                   </div>
                 ) : null}
               </div>
@@ -535,6 +615,9 @@ export default function DuplicatesTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+
+      {/* Undo merge placeholder toast CTA — rendered as a disabled button in footer area */}
+      </> 
+    </TooltipProvider>
   );
 }
