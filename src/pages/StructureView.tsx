@@ -280,6 +280,7 @@ export default function StructureView() {
           <RelationshipDetailPanel
             relationship={selectedRelationship}
             allEntities={entities}
+            allRelationships={relationships}
             onClose={() => setSelectedEdgeId(null)}
             onUpdated={handleEntityUpdated}
           />

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Pencil, Trash2 } from "lucide-react";
+import { X, Pencil, Trash2, ArrowLeftRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { getEntityLabel } from "@/lib/entityTypes";
+import { isDirectionValid } from "@/lib/relationshipRules";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 
 const RELATIONSHIP_TYPES = [
@@ -20,11 +21,12 @@ const OWNERSHIP_REL_TYPES = new Set(["shareholder", "beneficiary", "partner", "m
 interface Props {
   relationship: RelationshipEdge;
   allEntities: EntityNode[];
+  allRelationships: RelationshipEdge[];
   onClose: () => void;
   onUpdated: () => void;
 }
 
-export default function RelationshipDetailPanel({ relationship, allEntities, onClose, onUpdated }: Props) {
+export default function RelationshipDetailPanel({ relationship, allEntities, allRelationships, onClose, onUpdated }: Props) {
   const { toast } = useToast();
   const entityMap = new Map(allEntities.map((e) => [e.id, e]));
   const fromEntity = entityMap.get(relationship.from_entity_id);
@@ -38,6 +40,8 @@ export default function RelationshipDetailPanel({ relationship, allEntities, onC
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmReverse, setConfirmReverse] = useState(false);
+  const [reversing, setReversing] = useState(false);
 
   const handleSave = async () => {
     const pctVal = editPercent ? parseFloat(editPercent) : null;
@@ -84,6 +88,95 @@ export default function RelationshipDetailPanel({ relationship, allEntities, onC
     setDeleting(false);
   };
 
+  // ── Reverse direction ───────────────────────────────────────────
+  const handleReverseClick = () => {
+    // 1) Check canonical direction rules
+    const reversedFromType = toEntity?.entity_type ?? "Unclassified";
+    const reversedToType = fromEntity?.entity_type ?? "Unclassified";
+
+    if (!isDirectionValid(relationship.relationship_type, reversedFromType, reversedToType)) {
+      toast({
+        title: "Cannot reverse",
+        description: "This relationship type has a required direction. Change the relationship type instead if needed.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 2) Check for duplicate
+    const duplicate = allRelationships.find(
+      (r) =>
+        r.id !== relationship.id &&
+        r.from_entity_id === relationship.to_entity_id &&
+        r.to_entity_id === relationship.from_entity_id &&
+        r.relationship_type === relationship.relationship_type
+    );
+    if (duplicate) {
+      toast({
+        title: "Duplicate exists",
+        description: "A relationship with the reversed direction already exists. Delete the duplicate first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 3) Show confirmation
+    setConfirmReverse(true);
+  };
+
+  const handleReverseConfirm = async () => {
+    setReversing(true);
+
+    const { error } = await supabase
+      .from("relationships")
+      .update({
+        from_entity_id: relationship.to_entity_id,
+        to_entity_id: relationship.from_entity_id,
+      } as any)
+      .eq("id", relationship.id);
+
+    if (error) {
+      console.error("Relationship reverse failed:", error);
+      toast({ title: "Reverse failed", description: error.message, variant: "destructive" });
+    } else {
+      // Write audit log
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("tenant_id, user_id")
+          .eq("user_id", (await supabase.auth.getUser()).data.user?.id ?? "")
+          .single();
+
+        if (profile) {
+          await supabase.from("audit_log").insert({
+            tenant_id: profile.tenant_id,
+            user_id: profile.user_id,
+            action: "relationship_reverse",
+            entity_type: "relationship",
+            entity_id: relationship.id,
+            before_state: {
+              from_entity_id: relationship.from_entity_id,
+              to_entity_id: relationship.to_entity_id,
+              relationship_type: relationship.relationship_type,
+            } as any,
+            after_state: {
+              from_entity_id: relationship.to_entity_id,
+              to_entity_id: relationship.from_entity_id,
+              relationship_type: relationship.relationship_type,
+            } as any,
+          });
+        }
+      } catch (e) {
+        console.error("Audit log for reversal failed:", e);
+      }
+
+      toast({ title: "Relationship reversed" });
+      setConfirmReverse(false);
+      onUpdated();
+    }
+    setReversing(false);
+  };
+
   return (
     <div className="absolute right-0 top-0 z-10 flex h-full w-80 flex-col border-l bg-card shadow-lg">
       <div className="flex items-center justify-between border-b p-4">
@@ -91,6 +184,9 @@ export default function RelationshipDetailPanel({ relationship, allEntities, onC
         <div className="flex items-center gap-1">
           {!editing && (
             <>
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Reverse direction" onClick={handleReverseClick}>
+                <ArrowLeftRight className="h-3.5 w-3.5" />
+              </Button>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditType(relationship.relationship_type); setEditPercent(relationship.ownership_percent?.toString() ?? ""); setEditUnits(relationship.ownership_units?.toString() ?? ""); setEditClass(relationship.ownership_class ?? ""); }}>
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
@@ -105,6 +201,26 @@ export default function RelationshipDetailPanel({ relationship, allEntities, onC
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Reverse confirmation */}
+        {confirmReverse && (
+          <div className="rounded-md border border-primary/50 bg-primary/5 p-3 space-y-2">
+            <p className="text-xs font-medium">Reverse direction?</p>
+            <p className="text-xs text-muted-foreground">
+              This will change: {fromEntity?.name ?? "?"} —({relationship.relationship_type})→ {toEntity?.name ?? "?"}{" "}
+              to {toEntity?.name ?? "?"} —({relationship.relationship_type})→ {fromEntity?.name ?? "?"}
+            </p>
+            <div className="flex gap-2">
+              <Button size="sm" className="flex-1 h-7 text-xs" onClick={handleReverseConfirm} disabled={reversing}>
+                {reversing ? "Reversing..." : "Confirm"}
+              </Button>
+              <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => setConfirmReverse(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Delete confirmation */}
         {confirmDelete && (
           <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 space-y-2">
             <p className="text-xs font-medium">Delete this relationship?</p>
