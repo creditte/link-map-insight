@@ -229,13 +229,17 @@ export function useStructureData(structureId: string | undefined) {
       }
 
       if (t === "Company" && !inbound.has("shareholder")) {
-        warnings.push({
-          code: "missing_shareholder",
-          severity: "warning",
-          message: `Company "${entity.name}" has no shareholders`,
-          entity_id: entity.id,
-          entity_name: entity.name,
-        });
+        // Only flag as warning; not error unless ownership data exists and is inconsistent
+        const hasOwnershipData = byCompany.has(entity.id);
+        if (!hasOwnershipData) {
+          warnings.push({
+            code: "missing_shareholder",
+            severity: "warning",
+            message: `Company "${entity.name}" has no shareholders`,
+            entity_id: entity.id,
+            entity_name: entity.name,
+          });
+        }
       }
     }
 
@@ -298,9 +302,12 @@ export function useStructureData(structureId: string | undefined) {
       }
     }
 
-    // --- Score calculation ---
+    // --- Score calculation (cap unclassified penalty at -30 total) ---
+    const unclassifiedCount = warnings.filter((w) => w.code === "unclassified").length;
+    const otherWarningCount = warnings.length - unclassifiedCount;
+    const unclassifiedDeduction = Math.min(unclassifiedCount * 10, 30);
     const errorDeduction = errors.length * 25;
-    const warningDeduction = warnings.length * 10;
+    const warningDeduction = otherWarningCount * 10 + unclassifiedDeduction;
     const infoDeduction = info.length * 2;
     const score = Math.max(0, 100 - errorDeduction - warningDeduction - infoDeduction);
 
@@ -401,6 +408,7 @@ export function computeStructureHealth(
   entities: EntityNode[],
   relationships: RelationshipEdge[]
 ): Pick<StructureHealth, "score" | "status"> {
+  let unclassifiedCount = 0;
   let errorCount = 0;
   let warningCount = 0;
   let infoCount = 0;
@@ -437,8 +445,11 @@ export function computeStructureHealth(
     const inbound = inboundTypes.get(entity.id) ?? new Set();
     if ((t.startsWith("trust_") || t === "Trust") && !inbound.has("trustee")) errorCount++;
     if (t === "smsf" && !inbound.has("member")) errorCount++;
-    if (t === "Company" && !inbound.has("shareholder")) warningCount++;
-    if (t === "Unclassified") warningCount++;
+    if (t === "Company" && !inbound.has("shareholder")) {
+      const hasOwnershipData = byCompany.has(entity.id);
+      if (!hasOwnershipData) warningCount++;
+    }
+    if (t === "Unclassified") unclassifiedCount++;
   }
 
   // Circular ownership (quick DFS)
@@ -464,10 +475,11 @@ export function computeStructureHealth(
   for (const nodeId of adj.keys()) { if (!visited.has(nodeId)) dfs(nodeId); }
   if (hasCycle) errorCount++;
 
-  const score = Math.max(0, 100 - errorCount * 25 - warningCount * 10 - infoCount * 2);
+  const unclassifiedDeduction = Math.min(unclassifiedCount * 10, 30);
+  const score = Math.max(0, 100 - errorCount * 25 - warningCount * 10 - unclassifiedDeduction - infoCount * 2);
   let status: StructureHealth["status"];
   if (errorCount > 0 || score < 60) status = "critical";
-  else if (warningCount > 0 || score < 85) status = "warning";
+  else if ((warningCount + unclassifiedCount) > 0 || score < 85) status = "warning";
   else status = "good";
 
   return { score, status };
