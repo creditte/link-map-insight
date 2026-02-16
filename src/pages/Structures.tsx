@@ -18,9 +18,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, Network, Trash2, RotateCcw } from "lucide-react";
+import { Search, Network, Trash2, RotateCcw, History } from "lucide-react";
 import { HealthBadge } from "@/components/structure/StructureHealthPanel";
 import { computeStructureHealth, type EntityNode, type RelationshipEdge, type StructureHealth } from "@/hooks/useStructureData";
+import { getSnapshotCount } from "@/hooks/useSnapshots";
 
 interface Structure {
   id: string;
@@ -43,8 +44,8 @@ export default function Structures() {
   const [deleting, setDeleting] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>("updated");
 
-  // Health scores per structure
   const [healthMap, setHealthMap] = useState<Map<string, Pick<StructureHealth, "score" | "status">>>(new Map());
+  const [snapshotCounts, setSnapshotCounts] = useState<Map<string, number>>(new Map());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,9 +63,12 @@ export default function Structures() {
     setStructures(structs);
     setLoading(false);
 
-    // Load health scores for active structures in background
+    // Load health scores and snapshot counts for active structures
     const activeIds = structs.filter((s) => !s.deleted_at).map((s) => s.id);
     if (activeIds.length === 0) return;
+
+    // Snapshot counts
+    getSnapshotCount(activeIds).then(setSnapshotCounts);
 
     // Fetch all structure_entities and structure_relationships
     const [seResult, srResult] = await Promise.all([
@@ -280,9 +284,17 @@ export default function Structures() {
                             <p className="font-medium truncate">{s.name}</p>
                             {health && <HealthBadge score={health.score} status={health.status} />}
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            Updated {new Date(s.updated_at).toLocaleDateString()}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs text-muted-foreground">
+                              Updated {new Date(s.updated_at).toLocaleDateString()}
+                            </p>
+                            {(snapshotCounts.get(s.id) ?? 0) > 0 && (
+                              <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                                <History className="h-2.5 w-2.5" />
+                                {snapshotCounts.get(s.id)} snapshot{snapshotCounts.get(s.id)! > 1 ? "s" : ""}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </Link>
                       <Button

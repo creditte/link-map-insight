@@ -2,10 +2,12 @@ import { useState, useCallback, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles, MousePointer, Grid3x3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useStructureData, useFilteredGraph } from "@/hooks/useStructureData";
 import { useOnboarding } from "@/hooks/useOnboarding";
+import { useSnapshots, loadSnapshotData, type SnapshotData } from "@/hooks/useSnapshots";
 import StructureGraph, { type LayoutMode, type LayoutStrategy } from "@/components/structure/StructureGraph";
 import GraphControls from "@/components/structure/GraphControls";
 import EntityDetailPanel from "@/components/structure/EntityDetailPanel";
@@ -16,6 +18,8 @@ import ExportBlockedBanner from "@/components/structure/ExportBlockedBanner";
 import StructureHealthPanel from "@/components/structure/StructureHealthPanel";
 import OnboardingTooltips from "@/components/structure/OnboardingTooltips";
 import AiAssistantPanel from "@/components/structure/AiAssistantPanel";
+import CreateSnapshotDialog from "@/components/structure/CreateSnapshotDialog";
+import SnapshotSelector from "@/components/structure/SnapshotSelector";
 
 export type ViewMode = "ownership" | "control" | "full";
 
@@ -28,6 +32,7 @@ export default function StructureView() {
   } = useStructureData(id);
   const { toast } = useToast();
   const { showOnboarding, dismiss: dismissOnboarding } = useOnboarding();
+  const { snapshots, reload: reloadSnapshots } = useSnapshots(id);
 
   const [search, setSearch] = useState("");
   const [filterRelType, setFilterRelType] = useState("all");
@@ -43,10 +48,23 @@ export default function StructureView() {
   const [viewMode, setViewMode] = useState<ViewMode>("ownership");
   const [showAiPanel, setShowAiPanel] = useState(false);
 
+  // Snapshot viewing state
+  const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(null);
+  const [snapshotData, setSnapshotData] = useState<SnapshotData | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+
   const graphRef = useRef<HTMLDivElement>(null);
 
+  const isViewingSnapshot = !!activeSnapshotId && !!snapshotData;
+  const activeSnapshot = snapshots.find((s) => s.id === activeSnapshotId);
+
+  // Use snapshot data or live data
+  const displayEntities = isViewingSnapshot ? snapshotData.entities : entities;
+  const displayRelationships = isViewingSnapshot ? snapshotData.relationships : relationships;
+  const displayPositions = isViewingSnapshot ? snapshotData.positions : nodePositions;
+
   const { visibleEntities, visibleRelationships } = useFilteredGraph(
-    entities, relationships,
+    displayEntities, displayRelationships,
     { search: "", showFamily, filterRelType: filterRelType === "all" ? "" : filterRelType, depth, selectedEntityId, viewMode }
   );
 
@@ -57,12 +75,13 @@ export default function StructureView() {
     return match?.id ?? null;
   }, [search, visibleEntities]);
 
-  const selectedEntity = selectedEntityId ? entities.find((e) => e.id === selectedEntityId) ?? null : null;
-  const selectedRelationship = selectedEdgeId ? relationships.find((r) => r.id === selectedEdgeId) ?? null : null;
+  const selectedEntity = selectedEntityId ? displayEntities.find((e) => e.id === selectedEntityId) ?? null : null;
+  const selectedRelationship = selectedEdgeId ? displayRelationships.find((r) => r.id === selectedEdgeId) ?? null : null;
 
   const handleEntityUpdated = useCallback(() => { reload(); }, [reload]);
 
   const handleTogglePin = useCallback((nodeId: string) => {
+    if (isViewingSnapshot) return; // No pinning in snapshot mode
     setPinnedNodeIds((prev) => {
       const next = new Set(prev);
       if (next.has(nodeId)) {
@@ -74,7 +93,7 @@ export default function StructureView() {
       }
       return next;
     });
-  }, [toast]);
+  }, [toast, isViewingSnapshot]);
 
   const handleResetFilters = useCallback(() => {
     setSearch("");
@@ -109,16 +128,61 @@ export default function StructureView() {
     saveNodePositions(positions);
   }, [saveNodePositions]);
 
-  if (loading) {
+  // Snapshot navigation
+  const handleViewSnapshot = useCallback(async (snapshotId: string) => {
+    setSnapshotLoading(true);
+    try {
+      const data = await loadSnapshotData(snapshotId);
+      setSnapshotData(data);
+      setActiveSnapshotId(snapshotId);
+      setSelectedEntityId(null);
+      setSelectedEdgeId(null);
+      setFitViewTrigger((c) => c + 1);
+    } catch (e: any) {
+      console.error("Failed to load snapshot:", e);
+      toast({ title: "Failed to load snapshot", description: e.message, variant: "destructive" });
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }, [toast]);
+
+  const handleReturnToLive = useCallback(() => {
+    setActiveSnapshotId(null);
+    setSnapshotData(null);
+    setSelectedEntityId(null);
+    setSelectedEdgeId(null);
+    setFitViewTrigger((c) => c + 1);
+  }, []);
+
+  if (loading || snapshotLoading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading structure...</p>
+        <p className="text-sm text-muted-foreground">{snapshotLoading ? "Loading snapshot..." : "Loading structure..."}</p>
       </div>
     );
   }
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
+      {/* Snapshot banner */}
+      {isViewingSnapshot && activeSnapshot && (
+        <div className="flex items-center gap-3 px-3 py-2 bg-accent/50 border-b rounded-t-lg">
+          <Badge variant="secondary" className="gap-1.5">
+            Viewing snapshot: {activeSnapshot.name}
+          </Badge>
+          <span className="text-xs text-muted-foreground">
+            Created {new Date(activeSnapshot.created_at).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
+          </span>
+          <span className="text-xs text-muted-foreground">•</span>
+          <span className="text-xs text-muted-foreground">
+            {snapshotData.entities.length} entities · {snapshotData.relationships.length} relationships
+          </span>
+          <Button variant="outline" size="sm" className="ml-auto gap-1.5" onClick={handleReturnToLive}>
+            ← Return to Live Structure
+          </Button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3 px-1 pb-3">
         <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
@@ -126,9 +190,9 @@ export default function StructureView() {
         </Button>
         <h1 className="text-lg font-bold tracking-tight">{structureName}</h1>
         <span className="text-xs text-muted-foreground">
-          {entities.length} entities · {relationships.length} relationships
+          {displayEntities.length} entities · {displayRelationships.length} relationships
         </span>
-        {dbLayoutMode === "manual" && (
+        {!isViewingSnapshot && dbLayoutMode === "manual" && (
           <span className="inline-flex items-center rounded-full bg-accent px-2.5 py-0.5 text-xs font-medium text-accent-foreground">
             Manual layout
           </span>
@@ -147,46 +211,56 @@ export default function StructureView() {
             </SelectContent>
           </Select>
 
-          {/* Layout algorithm selector */}
-          <Select value={layoutAlgo} onValueChange={(v) => { setLayoutAlgo(v as LayoutMode); setAutoLayoutTrigger((c) => c + 1); }}>
-            <SelectTrigger className="h-9 w-[130px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="balanced">Balanced</SelectItem>
-              <SelectItem value="ownership">Ownership</SelectItem>
-              <SelectItem value="control">Control</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* Layout controls - hidden in snapshot mode */}
+          {!isViewingSnapshot && (
+            <>
+              <Select value={layoutAlgo} onValueChange={(v) => { setLayoutAlgo(v as LayoutMode); setAutoLayoutTrigger((c) => c + 1); }}>
+                <SelectTrigger className="h-9 w-[130px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="balanced">Balanced</SelectItem>
+                  <SelectItem value="ownership">Ownership</SelectItem>
+                  <SelectItem value="control">Control</SelectItem>
+                </SelectContent>
+              </Select>
 
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setFitViewTrigger((c) => c + 1)}>
-            <Maximize className="h-3.5 w-3.5" /> Fit View
-          </Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setFitViewTrigger((c) => c + 1)}>
+                <Maximize className="h-3.5 w-3.5" /> Fit View
+              </Button>
 
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleResetToAuto}>
-            <LayoutGrid className="h-3.5 w-3.5" /> Reset to Auto
-          </Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={handleResetToAuto}>
+                <LayoutGrid className="h-3.5 w-3.5" /> Reset to Auto
+              </Button>
 
-          <Button
-            variant={dbLayoutMode === "manual" ? "secondary" : "outline"}
-            size="sm"
-            className="gap-1.5"
-            onClick={() => dbLayoutMode === "auto" ? handleSwitchToManual() : handleResetToAuto()}
-          >
-            {dbLayoutMode === "manual" ? (
-              <><MousePointer className="h-3.5 w-3.5" /> Manual</>
-            ) : (
-              <><Grid3x3 className="h-3.5 w-3.5" /> Auto</>
-            )}
-          </Button>
+              <Button
+                variant={dbLayoutMode === "manual" ? "secondary" : "outline"}
+                size="sm"
+                className="gap-1.5"
+                onClick={() => dbLayoutMode === "auto" ? handleSwitchToManual() : handleResetToAuto()}
+              >
+                {dbLayoutMode === "manual" ? (
+                  <><MousePointer className="h-3.5 w-3.5" /> Manual</>
+                ) : (
+                  <><Grid3x3 className="h-3.5 w-3.5" /> Auto</>
+                )}
+              </Button>
 
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleResetFilters}>
-            <RotateCcw className="h-3.5 w-3.5" /> Reset
-          </Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={handleResetFilters}>
+                <RotateCcw className="h-3.5 w-3.5" /> Reset
+              </Button>
 
-          {pinnedNodeIds.size > 0 && (
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setPinnedNodeIds(new Set()); toast({ title: "All pins cleared" }); }}>
-              <Pin className="h-3.5 w-3.5" /> Clear pins ({pinnedNodeIds.size})
+              {pinnedNodeIds.size > 0 && (
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setPinnedNodeIds(new Set()); toast({ title: "All pins cleared" }); }}>
+                  <Pin className="h-3.5 w-3.5" /> Clear pins ({pinnedNodeIds.size})
+                </Button>
+              )}
+            </>
+          )}
+
+          {isViewingSnapshot && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setFitViewTrigger((c) => c + 1)}>
+              <Maximize className="h-3.5 w-3.5" /> Fit View
             </Button>
           )}
 
@@ -198,15 +272,35 @@ export default function StructureView() {
             <Palette className="h-3.5 w-3.5" /> Legend
           </Button>
 
-          <Button variant={showAiPanel ? "secondary" : "outline"} size="sm" className="gap-1.5" onClick={() => setShowAiPanel(!showAiPanel)}>
-            <Sparkles className="h-3.5 w-3.5" /> AI Assist
-          </Button>
+          {!isViewingSnapshot && (
+            <Button variant={showAiPanel ? "secondary" : "outline"} size="sm" className="gap-1.5" onClick={() => setShowAiPanel(!showAiPanel)}>
+              <Sparkles className="h-3.5 w-3.5" /> AI Assist
+            </Button>
+          )}
+
+          {/* Snapshot controls */}
+          {!isViewingSnapshot && id && (
+            <CreateSnapshotDialog
+              structureId={id}
+              structureName={structureName}
+              onCreated={reloadSnapshots}
+            />
+          )}
+
+          <SnapshotSelector
+            snapshots={snapshots}
+            activeSnapshotId={activeSnapshotId}
+            onSelect={handleViewSnapshot}
+            onReturnToLive={handleReturnToLive}
+          />
 
           <ExportMenu
             graphRef={graphRef}
             entities={visibleEntities}
             relationships={visibleRelationships}
             structureName={structureName}
+            snapshotName={activeSnapshot?.name}
+            snapshotCreatedAt={activeSnapshot?.created_at}
           />
         </div>
       </div>
@@ -221,15 +315,17 @@ export default function StructureView() {
       />
 
       {/* Export blocked banner */}
-      <ExportBlockedBanner entities={entities} />
+      {!isViewingSnapshot && <ExportBlockedBanner entities={entities} />}
 
-      <StructureHealthPanel health={structureHealth} onSelectEntity={(eid) => { setSelectedEntityId(eid); setSelectedEdgeId(null); }} />
+      {!isViewingSnapshot && (
+        <StructureHealthPanel health={structureHealth} onSelectEntity={(eid) => { setSelectedEntityId(eid); setSelectedEdgeId(null); }} />
+      )}
 
       {/* Graph + Panel */}
       <div className="relative mt-3 flex-1 rounded-lg border bg-card overflow-hidden">
-        {showOnboarding && <OnboardingTooltips onDismiss={dismissOnboarding} />}
+        {showOnboarding && !isViewingSnapshot && <OnboardingTooltips onDismiss={dismissOnboarding} />}
 
-        {showAiPanel && (
+        {showAiPanel && !isViewingSnapshot && (
           <AiAssistantPanel
             entities={visibleEntities}
             relationships={visibleRelationships}
@@ -251,20 +347,21 @@ export default function StructureView() {
             onSelectEdge={setSelectedEdgeId}
             autoLayoutTrigger={autoLayoutTrigger}
             layoutMode={layoutAlgo}
-            layoutStrategy={dbLayoutMode}
-            pinnedNodeIds={pinnedNodeIds}
+            layoutStrategy={isViewingSnapshot ? "manual" : dbLayoutMode}
+            pinnedNodeIds={isViewingSnapshot ? new Set() : pinnedNodeIds}
             onTogglePin={handleTogglePin}
             viewMode={viewMode}
             searchHighlightId={searchHighlightId}
             fitViewTrigger={fitViewTrigger}
-            dbPositions={nodePositions}
-            onPositionsChanged={handlePositionsChanged}
+            dbPositions={displayPositions}
+            onPositionsChanged={isViewingSnapshot ? () => {} : handlePositionsChanged}
+            nodesDraggable={!isViewingSnapshot && dbLayoutMode === "manual"}
           />
         )}
 
         <RelationshipLegend visible={showLegend} onToggle={() => setShowLegend(!showLegend)} />
 
-        {selectedEntity && !selectedEdgeId && (
+        {selectedEntity && !selectedEdgeId && !isViewingSnapshot && (
           <EntityDetailPanel
             entity={selectedEntity}
             relationships={relationships}
@@ -276,7 +373,7 @@ export default function StructureView() {
           />
         )}
 
-        {selectedRelationship && (
+        {selectedRelationship && !isViewingSnapshot && (
           <RelationshipDetailPanel
             relationship={selectedRelationship}
             allEntities={entities}

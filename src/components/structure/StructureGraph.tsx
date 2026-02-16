@@ -153,12 +153,13 @@ interface Props {
   fitViewTrigger: number;
   dbPositions: Map<string, { x: number; y: number }>;
   onPositionsChanged: (positions: Map<string, { x: number; y: number }>) => void;
+  nodesDraggable?: boolean;
 }
 
 function StructureGraphInner({
   entities, relationships, selectedEntityId, onSelectEntity, onSelectEdge,
   autoLayoutTrigger, layoutMode, layoutStrategy, pinnedNodeIds, onTogglePin, viewMode,
-  searchHighlightId, fitViewTrigger, dbPositions, onPositionsChanged,
+  searchHighlightId, fitViewTrigger, dbPositions, onPositionsChanged, nodesDraggable: nodesDraggableProp,
 }: Props) {
   const { fitView } = useReactFlow();
   const prevLayoutTrigger = useRef(0);
@@ -314,7 +315,7 @@ function StructureGraphInner({
       onPaneClick={onPaneClick}
       onNodeDoubleClick={onNodeDoubleClick}
       nodeTypes={nodeTypes}
-      nodesDraggable={layoutStrategy === "manual"}
+      nodesDraggable={nodesDraggableProp ?? layoutStrategy === "manual"}
       fitView
       fitViewOptions={{ padding: 0.2 }}
       minZoom={0.2}

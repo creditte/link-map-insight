@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.merge-entities]
 verify_jwt = false
+
+[functions.create-snapshot]
+verify_jwt = false

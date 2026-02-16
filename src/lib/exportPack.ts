@@ -111,6 +111,8 @@ export interface ExportMeta {
   userName?: string;
   tenantName?: string;
   logoUrl?: string;
+  snapshotName?: string;
+  snapshotCreatedAt?: string;
 }
 
 export async function exportImage(
@@ -262,10 +264,15 @@ export async function exportPdf(
   pdf.text(structureName, 14, 16);
   pdf.setFontSize(9);
   pdf.setTextColor(100);
-  const subtitleParts = [
-    `${entities.length} entities · ${relationships.length} relationships`,
-    `Exported ${exportDate}`,
-  ];
+  const subtitleParts = [];
+  if (meta?.snapshotName) {
+    subtitleParts.push(`Snapshot: ${meta.snapshotName}`);
+    if (meta.snapshotCreatedAt) {
+      subtitleParts.push(`as at ${new Date(meta.snapshotCreatedAt).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}`);
+    }
+  }
+  subtitleParts.push(`${entities.length} entities · ${relationships.length} relationships`);
+  subtitleParts.push(`Exported ${exportDate}`);
   if (meta?.userName) subtitleParts.push(`by ${meta.userName}`);
   if (meta?.tenantName) subtitleParts.push(meta.tenantName);
   pdf.text(subtitleParts.join("  |  "), 14, 23);

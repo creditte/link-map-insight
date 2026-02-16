@@ -445,6 +445,111 @@ export type Database = {
           },
         ]
       }
+      snapshot_entities: {
+        Row: {
+          abn: string | null
+          acn: string | null
+          entity_id: string
+          entity_type: string
+          id: string
+          is_operating_entity: boolean
+          is_trustee_company: boolean
+          name: string
+          position_x: number | null
+          position_y: number | null
+          snapshot_id: string
+        }
+        Insert: {
+          abn?: string | null
+          acn?: string | null
+          entity_id: string
+          entity_type: string
+          id?: string
+          is_operating_entity?: boolean
+          is_trustee_company?: boolean
+          name: string
+          position_x?: number | null
+          position_y?: number | null
+          snapshot_id: string
+        }
+        Update: {
+          abn?: string | null
+          acn?: string | null
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          is_operating_entity?: boolean
+          is_trustee_company?: boolean
+          name?: string
+          position_x?: number | null
+          position_y?: number | null
+          snapshot_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "snapshot_entities_snapshot_id_fkey"
+            columns: ["snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "structure_snapshots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      snapshot_relationships: {
+        Row: {
+          from_entity_snapshot_id: string
+          id: string
+          ownership_class: string | null
+          ownership_percent: number | null
+          ownership_units: number | null
+          relationship_type: string
+          snapshot_id: string
+          to_entity_snapshot_id: string
+        }
+        Insert: {
+          from_entity_snapshot_id: string
+          id?: string
+          ownership_class?: string | null
+          ownership_percent?: number | null
+          ownership_units?: number | null
+          relationship_type: string
+          snapshot_id: string
+          to_entity_snapshot_id: string
+        }
+        Update: {
+          from_entity_snapshot_id?: string
+          id?: string
+          ownership_class?: string | null
+          ownership_percent?: number | null
+          ownership_units?: number | null
+          relationship_type?: string
+          snapshot_id?: string
+          to_entity_snapshot_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "snapshot_relationships_from_entity_snapshot_id_fkey"
+            columns: ["from_entity_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "snapshot_entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "snapshot_relationships_snapshot_id_fkey"
+            columns: ["snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "structure_snapshots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "snapshot_relationships_to_entity_snapshot_id_fkey"
+            columns: ["to_entity_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "snapshot_entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       structure_entities: {
         Row: {
           entity_id: string
@@ -507,6 +612,51 @@ export type Database = {
             columns: ["structure_id"]
             isOneToOne: false
             referencedRelation: "structures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      structure_snapshots: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          name: string
+          structure_id: string
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          name: string
+          structure_id: string
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          name?: string
+          structure_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "structure_snapshots_structure_id_fkey"
+            columns: ["structure_id"]
+            isOneToOne: false
+            referencedRelation: "structures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "structure_snapshots_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]
