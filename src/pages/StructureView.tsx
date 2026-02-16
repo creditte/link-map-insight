@@ -290,10 +290,17 @@ export default function StructureView() {
             </Button>
           )}
 
-          {/* Compare button */}
-          {id && (
+          {/* Compare buttons */}
+          {id && (isScenario || isViewingSnapshot) && (
             <Button variant="outline" size="sm" className="gap-1.5" asChild>
-              <Link to={`/structures/${id}/compare${activeSnapshotId ? `?right=snapshot:${activeSnapshotId}` : isScenario ? `?right=live:${id}` : ""}`}>
+              <Link to={`/structures/${isScenario ? parentStructureId ?? id : id}/compare?right=${isViewingSnapshot ? `snapshot:${activeSnapshotId}` : `scenario:${id}`}`}>
+                <GitCompareArrows className="h-3.5 w-3.5" /> Compare to Live
+              </Link>
+            </Button>
+          )}
+          {id && !isScenario && !isViewingSnapshot && (
+            <Button variant="outline" size="sm" className="gap-1.5" asChild>
+              <Link to={`/structures/${id}/compare`}>
                 <GitCompareArrows className="h-3.5 w-3.5" /> Compare
               </Link>
             </Button>

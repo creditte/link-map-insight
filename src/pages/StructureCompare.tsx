@@ -1,12 +1,15 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Download, AlertTriangle, Plus, Minus, RefreshCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Download, AlertTriangle, Plus, Minus, RefreshCw, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { getEntityLabel } from "@/lib/entityTypes";
 import {
@@ -17,6 +20,7 @@ import {
   type DiffFilter,
   type RawEntity,
   type RawRelationship,
+  type AmbiguousEntity,
 } from "@/lib/structureDiff";
 import { loadSnapshotData } from "@/hooks/useSnapshots";
 import jsPDF from "jspdf";
@@ -102,8 +106,60 @@ async function loadVersion(opt: VersionOption) {
   return loadLiveData(opt.structureId ?? opt.id);
 }
 
-// ── Capitalize helper ──
+// ── Helpers ──
 function capitalize(s: string) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+function truncate(s: string, max = 40) {
+  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+}
+
+// ── Narrative summary builder ──
+function buildNarrativeBullets(d: DiffResult): string[] {
+  const bullets: string[] = [];
+
+  if (d.entitiesAdded.length > 0) {
+    const typeCounts: Record<string, number> = {};
+    for (const e of d.entitiesAdded) {
+      const label = getEntityLabel(e.entity_type);
+      typeCounts[label] = (typeCounts[label] ?? 0) + 1;
+    }
+    const breakdown = Object.entries(typeCounts).map(([t, c]) => `${c} ${t}`).join(", ");
+    bullets.push(`${d.entitiesAdded.length} entit${d.entitiesAdded.length === 1 ? "y" : "ies"} added (${breakdown}).`);
+  }
+
+  if (d.entitiesRemoved.length > 0) {
+    const names = d.entitiesRemoved.slice(0, 3).map((e) => e.name);
+    const suffix = d.entitiesRemoved.length > 3 ? ` and ${d.entitiesRemoved.length - 3} more` : "";
+    bullets.push(`${d.entitiesRemoved.length} entit${d.entitiesRemoved.length === 1 ? "y" : "ies"} removed (${names.join(", ")}${suffix}).`);
+  }
+
+  for (const rc of d.relsChanged) {
+    for (const c of rc.changes) {
+      if (c.field === "Ownership %") {
+        bullets.push(`${capitalize(rc.rel.relationship_type)} ownership changed for ${rc.rel.fromName} → ${rc.rel.toName} (${c.before} → ${c.after}).`);
+      }
+    }
+  }
+
+  if (d.relsAdded.length > 0 && bullets.length < 5) {
+    bullets.push(`${d.relsAdded.length} relationship${d.relsAdded.length === 1 ? "" : "s"} added.`);
+  }
+
+  if (d.relsRemoved.length > 0 && bullets.length < 5) {
+    bullets.push(`${d.relsRemoved.length} relationship${d.relsRemoved.length === 1 ? "" : "s"} removed.`);
+  }
+
+  if (d.directionChanges.length > 0 && bullets.length < 5) {
+    bullets.push(`${d.directionChanges.length} relationship direction${d.directionChanges.length === 1 ? "" : "s"} changed.`);
+  }
+
+  if (d.entitiesChanged.length > 0 && bullets.length < 5) {
+    const fields = new Set(d.entitiesChanged.flatMap((ec) => ec.changes.map((c) => c.field)));
+    bullets.push(`${d.entitiesChanged.length} entit${d.entitiesChanged.length === 1 ? "y" : "ies"} modified (${[...fields].join(", ")}).`);
+  }
+
+  return bullets.slice(0, 5);
+}
 
 // ── Component ──
 
@@ -118,12 +174,19 @@ export default function StructureCompare() {
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<DiffFilter>("all");
 
+  // Raw data for re-running with overrides
+  const [rawLeftData, setRawLeftData] = useState<{ entities: RawEntity[]; relationships: RawRelationship[] } | null>(null);
+  const [rawRightData, setRawRightData] = useState<{ entities: RawEntity[]; relationships: RawRelationship[] } | null>(null);
+
+  // Ambiguity resolution
+  const [showResolver, setShowResolver] = useState(false);
+  const [manualMappings, setManualMappings] = useState<Map<string, string>>(new Map()); // compare entity id -> base entity id's key
+
   // Load available versions
   useEffect(() => {
     if (!id) return;
 
     async function loadVersions() {
-      // Current structure
       const { data: struct } = await supabase
         .from("structures")
         .select("name, is_scenario, scenario_label, parent_structure_id")
@@ -134,7 +197,6 @@ export default function StructureCompare() {
 
       const opts: VersionOption[] = [];
 
-      // Live structure
       opts.push({
         id: `live:${id}`,
         label: `Live — ${struct?.name ?? "Structure"}`,
@@ -142,7 +204,6 @@ export default function StructureCompare() {
         structureId: id,
       });
 
-      // Scenarios derived from this structure
       const { data: scenarios } = await supabase
         .from("structures")
         .select("id, name, scenario_label")
@@ -159,7 +220,6 @@ export default function StructureCompare() {
         });
       }
 
-      // If this IS a scenario, also include parent
       if ((struct as any)?.is_scenario && (struct as any)?.parent_structure_id) {
         const parentId = (struct as any).parent_structure_id;
         const { data: parent } = await supabase
@@ -175,7 +235,6 @@ export default function StructureCompare() {
         });
       }
 
-      // Snapshots for this structure
       const { data: snaps } = await supabase
         .from("structure_snapshots")
         .select("id, name, created_at, structure_id")
@@ -192,7 +251,6 @@ export default function StructureCompare() {
         });
       }
 
-      // Also load snapshots for scenarios
       const scenarioIds = (scenarios ?? []).map((s) => s.id);
       if (scenarioIds.length > 0) {
         const { data: scenarioSnaps } = await supabase
@@ -215,7 +273,6 @@ export default function StructureCompare() {
 
       setVersions(opts);
 
-      // Set defaults
       const defaultRight = searchParams.get("right");
       setLeftId(opts[0]?.id ?? "");
       if (defaultRight && opts.some((o) => o.id === defaultRight)) {
@@ -237,21 +294,38 @@ export default function StructureCompare() {
     setLoading(true);
     try {
       const [leftData, rightData] = await Promise.all([loadVersion(left), loadVersion(right)]);
+      setRawLeftData(leftData);
+      setRawRightData(rightData);
+
+      // Build override keys from manual mappings
+      const overrideKeys = manualMappings.size > 0 ? manualMappings : undefined;
+
       const baseNorm = normaliseDataset(leftData.entities, leftData.relationships);
-      const compareNorm = normaliseDataset(rightData.entities, rightData.relationships);
-      setDiff(computeDiff(baseNorm, compareNorm));
+      const compareNorm = normaliseDataset(rightData.entities, rightData.relationships, overrideKeys);
+      setDiff(computeDiff(baseNorm, compareNorm, leftData.entities, rightData.entities));
     } catch (e) {
       console.error("Compare failed:", e);
     } finally {
       setLoading(false);
     }
-  }, [leftId, rightId, versions]);
+  }, [leftId, rightId, versions, manualMappings]);
 
   useEffect(() => {
     if (leftId && rightId && leftId !== rightId) {
       runCompare();
     }
   }, [leftId, rightId, runCompare]);
+
+  // Re-run with mappings
+  const applyMappings = useCallback(() => {
+    setShowResolver(false);
+    if (rawLeftData && rawRightData) {
+      const overrideKeys = manualMappings.size > 0 ? manualMappings : undefined;
+      const baseNorm = normaliseDataset(rawLeftData.entities, rawLeftData.relationships);
+      const compareNorm = normaliseDataset(rawRightData.entities, rawRightData.relationships, overrideKeys);
+      setDiff(computeDiff(baseNorm, compareNorm, rawLeftData.entities, rawRightData.entities));
+    }
+  }, [rawLeftData, rawRightData, manualMappings]);
 
   // Filtered relationships
   const filteredDiff = useMemo(() => {
@@ -277,26 +351,66 @@ export default function StructureCompare() {
   const leftLabel = versions.find((v) => v.id === leftId)?.label ?? "Base";
   const rightLabel = versions.find((v) => v.id === rightId)?.label ?? "Compare";
 
+  // Narrative bullets
+  const narrativeBullets = useMemo(() => {
+    if (!filteredDiff) return [];
+    return buildNarrativeBullets(filteredDiff);
+  }, [filteredDiff]);
+
+  // Ambiguous entities grouped for resolver
+  const ambiguousBaseEntities = useMemo(() => {
+    return diff?.ambiguousEntities.filter((e) => e.side === "base") ?? [];
+  }, [diff]);
+  const ambiguousCompareEntities = useMemo(() => {
+    return diff?.ambiguousEntities.filter((e) => e.side === "compare") ?? [];
+  }, [diff]);
+
   // Export PDF
   const exportSummaryPdf = useCallback(() => {
     if (!filteredDiff) return;
     const d = filteredDiff;
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
 
-    pdf.setFontSize(16);
-    pdf.text("Compare Summary", 14, 16);
+    // ── Header ──
+    pdf.setFillColor(30, 64, 175);
+    pdf.rect(0, 0, pageW, 28, "F");
+    pdf.setTextColor(255);
+    pdf.setFontSize(18);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Compare Summary", 14, 14);
     pdf.setFontSize(9);
-    pdf.setTextColor(100);
-    pdf.text(`Base: ${leftLabel}`, 14, 24);
-    pdf.text(`Compare: ${rightLabel}`, 14, 29);
-    pdf.text(`Generated: ${new Date().toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}`, 14, 34);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`Base: ${truncate(leftLabel, 60)}`, 14, 20);
+    pdf.text(`Compare: ${truncate(rightLabel, 60)}`, 14, 25);
+
+    const dateStr = new Date().toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
+    pdf.text(`Generated: ${dateStr}`, pageW - 14, 20, { align: "right" });
     pdf.setTextColor(0);
 
-    let y = 42;
+    let y = 36;
+
+    // ── Narrative summary ──
+    const bullets = buildNarrativeBullets(d);
+    if (bullets.length > 0) {
+      pdf.setFontSize(11);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("Key Changes", 14, y); y += 6;
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      for (const b of bullets) {
+        pdf.text(`•  ${truncate(b, 100)}`, 16, y); y += 5;
+      }
+      y += 4;
+    }
+
+    // ── Summary counts ──
     pdf.setFontSize(11);
+    pdf.setFont("helvetica", "bold");
     pdf.text("Summary", 14, y); y += 6;
     pdf.setFontSize(9);
+    pdf.setFont("helvetica", "normal");
     pdf.text(`Entities: +${d.entitiesAdded.length} added / -${d.entitiesRemoved.length} removed / ~${d.entitiesChanged.length} changed`, 14, y); y += 5;
     pdf.text(`Relationships: +${d.relsAdded.length} added / -${d.relsRemoved.length} removed / ~${d.relsChanged.length} changed`, 14, y); y += 5;
     if (d.directionChanges.length > 0) {
@@ -304,48 +418,71 @@ export default function StructureCompare() {
     }
     y += 4;
 
+    const addPageBreakIfNeeded = (requiredSpace: number) => {
+      if (y + requiredSpace > pageH - 20) {
+        pdf.addPage();
+        y = 16;
+      }
+    };
+
     // Entity changes table
     if (d.entitiesAdded.length + d.entitiesRemoved.length + d.entitiesChanged.length > 0) {
+      addPageBreakIfNeeded(30);
       pdf.setFontSize(11);
+      pdf.setFont("helvetica", "bold");
       pdf.text("Entity Changes", 14, y); y += 2;
       const entRows: string[][] = [];
-      for (const e of d.entitiesAdded) entRows.push(["Added", e.name, getEntityLabel(e.entity_type), ""]);
-      for (const e of d.entitiesRemoved) entRows.push(["Removed", e.name, getEntityLabel(e.entity_type), ""]);
-      for (const ec of d.entitiesChanged) entRows.push(["Changed", ec.entity.name, getEntityLabel(ec.entity.entity_type), ec.changes.map((c) => `${c.field}: ${c.before} → ${c.after}`).join("; ")]);
+      for (const e of d.entitiesAdded) entRows.push(["Added", truncate(e.name), getEntityLabel(e.entity_type), ""]);
+      for (const e of d.entitiesRemoved) entRows.push(["Removed", truncate(e.name), getEntityLabel(e.entity_type), ""]);
+      for (const ec of d.entitiesChanged) entRows.push(["Changed", truncate(ec.entity.name), getEntityLabel(ec.entity.entity_type), ec.changes.map((c) => `${c.field}: ${truncate(c.before, 20)} → ${truncate(c.after, 20)}`).join("; ")]);
 
       autoTable(pdf, {
         startY: y,
         head: [["Status", "Name", "Type", "Details"]],
         body: entRows,
-        styles: { fontSize: 8, cellPadding: 1.5 },
-        headStyles: { fillColor: [59, 130, 246], fontSize: 8 },
-        columnStyles: { 3: { cellWidth: 60 } },
+        styles: { fontSize: 7.5, cellPadding: 1.5, overflow: "linebreak" },
+        headStyles: { fillColor: [59, 130, 246], fontSize: 7.5 },
+        columnStyles: { 0: { cellWidth: 18 }, 1: { cellWidth: 45 }, 2: { cellWidth: 35 }, 3: { cellWidth: "auto" } },
+        didDrawPage: () => { y = 16; },
       });
-      y = (pdf as any).lastAutoTable.finalY + 6;
+      y = (pdf as any).lastAutoTable.finalY + 8;
     }
 
     // Relationship changes table
     if (d.relsAdded.length + d.relsRemoved.length + d.relsChanged.length + d.directionChanges.length > 0) {
+      addPageBreakIfNeeded(30);
       pdf.setFontSize(11);
+      pdf.setFont("helvetica", "bold");
       pdf.text("Relationship Changes", 14, y); y += 2;
       const relRows: string[][] = [];
-      for (const r of d.relsAdded) relRows.push(["Added", `${r.fromName} → ${r.toName}`, capitalize(r.relationship_type), ""]);
-      for (const r of d.relsRemoved) relRows.push(["Removed", `${r.fromName} → ${r.toName}`, capitalize(r.relationship_type), ""]);
-      for (const rc of d.relsChanged) relRows.push(["Changed", `${rc.rel.fromName} → ${rc.rel.toName}`, capitalize(rc.rel.relationship_type), rc.changes.map((c) => `${c.field}: ${c.before} → ${c.after}`).join("; ")]);
-      for (const dc of d.directionChanges) relRows.push(["Direction", `${dc.baseRel.fromName} → ${dc.baseRel.toName} became ${dc.compareRel.fromName} → ${dc.compareRel.toName}`, capitalize(dc.baseRel.relationship_type), ""]);
+      for (const r of d.relsAdded) relRows.push(["Added", `${truncate(r.fromName, 25)} → ${truncate(r.toName, 25)}`, capitalize(r.relationship_type), ""]);
+      for (const r of d.relsRemoved) relRows.push(["Removed", `${truncate(r.fromName, 25)} → ${truncate(r.toName, 25)}`, capitalize(r.relationship_type), ""]);
+      for (const rc of d.relsChanged) relRows.push(["Changed", `${truncate(rc.rel.fromName, 25)} → ${truncate(rc.rel.toName, 25)}`, capitalize(rc.rel.relationship_type), rc.changes.map((c) => `${c.field}: ${c.before} → ${c.after}`).join("; ")]);
+      for (const dc of d.directionChanges) relRows.push(["Direction", `${truncate(dc.baseRel.fromName, 20)} → ${truncate(dc.baseRel.toName, 20)}`, capitalize(dc.baseRel.relationship_type), `Now: ${truncate(dc.compareRel.fromName, 20)} → ${truncate(dc.compareRel.toName, 20)}`]);
 
       autoTable(pdf, {
         startY: y,
         head: [["Status", "Relationship", "Type", "Details"]],
         body: relRows,
-        styles: { fontSize: 8, cellPadding: 1.5 },
-        headStyles: { fillColor: [59, 130, 246], fontSize: 8 },
-        columnStyles: { 3: { cellWidth: 50 } },
+        styles: { fontSize: 7.5, cellPadding: 1.5, overflow: "linebreak" },
+        headStyles: { fillColor: [59, 130, 246], fontSize: 7.5 },
+        columnStyles: { 0: { cellWidth: 18 }, 1: { cellWidth: 50 }, 2: { cellWidth: 25 }, 3: { cellWidth: "auto" } },
+        didDrawPage: () => { y = 16; },
       });
     }
 
     pdf.save(`${structureName.replace(/\s+/g, "_")}_compare_summary.pdf`);
   }, [filteredDiff, leftLabel, rightLabel, structureName]);
+
+  const hasChanges = filteredDiff && (
+    filteredDiff.entitiesAdded.length > 0 ||
+    filteredDiff.entitiesRemoved.length > 0 ||
+    filteredDiff.entitiesChanged.length > 0 ||
+    filteredDiff.relsAdded.length > 0 ||
+    filteredDiff.relsRemoved.length > 0 ||
+    filteredDiff.relsChanged.length > 0 ||
+    filteredDiff.directionChanges.length > 0
+  );
 
   return (
     <div className="space-y-4">
@@ -403,13 +540,18 @@ export default function StructureCompare() {
         </div>
       </div>
 
-      {/* Ambiguity warning */}
+      {/* Ambiguity warning with resolver link */}
       {diff && diff.ambiguousCount > 0 && (
         <Alert>
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Possible match ambiguity</AlertTitle>
-          <AlertDescription>
-            {diff.ambiguousCount} entit{diff.ambiguousCount === 1 ? "y has" : "ies have"} duplicate names and types, making cross-version matching less reliable. Results for these entities use ID-based matching (only accurate within the same structure copy).
+          <AlertDescription className="flex items-start justify-between gap-2">
+            <span>
+              {diff.ambiguousCount} entit{diff.ambiguousCount === 1 ? "y has" : "ies have"} duplicate names and types, making cross-version matching less reliable.
+            </span>
+            <Button variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={() => setShowResolver(true)}>
+              <Settings2 className="h-3.5 w-3.5" /> Resolve matches
+            </Button>
           </AlertDescription>
         </Alert>
       )}
@@ -418,6 +560,22 @@ export default function StructureCompare() {
 
       {filteredDiff && !loading && (
         <>
+          {/* Narrative summary */}
+          {narrativeBullets.length > 0 && (
+            <Card>
+              <CardContent className="pt-4 pb-3">
+                <ul className="space-y-1">
+                  {narrativeBullets.map((b, i) => (
+                    <li key={i} className="text-sm flex items-start gap-2">
+                      <span className="text-primary mt-0.5">•</span>
+                      <span>{b}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Summary cards */}
           <div className="grid gap-3 sm:grid-cols-3">
             <Card>
@@ -453,13 +611,7 @@ export default function StructureCompare() {
           </div>
 
           {/* No changes */}
-          {filteredDiff.entitiesAdded.length === 0 &&
-           filteredDiff.entitiesRemoved.length === 0 &&
-           filteredDiff.entitiesChanged.length === 0 &&
-           filteredDiff.relsAdded.length === 0 &&
-           filteredDiff.relsRemoved.length === 0 &&
-           filteredDiff.relsChanged.length === 0 &&
-           filteredDiff.directionChanges.length === 0 && (
+          {!hasChanges && (
             <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">No differences found between the selected versions.</CardContent></Card>
           )}
 
@@ -625,6 +777,73 @@ export default function StructureCompare() {
           )}
         </>
       )}
+
+      {/* Ambiguity Resolver Dialog */}
+      <Dialog open={showResolver} onOpenChange={setShowResolver}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Resolve Entity Matches</DialogTitle>
+            <DialogDescription>
+              For each ambiguous entity in the Compare version, choose which Base entity it should match to. This only affects this comparison session.
+            </DialogDescription>
+          </DialogHeader>
+
+          {ambiguousCompareEntities.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">No ambiguous entities in the Compare version to resolve.</p>
+          ) : (
+            <div className="space-y-4">
+              {ambiguousCompareEntities.map((ce) => {
+                // Find candidate base entities with same type
+                const candidates = ambiguousBaseEntities.filter(
+                  (be) => be.entity_type === ce.entity_type
+                );
+                const currentMapping = manualMappings.get(ce.id);
+
+                return (
+                  <div key={ce.id} className="rounded-lg border p-3 space-y-2">
+                    <div className="text-sm font-medium">
+                      {ce.name} <span className="text-muted-foreground">({getEntityLabel(ce.entity_type)})</span>
+                    </div>
+                    <RadioGroup
+                      value={currentMapping ?? ""}
+                      onValueChange={(val) => {
+                        setManualMappings((prev) => {
+                          const next = new Map(prev);
+                          if (val) {
+                            // Map compare entity id to the base entity's id-based key
+                            next.set(ce.id, `id:${val}`);
+                          } else {
+                            next.delete(ce.id);
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="" id={`${ce.id}-auto`} />
+                        <Label htmlFor={`${ce.id}-auto`} className="text-xs text-muted-foreground">Auto (default)</Label>
+                      </div>
+                      {candidates.map((be) => (
+                        <div key={be.id} className="flex items-center space-x-2">
+                          <RadioGroupItem value={be.id} id={`${ce.id}-${be.id}`} />
+                          <Label htmlFor={`${ce.id}-${be.id}`} className="text-xs">
+                            → {be.name} <span className="text-muted-foreground">({getEntityLabel(be.entity_type)})</span>
+                          </Label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResolver(false)}>Cancel</Button>
+            <Button onClick={applyMappings}>Apply & Re-compare</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -45,6 +45,13 @@ export interface DirectionChange {
   compareRel: NormRelationship;
 }
 
+export interface AmbiguousEntity {
+  id: string;
+  name: string;
+  entity_type: string;
+  side: "base" | "compare";
+}
+
 export interface DiffResult {
   entitiesAdded: NormEntity[];
   entitiesRemoved: NormEntity[];
@@ -54,6 +61,7 @@ export interface DiffResult {
   relsChanged: RelChange[];
   directionChanges: DirectionChange[];
   ambiguousCount: number;
+  ambiguousEntities: AmbiguousEntity[];
 }
 
 // ── Identity key generation ──
@@ -113,15 +121,24 @@ function entityKey(e: RawEntity, allEntities: RawEntity[]): { key: string; ambig
 
 export function normaliseDataset(
   entities: RawEntity[],
-  relationships: RawRelationship[]
-): { entities: Map<string, NormEntity>; relationships: Map<string, NormRelationship>; ambiguousCount: number } {
+  relationships: RawRelationship[],
+  overrideKeys?: Map<string, string>
+): { entities: Map<string, NormEntity>; relationships: Map<string, NormRelationship>; ambiguousCount: number; ambiguousIds: string[] } {
   let ambiguousCount = 0;
-  const entityKeyMap = new Map<string, string>(); // entity.id -> key
+  const ambiguousIds: string[] = [];
+  const entityKeyMap = new Map<string, string>();
   const normEntities = new Map<string, NormEntity>();
 
   for (const e of entities) {
-    const { key, ambiguous } = entityKey(e, entities);
-    if (ambiguous) ambiguousCount++;
+    const override = overrideKeys?.get(e.id);
+    let key: string;
+    if (override) {
+      key = override;
+    } else {
+      const result = entityKey(e, entities);
+      key = result.key;
+      if (result.ambiguous) { ambiguousCount++; ambiguousIds.push(e.id); }
+    }
     entityKeyMap.set(e.id, key);
     normEntities.set(key, {
       key,
@@ -158,7 +175,7 @@ export function normaliseDataset(
     });
   }
 
-  return { entities: normEntities, relationships: normRels, ambiguousCount };
+  return { entities: normEntities, relationships: normRels, ambiguousCount, ambiguousIds };
 }
 
 // ── Diff computation ──
@@ -169,8 +186,10 @@ function str(v: any): string {
 }
 
 export function computeDiff(
-  base: { entities: Map<string, NormEntity>; relationships: Map<string, NormRelationship>; ambiguousCount: number },
-  compare: { entities: Map<string, NormEntity>; relationships: Map<string, NormRelationship>; ambiguousCount: number }
+  base: { entities: Map<string, NormEntity>; relationships: Map<string, NormRelationship>; ambiguousCount: number; ambiguousIds: string[] },
+  compare: { entities: Map<string, NormEntity>; relationships: Map<string, NormRelationship>; ambiguousCount: number; ambiguousIds: string[] },
+  baseRawEntities?: RawEntity[],
+  compareRawEntities?: RawEntity[]
 ): DiffResult {
   // Entities
   const entitiesAdded: NormEntity[] = [];
@@ -246,6 +265,21 @@ export function computeDiff(
   const finalAdded = relsAdded.filter((a) => !processedReversals.has(a.key));
   const finalRemoved = relsRemoved.filter((r) => !processedReversals.has(r.key));
 
+  // Build ambiguous entities list
+  const ambiguousEntities: AmbiguousEntity[] = [];
+  if (baseRawEntities) {
+    for (const id of base.ambiguousIds) {
+      const e = baseRawEntities.find((r) => r.id === id);
+      if (e) ambiguousEntities.push({ id: e.id, name: e.name, entity_type: e.entity_type, side: "base" });
+    }
+  }
+  if (compareRawEntities) {
+    for (const id of compare.ambiguousIds) {
+      const e = compareRawEntities.find((r) => r.id === id);
+      if (e) ambiguousEntities.push({ id: e.id, name: e.name, entity_type: e.entity_type, side: "compare" });
+    }
+  }
+
   return {
     entitiesAdded,
     entitiesRemoved,
@@ -255,6 +289,7 @@ export function computeDiff(
     relsChanged,
     directionChanges,
     ambiguousCount: base.ambiguousCount + compare.ambiguousCount,
+    ambiguousEntities,
   };
 }
 
