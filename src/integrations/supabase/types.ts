@@ -540,6 +540,18 @@ export type Database = {
           type_b: string
         }[]
       }
+      find_fuzzy_duplicate_entities: {
+        Args: { _tenant_id: string; _threshold?: number }
+        Returns: {
+          entity_id_a: string
+          entity_id_b: string
+          name_a: string
+          name_b: string
+          similarity: number
+          type_a: string
+          type_b: string
+        }[]
+      }
       get_user_tenant_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
