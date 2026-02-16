@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +19,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Search, Network, Trash2, RotateCcw } from "lucide-react";
+import { HealthBadge } from "@/components/structure/StructureHealthPanel";
+import { computeStructureHealth, type EntityNode, type RelationshipEdge, type StructureHealth } from "@/hooks/useStructureData";
 
 interface Structure {
   id: string;
@@ -25,6 +28,8 @@ interface Structure {
   updated_at: string;
   deleted_at: string | null;
 }
+
+type SortOption = "updated" | "name" | "health_asc" | "health_desc";
 
 export default function Structures() {
   const { user } = useAuth();
@@ -36,6 +41,10 @@ export default function Structures() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Structure | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [sortBy, setSortBy] = useState<SortOption>("updated");
+
+  // Health scores per structure
+  const [healthMap, setHealthMap] = useState<Map<string, Pick<StructureHealth, "score" | "status">>>(new Map());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,15 +58,91 @@ export default function Structures() {
     }
 
     const { data } = await query;
-    setStructures((data as Structure[]) ?? []);
+    const structs = (data as Structure[]) ?? [];
+    setStructures(structs);
     setLoading(false);
+
+    // Load health scores for active structures in background
+    const activeIds = structs.filter((s) => !s.deleted_at).map((s) => s.id);
+    if (activeIds.length === 0) return;
+
+    // Fetch all structure_entities and structure_relationships
+    const [seResult, srResult] = await Promise.all([
+      supabase.from("structure_entities").select("structure_id, entity_id").in("structure_id", activeIds),
+      supabase.from("structure_relationships").select("structure_id, relationship_id").in("structure_id", activeIds),
+    ]);
+
+    const seByStruct = new Map<string, string[]>();
+    for (const row of seResult.data ?? []) {
+      const arr = seByStruct.get(row.structure_id) ?? [];
+      arr.push(row.entity_id);
+      seByStruct.set(row.structure_id, arr);
+    }
+
+    const srByStruct = new Map<string, string[]>();
+    for (const row of srResult.data ?? []) {
+      const arr = srByStruct.get(row.structure_id) ?? [];
+      arr.push(row.relationship_id);
+      srByStruct.set(row.structure_id, arr);
+    }
+
+    // Collect all unique entity/relationship IDs
+    const allEntityIds = new Set<string>();
+    const allRelIds = new Set<string>();
+    for (const ids of seByStruct.values()) ids.forEach((id) => allEntityIds.add(id));
+    for (const ids of srByStruct.values()) ids.forEach((id) => allRelIds.add(id));
+
+    const [entResult, relResult] = await Promise.all([
+      allEntityIds.size > 0
+        ? supabase.from("entities")
+            .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, created_at")
+            .in("id", Array.from(allEntityIds))
+            .is("deleted_at", null)
+        : Promise.resolve({ data: [] }),
+      allRelIds.size > 0
+        ? supabase.from("relationships")
+            .select("id, from_entity_id, to_entity_id, relationship_type, source, ownership_percent, ownership_units, ownership_class, created_at")
+            .in("id", Array.from(allRelIds))
+            .is("deleted_at", null)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    const entityById = new Map<string, EntityNode>();
+    for (const e of (entResult.data ?? []) as any[]) {
+      entityById.set(e.id, e as EntityNode);
+    }
+
+    const relById = new Map<string, RelationshipEdge>();
+    for (const r of (relResult.data ?? []) as any[]) {
+      relById.set(r.id, {
+        id: r.id,
+        from_entity_id: r.from_entity_id,
+        to_entity_id: r.to_entity_id,
+        relationship_type: r.relationship_type,
+        source_data: r.source,
+        ownership_percent: r.ownership_percent,
+        ownership_units: r.ownership_units,
+        ownership_class: r.ownership_class,
+        created_at: r.created_at,
+      });
+    }
+
+    // Compute health for each structure
+    const newHealthMap = new Map<string, Pick<StructureHealth, "score" | "status">>();
+    for (const sid of activeIds) {
+      const entIds = seByStruct.get(sid) ?? [];
+      const relIds = srByStruct.get(sid) ?? [];
+      const ents = entIds.map((id) => entityById.get(id)).filter(Boolean) as EntityNode[];
+      const rels = relIds.map((id) => relById.get(id)).filter(Boolean) as RelationshipEdge[];
+      newHealthMap.set(sid, computeStructureHealth(ents, rels));
+    }
+    setHealthMap(newHealthMap);
   }, [showDeleted]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // Check admin role
   useEffect(() => {
     if (!user?.id) return;
     supabase
@@ -97,25 +182,50 @@ export default function Structures() {
     }
   };
 
-  const filtered = structures.filter((s) =>
-    s.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const sorted = useMemo(() => {
+    const filtered = structures.filter((s) =>
+      s.name.toLowerCase().includes(search.toLowerCase())
+    );
+    switch (sortBy) {
+      case "name":
+        return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+      case "health_asc":
+        return [...filtered].sort((a, b) => (healthMap.get(a.id)?.score ?? 100) - (healthMap.get(b.id)?.score ?? 100));
+      case "health_desc":
+        return [...filtered].sort((a, b) => (healthMap.get(b.id)?.score ?? 100) - (healthMap.get(a.id)?.score ?? 100));
+      default:
+        return filtered;
+    }
+  }, [structures, search, sortBy, healthMap]);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Structures</h1>
-        {isAdmin && (
-          <Button
-            variant={showDeleted ? "secondary" : "outline"}
-            size="sm"
-            className="gap-1.5"
-            onClick={() => setShowDeleted(!showDeleted)}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {showDeleted ? "Hide deleted" : "Show deleted"}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+            <SelectTrigger className="h-9 w-[160px] text-xs">
+              <SelectValue placeholder="Sort by..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="updated">Last updated</SelectItem>
+              <SelectItem value="name">Name</SelectItem>
+              <SelectItem value="health_asc">Lowest health</SelectItem>
+              <SelectItem value="health_desc">Highest health</SelectItem>
+            </SelectContent>
+          </Select>
+          {isAdmin && (
+            <Button
+              variant={showDeleted ? "secondary" : "outline"}
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setShowDeleted(!showDeleted)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {showDeleted ? "Hide deleted" : "Show deleted"}
+            </Button>
+          )}
+        </div>
       </div>
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -128,12 +238,13 @@ export default function Structures() {
       </div>
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading...</p>
-      ) : filtered.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <p className="text-sm text-muted-foreground">No structures found.</p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((s) => {
+          {sorted.map((s) => {
             const isDeleted = !!s.deleted_at;
+            const health = healthMap.get(s.id);
             return (
               <Card key={s.id} className={`group relative transition-colors ${isDeleted ? "opacity-60" : "hover:bg-accent/50"}`}>
                 <CardContent className="flex items-center gap-3 p-4">
@@ -164,8 +275,11 @@ export default function Structures() {
                     <>
                       <Link to={`/structures/${s.id}`} className="flex items-center gap-3 flex-1 min-w-0">
                         <Network className="h-5 w-5 text-muted-foreground" />
-                        <div>
-                          <p className="font-medium">{s.name}</p>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium truncate">{s.name}</p>
+                            {health && <HealthBadge score={health.score} status={health.status} />}
+                          </div>
                           <p className="text-xs text-muted-foreground">
                             Updated {new Date(s.updated_at).toLocaleDateString()}
                           </p>

@@ -21,7 +21,7 @@ export type ViewMode = "ownership" | "control" | "full";
 
 export default function StructureView() {
   const { id } = useParams();
-  const { entities, relationships, structureName, loading, reload, ownershipValidation, entityIntegrity, ownershipCycles } = useStructureData(id);
+  const { entities, relationships, structureName, loading, reload, structureHealth } = useStructureData(id);
   const { toast } = useToast();
   const { showOnboarding, dismiss: dismissOnboarding } = useOnboarding();
 
@@ -186,7 +186,7 @@ export default function StructureView() {
       {/* Export blocked banner */}
       <ExportBlockedBanner entities={entities} />
 
-      <StructureHealthPanel ownershipValidation={ownershipValidation} entityIntegrity={entityIntegrity} ownershipCycles={ownershipCycles} />
+      <StructureHealthPanel health={structureHealth} onSelectEntity={(eid) => { setSelectedEntityId(eid); setSelectedEdgeId(null); }} />
 
       {/* Graph + Panel */}
       <div className="relative mt-3 flex-1 rounded-lg border bg-card overflow-hidden">
