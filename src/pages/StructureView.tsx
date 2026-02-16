@@ -1,12 +1,12 @@
 import { useState, useCallback, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles } from "lucide-react";
+import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles, MousePointer, Grid3x3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useStructureData, useFilteredGraph } from "@/hooks/useStructureData";
 import { useOnboarding } from "@/hooks/useOnboarding";
-import StructureGraph, { type LayoutMode } from "@/components/structure/StructureGraph";
+import StructureGraph, { type LayoutMode, type LayoutStrategy, clearSavedPositions } from "@/components/structure/StructureGraph";
 import GraphControls from "@/components/structure/GraphControls";
 import EntityDetailPanel from "@/components/structure/EntityDetailPanel";
 import RelationshipDetailPanel from "@/components/structure/RelationshipDetailPanel";
@@ -38,6 +38,13 @@ export default function StructureView() {
   const [pinnedNodeIds, setPinnedNodeIds] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<ViewMode>("ownership");
   const [showAiPanel, setShowAiPanel] = useState(false);
+  const [layoutStrategy, setLayoutStrategy] = useState<LayoutStrategy>(() => {
+    // If saved positions exist for this structure, default to manual
+    try {
+      const saved = localStorage.getItem(`structure_node_positions_${id}`);
+      return saved ? "manual" : "auto";
+    } catch { return "auto"; }
+  });
 
   const graphRef = useRef<HTMLDivElement>(null);
 
@@ -139,8 +146,21 @@ export default function StructureView() {
             <Maximize className="h-3.5 w-3.5" /> Fit View
           </Button>
 
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setAutoLayoutTrigger((c) => c + 1)}>
-            <LayoutGrid className="h-3.5 w-3.5" /> Auto-layout
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { clearSavedPositions(id!); setLayoutStrategy("auto"); setAutoLayoutTrigger((c) => c + 1); }}>
+            <LayoutGrid className="h-3.5 w-3.5" /> Reset to Auto
+          </Button>
+
+          <Button
+            variant={layoutStrategy === "manual" ? "secondary" : "outline"}
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setLayoutStrategy((s) => s === "auto" ? "manual" : "auto")}
+          >
+            {layoutStrategy === "manual" ? (
+              <><MousePointer className="h-3.5 w-3.5" /> Manual</>
+            ) : (
+              <><Grid3x3 className="h-3.5 w-3.5" /> Auto</>
+            )}
           </Button>
 
           <Button variant="outline" size="sm" className="gap-1.5" onClick={handleResetFilters}>
@@ -214,11 +234,14 @@ export default function StructureView() {
             onSelectEdge={setSelectedEdgeId}
             autoLayoutTrigger={autoLayoutTrigger}
             layoutMode={layoutMode}
+            layoutStrategy={layoutStrategy}
             pinnedNodeIds={pinnedNodeIds}
             onTogglePin={handleTogglePin}
             viewMode={viewMode}
             searchHighlightId={searchHighlightId}
             fitViewTrigger={fitViewTrigger}
+            structureId={id!}
+            onNodePositionsSaved={() => setLayoutStrategy("manual")}
           />
         )}
 

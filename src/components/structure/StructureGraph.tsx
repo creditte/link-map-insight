@@ -38,6 +38,7 @@ export const EDGE_COLORS: Record<string, string> = {
 };
 
 export type LayoutMode = "balanced" | "ownership" | "control";
+export type LayoutStrategy = "auto" | "manual";
 
 const OWNERSHIP_TYPES = new Set(["shareholder", "beneficiary"]);
 const CONTROL_TYPES = new Set(["director", "trustee", "appointer", "settlor"]);
@@ -139,17 +140,43 @@ interface Props {
   onSelectEdge: (id: string | null) => void;
   autoLayoutTrigger: number;
   layoutMode: LayoutMode;
+  layoutStrategy: LayoutStrategy;
   pinnedNodeIds: Set<string>;
   onTogglePin: (id: string) => void;
   viewMode: string;
   searchHighlightId: string | null;
   fitViewTrigger: number;
+  structureId: string;
+  onNodePositionsSaved?: () => void;
+}
+
+const POSITIONS_KEY_PREFIX = "structure_node_positions_";
+
+function getSavedPositions(structureId: string): Map<string, { x: number; y: number }> {
+  try {
+    const raw = localStorage.getItem(POSITIONS_KEY_PREFIX + structureId);
+    if (!raw) return new Map();
+    const parsed = JSON.parse(raw) as Record<string, { x: number; y: number }>;
+    return new Map(Object.entries(parsed));
+  } catch {
+    return new Map();
+  }
+}
+
+function savePositions(structureId: string, positions: Map<string, { x: number; y: number }>) {
+  const obj: Record<string, { x: number; y: number }> = {};
+  for (const [k, v] of positions) obj[k] = v;
+  localStorage.setItem(POSITIONS_KEY_PREFIX + structureId, JSON.stringify(obj));
+}
+
+export function clearSavedPositions(structureId: string) {
+  localStorage.removeItem(POSITIONS_KEY_PREFIX + structureId);
 }
 
 function StructureGraphInner({
   entities, relationships, selectedEntityId, onSelectEntity, onSelectEdge,
-  autoLayoutTrigger, layoutMode, pinnedNodeIds, onTogglePin, viewMode,
-  searchHighlightId, fitViewTrigger,
+  autoLayoutTrigger, layoutMode, layoutStrategy, pinnedNodeIds, onTogglePin, viewMode,
+  searchHighlightId, fitViewTrigger, structureId, onNodePositionsSaved,
 }: Props) {
   const { fitView } = useReactFlow();
   const prevLayoutTrigger = useRef(0);
@@ -164,43 +191,84 @@ function StructureGraphInner({
     return map;
   }, [pinnedNodeIds]);
 
-  const initialNodes = useMemo(
-    () => dagreLayout(entities, relationships, layoutMode, getPinnedPositions()),
-    [entities, relationships, layoutMode, getPinnedPositions]
-  );
+  // In manual mode, use saved positions; in auto mode, use dagre
+  const initialNodes = useMemo(() => {
+    if (layoutStrategy === "manual") {
+      const saved = getSavedPositions(structureId);
+      if (saved.size > 0) {
+        // Use saved positions for nodes that have them, dagre for the rest
+        const dagreNodes = dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
+        return dagreNodes.map((n) => {
+          const savedPos = saved.get(n.id);
+          return savedPos ? { ...n, position: savedPos } : n;
+        });
+      }
+    }
+    return dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
+  }, [entities, relationships, layoutMode, getPinnedPositions, layoutStrategy, structureId]);
   const initialEdges = useMemo(() => buildEdges(relationships, viewMode), [relationships, viewMode]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  // Track positions on drag
+  // Track positions on drag and persist in manual mode
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleNodesChange = useCallback(
     (changes: any) => {
       onNodesChange(changes);
+      let hasDrag = false;
       for (const change of changes) {
         if (change.type === "position" && change.position) {
           nodePositionsRef.current.set(change.id, change.position);
+          hasDrag = true;
         }
       }
+      // Debounced save in manual mode
+      if (hasDrag && layoutStrategy === "manual") {
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = setTimeout(() => {
+          savePositions(structureId, nodePositionsRef.current);
+          onNodePositionsSaved?.();
+        }, 500);
+      }
     },
-    [onNodesChange]
+    [onNodesChange, layoutStrategy, structureId, onNodePositionsSaved]
   );
 
   useEffect(() => {
-    const newNodes = dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
-    setNodes(newNodes);
-    setEdges(buildEdges(relationships, viewMode));
-    for (const n of newNodes) {
-      if (!nodePositionsRef.current.has(n.id)) {
-        nodePositionsRef.current.set(n.id, n.position);
+    if (layoutStrategy === "manual") {
+      const saved = getSavedPositions(structureId);
+      if (saved.size > 0) {
+        const dagreNodes = dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
+        const merged = dagreNodes.map((n) => {
+          const savedPos = saved.get(n.id);
+          return savedPos ? { ...n, position: savedPos } : n;
+        });
+        setNodes(merged);
+        for (const n of merged) nodePositionsRef.current.set(n.id, n.position);
+      } else {
+        const newNodes = dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
+        setNodes(newNodes);
+        for (const n of newNodes) nodePositionsRef.current.set(n.id, n.position);
+      }
+    } else {
+      const newNodes = dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
+      setNodes(newNodes);
+      for (const n of newNodes) {
+        if (!nodePositionsRef.current.has(n.id)) {
+          nodePositionsRef.current.set(n.id, n.position);
+        }
       }
     }
-  }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions]);
+    setEdges(buildEdges(relationships, viewMode));
+  }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions, layoutStrategy, structureId]);
 
-  // Auto-layout button trigger
+  // Auto-layout button trigger — always runs dagre and clears saved positions
   useEffect(() => {
     if (autoLayoutTrigger > 0 && autoLayoutTrigger !== prevLayoutTrigger.current) {
       prevLayoutTrigger.current = autoLayoutTrigger;
+      clearSavedPositions(structureId);
       const newNodes = dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
       setNodes(newNodes);
       for (const n of newNodes) {
@@ -208,7 +276,7 @@ function StructureGraphInner({
       }
       setTimeout(() => fitView({ padding: 0.2 }), 50);
     }
-  }, [autoLayoutTrigger, entities, relationships, layoutMode, setNodes, fitView, getPinnedPositions]);
+  }, [autoLayoutTrigger, entities, relationships, layoutMode, setNodes, fitView, getPinnedPositions, structureId]);
 
   useEffect(() => {
     setNodes((nds) =>
