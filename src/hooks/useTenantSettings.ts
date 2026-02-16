@@ -40,14 +40,14 @@ export function useTenantSettings() {
       setTenant({
         id: data.id,
         name: data.name,
-        firm_name: (data as any).firm_name ?? data.name,
+        firm_name: data.firm_name ?? data.name,
         logo_url: data.logo_url ?? null,
-        brand_primary_color: (data as any).brand_primary_color ?? null,
-        export_footer_text: (data as any).export_footer_text ?? null,
-        export_disclaimer_text: (data as any).export_disclaimer_text ?? null,
-        export_show_disclaimer: (data as any).export_show_disclaimer ?? false,
-        export_block_on_critical_health: (data as any).export_block_on_critical_health ?? false,
-        export_default_view_mode: (data as any).export_default_view_mode ?? "full",
+        brand_primary_color: data.brand_primary_color ?? null,
+        export_footer_text: data.export_footer_text ?? null,
+        export_disclaimer_text: data.export_disclaimer_text ?? null,
+        export_show_disclaimer: data.export_show_disclaimer ?? false,
+        export_block_on_critical_health: data.export_block_on_critical_health ?? false,
+        export_default_view_mode: data.export_default_view_mode ?? "full",
       });
     }
     setLoading(false);

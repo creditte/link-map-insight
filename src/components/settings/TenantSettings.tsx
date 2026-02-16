@@ -46,14 +46,14 @@ export default function TenantSettings({ isAdmin = false }: Props) {
 
       if (tenant) {
         setTenantId(tenant.id);
-        setFirmName((tenant as any).firm_name ?? tenant.name);
+        setFirmName(tenant.firm_name ?? tenant.name);
         setLogoUrl(tenant.logo_url ?? null);
-        setBrandColor((tenant as any).brand_primary_color ?? "#0F172A");
-        setExportFooter((tenant as any).export_footer_text ?? "");
-        setExportDisclaimer((tenant as any).export_disclaimer_text ?? "");
-        setShowDisclaimer((tenant as any).export_show_disclaimer ?? false);
-        setBlockOnCritical((tenant as any).export_block_on_critical_health ?? false);
-        setDefaultViewMode((tenant as any).export_default_view_mode ?? "full");
+        setBrandColor(tenant.brand_primary_color ?? "#0F172A");
+        setExportFooter(tenant.export_footer_text ?? "");
+        setExportDisclaimer(tenant.export_disclaimer_text ?? "");
+        setShowDisclaimer(tenant.export_show_disclaimer ?? false);
+        setBlockOnCritical(tenant.export_block_on_critical_health ?? false);
+        setDefaultViewMode(tenant.export_default_view_mode ?? "full");
       }
       setLoading(false);
     }
@@ -73,7 +73,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
         export_show_disclaimer: showDisclaimer,
         export_block_on_critical_health: blockOnCritical,
         export_default_view_mode: defaultViewMode,
-      } as any)
+      })
       .eq("id", tenantId);
 
     if (error) {
@@ -107,7 +107,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
     }
     const { data: urlData } = supabase.storage.from("tenant-assets").getPublicUrl(path);
     const publicUrl = urlData.publicUrl;
-    const { error: updateError } = await supabase.from("tenants").update({ logo_url: publicUrl } as any).eq("id", tenantId);
+    const { error: updateError } = await supabase.from("tenants").update({ logo_url: publicUrl }).eq("id", tenantId);
     if (updateError) {
       toast({ title: "Save failed", description: updateError.message, variant: "destructive" });
     } else {
@@ -125,7 +125,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
     if (files?.length) {
       await supabase.storage.from("tenant-assets").remove(files.map((f) => `tenant/${tenantId}/${f.name}`));
     }
-    await supabase.from("tenants").update({ logo_url: null } as any).eq("id", tenantId);
+    await supabase.from("tenants").update({ logo_url: null }).eq("id", tenantId);
     setLogoUrl(null);
     toast({ title: "Logo removed" });
     setUploading(false);
@@ -136,9 +136,9 @@ export default function TenantSettings({ isAdmin = false }: Props) {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold">Organisation</h2>
+        <h2 className="text-lg font-semibold">Firm Settings</h2>
         <p className="text-sm text-muted-foreground">
-          {isAdmin ? "Manage your firm details, branding, and export defaults." : "View your organisation details."}
+          {isAdmin ? "Manage your firm details, branding, and export defaults." : "View your firm details."}
         </p>
       </div>
 
@@ -161,7 +161,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
             />
           </div>
           <div>
-            <Label className="text-sm">Tenant ID</Label>
+            <Label className="text-sm">Firm ID</Label>
             <Input value={tenantId ?? ""} className="mt-1 font-mono text-xs" disabled />
           </div>
         </CardContent>

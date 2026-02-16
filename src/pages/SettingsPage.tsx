@@ -43,7 +43,7 @@ export default function SettingsPage() {
             </TabsTrigger>
           )}
           <TabsTrigger value="tenant" className="gap-1.5">
-            <Building2 className="h-3.5 w-3.5" /> Organisation
+            <Building2 className="h-3.5 w-3.5" /> Firm
           </TabsTrigger>
           {isAdmin && (
             <TabsTrigger value="feedback" className="gap-1.5">
@@ -72,7 +72,7 @@ export default function SettingsPage() {
       {!isAdmin && (
         <div className="flex items-center gap-2 rounded-md border p-3 text-sm text-muted-foreground">
           <Shield className="h-4 w-4 shrink-0" />
-          User management is only available to administrators.
+          User and firm management is only available to administrators.
         </div>
       )}
     </div>
