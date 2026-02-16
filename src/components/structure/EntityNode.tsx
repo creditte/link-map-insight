@@ -4,6 +4,9 @@ import { Pin, Star, Shield } from "lucide-react";
 import { getEntityIcon, getEntityColor, getEntityLabel } from "@/lib/entityTypes";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
+const NODE_WIDTH = 180;
+const MAX_LINES_COLLAPSED = 4;
+
 function EntityNodeComponent({ data, selected }: NodeProps) {
   const entityType = (data.entity_type as string) ?? "Unclassified";
   const pinned = data.pinned as boolean;
@@ -23,7 +26,7 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
               className={`relative rounded-lg border-2 px-4 py-3 shadow-sm transition-shadow ${colorClass} ${
                 selected ? "ring-2 ring-ring shadow-md" : ""
               }`}
-              style={{ minWidth: 100, maxWidth: 180 }}
+              style={{ width: NODE_WIDTH }}
             >
               {/* Trustee Company badge */}
               {isTrusteeCompany && (
@@ -40,21 +43,27 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
                   </Tooltip>
                 </TooltipProvider>
               )}
-              <div className="flex items-center gap-2">
-                <Icon className="h-4 w-4 shrink-0 opacity-70" />
+              <div className="flex items-start gap-2">
+                <Icon className="h-4 w-4 shrink-0 opacity-70 mt-0.5" />
                 <span
                   className="text-sm font-medium leading-tight overflow-hidden"
-                  style={{
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
-                    wordBreak: "break-word",
-                  }}
+                  style={
+                    selected
+                      ? { wordBreak: "break-word" }
+                      : {
+                          display: "-webkit-box",
+                          WebkitLineClamp: MAX_LINES_COLLAPSED,
+                          WebkitBoxOrient: "vertical",
+                          wordBreak: "break-word",
+                        }
+                  }
                 >
                   {label}
                 </span>
-                {isOperating && <Star className="h-3 w-3 shrink-0 text-amber-500 fill-amber-500" />}
-                {pinned && <Pin className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                <div className="flex shrink-0 items-center gap-0.5 mt-0.5">
+                  {isOperating && <Star className="h-3 w-3 text-amber-500 fill-amber-500" />}
+                  {pinned && <Pin className="h-3 w-3 text-muted-foreground" />}
+                </div>
               </div>
               <p className="mt-1 text-[10px] uppercase tracking-wider opacity-50 truncate">{getEntityLabel(entityType)}</p>
             </div>
