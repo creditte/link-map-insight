@@ -1,4 +1,8 @@
 import { useEffect, useState, useMemo } from "react";
+
+export interface OwnershipError { entityId: string; entityName: string; total: number }
+export interface OwnershipWarning { entityId: string; entityName: string; total: number; missing: number }
+export interface OwnershipValidation { errors: OwnershipError[]; warnings: OwnershipWarning[]; infoOnly: string[] }
 import { supabase } from "@/integrations/supabase/client";
 
 export interface EntityNode {
@@ -104,7 +108,50 @@ export function useStructureData(structureId: string | undefined) {
     load();
   }, [structureId, version]);
 
-  return { entities, relationships, structureName, loading, reload };
+  const ownershipValidation = useMemo<OwnershipValidation>(() => {
+    const errors: OwnershipError[] = [];
+    const warnings: OwnershipWarning[] = [];
+    const infoOnly: string[] = [];
+
+    const byCompany = new Map<string, RelationshipEdge[]>();
+    for (const rel of relationships) {
+      if (rel.relationship_type !== "shareholder") continue;
+      const arr = byCompany.get(rel.to_entity_id) ?? [];
+      arr.push(rel);
+      byCompany.set(rel.to_entity_id, arr);
+    }
+
+    const entityMap = new Map(entities.map((e) => [e.id, e]));
+
+    for (const [companyId, rels] of byCompany) {
+      const withPercent = rels.filter((r) => r.ownership_percent != null);
+      const withoutPercent = rels.filter((r) => r.ownership_percent == null);
+      const companyName = entityMap.get(companyId)?.name ?? companyId;
+
+      if (withPercent.length === 0) {
+        infoOnly.push(companyName);
+        continue;
+      }
+
+      const total = Math.round(withPercent.reduce((s, r) => s + (r.ownership_percent ?? 0), 0) * 100) / 100;
+
+      if (withoutPercent.length > 0) {
+        warnings.push({ entityId: companyId, entityName: companyName, total, missing: withoutPercent.length });
+      } else if (total > 100) {
+        errors.push({ entityId: companyId, entityName: companyName, total });
+      } else if (total < 100) {
+        warnings.push({ entityId: companyId, entityName: companyName, total, missing: 0 });
+      }
+    }
+
+    if (errors.length || warnings.length) {
+      console.log("[Ownership Validation]", { errors, warnings, infoOnly });
+    }
+
+    return { errors, warnings, infoOnly };
+  }, [entities, relationships]);
+
+  return { entities, relationships, structureName, loading, reload, ownershipValidation };
 }
 
 const OWNERSHIP_VIEW_TYPES = new Set(["shareholder", "beneficiary", "partner", "member"]);
