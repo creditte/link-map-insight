@@ -1,5 +1,6 @@
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
+import { useTenantSettings } from "@/hooks/useTenantSettings";
 import { Button } from "@/components/ui/button";
 import FeedbackModal from "@/components/FeedbackModal";
 import {
@@ -21,11 +22,20 @@ const navItems = [
 
 export default function AppSidebar() {
   const { signOut, user } = useAuth();
+  const { tenant } = useTenantSettings();
+
+  const firmName = tenant?.firm_name || tenant?.name;
+  const logoUrl = tenant?.logo_url;
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r bg-sidebar text-sidebar-foreground">
-      <div className="flex h-14 items-center border-b px-4">
-        <h1 className="text-lg font-bold tracking-tight text-sidebar-primary">Strukcha</h1>
+      <div className="flex h-14 items-center border-b px-4 gap-2">
+        {logoUrl ? (
+          <img src={`${logoUrl}?t=1`} alt="Firm logo" className="h-7 max-w-[80px] object-contain" />
+        ) : null}
+        <h1 className="text-lg font-bold tracking-tight text-sidebar-primary truncate">
+          {firmName || "Strukcha"}
+        </h1>
       </div>
       <nav className="flex-1 space-y-1 p-2">
         {navItems.map((item) => (
@@ -48,6 +58,7 @@ export default function AppSidebar() {
           <LogOut className="h-4 w-4" />
           Sign Out
         </Button>
+        <p className="text-[10px] text-sidebar-foreground/30 text-center pt-1">Powered by strukcha</p>
       </div>
     </aside>
   );

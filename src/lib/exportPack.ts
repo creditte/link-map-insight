@@ -115,6 +115,9 @@ export interface ExportMeta {
   snapshotCreatedAt?: string;
   isScenario?: boolean;
   scenarioLabel?: string;
+  brandColor?: string;
+  footerText?: string;
+  disclaimerText?: string;
 }
 
 export async function exportImage(
@@ -149,7 +152,7 @@ export async function exportImage(
 
   if (format === "png") {
     const logoDims = await getImageDims(logoDataUrl);
-    const graphImg = new Image();
+    const graphImg = new window.Image();
     graphImg.src = dataUrl;
     await new Promise((r) => { graphImg.onload = r; });
 
@@ -159,7 +162,7 @@ export async function exportImage(
     const ctx = canvas.getContext("2d")!;
     ctx.drawImage(graphImg, 0, 0);
 
-    const logoImg = new Image();
+    const logoImg = new window.Image();
     logoImg.src = logoDataUrl;
     await new Promise((r) => { logoImg.onload = r; });
 
@@ -217,29 +220,47 @@ function relSortKey(r: { fromName: string; relType: string; toName: string }) {
   return `${String(typeIdx < 0 ? 99 : typeIdx).padStart(2, "0")}_${r.fromName}_${r.relType}_${r.toName}`;
 }
 
-function addFooter(pdf: jsPDF, structureName: string, pageNum: number, totalPages: number, logoDataUrl?: string | null) {
-  const pageW = pdf.internal.pageSize.getWidth();
-  const pageH = pdf.internal.pageSize.getHeight();
-  pdf.setDrawColor(200);
-  pdf.line(14, pageH - 14, pageW - 14, pageH - 14);
-  pdf.setFontSize(7);
-  pdf.setTextColor(140);
-  pdf.text(structureName, 14, pageH - 8);
-  pdf.text(`Page ${pageNum} of ${totalPages}`, pageW - 14, pageH - 8, { align: "right" });
-
-  if (logoDataUrl && pageNum > 1) {
-    try {
-      pdf.addImage(logoDataUrl, "PNG", pageW / 2 - 10, pageH - 13, 20, 8);
-    } catch { /* skip */ }
-  }
-
-  pdf.setTextColor(0);
-}
-
 /** Parse hex color to [r,g,b] tuple */
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function addFooter(
+  pdf: jsPDF,
+  structureName: string,
+  pageNum: number,
+  totalPages: number,
+  opts?: { logoDataUrl?: string | null; footerText?: string; disclaimerText?: string; brandColor?: string }
+) {
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const lineColor = opts?.brandColor ? hexToRgb(opts.brandColor) : [200, 200, 200] as [number, number, number];
+  pdf.setDrawColor(...lineColor);
+  pdf.line(14, pageH - 18, pageW - 14, pageH - 18);
+  pdf.setFontSize(7);
+  pdf.setTextColor(140);
+
+  const footerLabel = opts?.footerText || structureName;
+  pdf.text(footerLabel, 14, pageH - 12);
+  pdf.text(`Page ${pageNum} of ${totalPages}`, pageW - 14, pageH - 12, { align: "right" });
+
+  if (opts?.logoDataUrl && pageNum > 1) {
+    try {
+      pdf.addImage(opts.logoDataUrl, "PNG", pageW / 2 - 10, pageH - 17, 20, 8);
+    } catch { /* skip */ }
+  }
+
+  // Short disclaimer on pages 2+
+  if (opts?.disclaimerText && pageNum > 1) {
+    pdf.setFontSize(6);
+    pdf.setTextColor(160);
+    const shortDisclaimer = opts.disclaimerText.length > 120 ? opts.disclaimerText.slice(0, 117) + "…" : opts.disclaimerText;
+    pdf.text(shortDisclaimer, 14, pageH - 6, { maxWidth: pageW - 28 });
+  }
+
+  pdf.setTextColor(0);
+  pdf.setDrawColor(200);
 }
 
 export async function exportPdf(
@@ -253,13 +274,17 @@ export async function exportPdf(
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
-  const totalPages = 3;
+  const totalPages = meta?.disclaimerText ? 4 : 3;
+
+  const brandRgb = meta?.brandColor ? hexToRgb(meta.brandColor) : [59, 130, 246] as [number, number, number];
 
   // Pre-load logo
   let logoDataUrl: string | null = null;
   if (meta?.logoUrl) {
     logoDataUrl = await loadImageAsDataUrl(meta.logoUrl);
   }
+
+  const footerOpts = { logoDataUrl, footerText: meta?.footerText, disclaimerText: meta?.disclaimerText, brandColor: meta?.brandColor };
 
   // ─── Page 1: Diagram + title block + legend ───
   pdf.setFontSize(20);
@@ -282,6 +307,15 @@ export async function exportPdf(
   if (meta?.tenantName) subtitleParts.push(meta.tenantName);
   pdf.text(subtitleParts.join("  |  "), 14, 23);
   pdf.setTextColor(0);
+
+  // Brand accent line under title
+  if (meta?.brandColor) {
+    pdf.setDrawColor(...brandRgb);
+    pdf.setLineWidth(0.5);
+    pdf.line(14, 26, pageW - 14, 26);
+    pdf.setLineWidth(0.2);
+    pdf.setDrawColor(200);
+  }
 
   // Logo top-right on page 1
   if (logoDataUrl) {
@@ -306,40 +340,47 @@ export async function exportPdf(
     pdf.text("(Could not render diagram image)", 14, 40);
   }
 
-  // Legend: 2-column autoTable with colour swatches via didDrawCell
-  const legendStartY = pageH - 44;
-  // Build legend rows: [category, type, color] — split into 2 columns
+  // Disclaimer box on page 1 if enabled
+  if (meta?.disclaimerText) {
+    const disclaimerY = pageH - 44;
+    pdf.setDrawColor(...brandRgb);
+    pdf.setFillColor(248, 248, 252);
+    pdf.roundedRect(14, disclaimerY - 8, pageW - 28, 16, 1, 1, "FD");
+    pdf.setFontSize(6.5);
+    pdf.setTextColor(100);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("DISCLAIMER", 16, disclaimerY - 4);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(6);
+    const wrappedDisclaimer = pdf.splitTextToSize(meta.disclaimerText, pageW - 34);
+    pdf.text(wrappedDisclaimer.slice(0, 3), 16, disclaimerY);
+    pdf.setTextColor(0);
+    pdf.setDrawColor(200);
+  }
+
+  // Legend
+  const legendStartY = meta?.disclaimerText ? pageH - 52 : pageH - 44;
   const leftItems: { title?: string; type: string; color: string }[] = [];
   const rightItems: { title?: string; type: string; color: string }[] = [];
 
-  // Ownership + Control on left, Membership + Family on right
   for (const group of LEGEND_GROUPS.slice(0, 2)) {
-    const target = leftItems;
-    target.push({ title: group.title, type: "", color: "" });
-    for (const t of group.types) {
-      target.push({ type: t, color: EDGE_COLORS[t] ?? "#94a3b8" });
-    }
+    leftItems.push({ title: group.title, type: "", color: "" });
+    for (const t of group.types) leftItems.push({ type: t, color: EDGE_COLORS[t] ?? "#94a3b8" });
   }
   for (const group of LEGEND_GROUPS.slice(2)) {
-    const target = rightItems;
-    target.push({ title: group.title, type: "", color: "" });
-    for (const t of group.types) {
-      target.push({ type: t, color: EDGE_COLORS[t] ?? "#94a3b8" });
-    }
+    rightItems.push({ title: group.title, type: "", color: "" });
+    for (const t of group.types) rightItems.push({ type: t, color: EDGE_COLORS[t] ?? "#94a3b8" });
   }
 
-  // Pad to equal length
   const maxLen = Math.max(leftItems.length, rightItems.length);
   while (leftItems.length < maxLen) leftItems.push({ type: "", color: "" });
   while (rightItems.length < maxLen) rightItems.push({ type: "", color: "" });
 
-  // Draw bordered panel background
   const panelH = maxLen * 4 + 4;
   pdf.setDrawColor(210);
   pdf.setFillColor(248, 248, 250);
   pdf.roundedRect(14, legendStartY - 2, pageW - 28, panelH, 2, 2, "FD");
 
-  // Render legend manually for precise swatch control
   const col1X = 18;
   const col2X = 18 + (pageW - 36) / 2;
   let y = legendStartY + 2;
@@ -347,7 +388,6 @@ export async function exportPdf(
   for (let i = 0; i < maxLen; i++) {
     const left = leftItems[i];
     const right = rightItems[i];
-
     for (const [item, x] of [[left, col1X], [right, col2X]] as const) {
       if (!item || (!item.type && !item.title)) continue;
       if (item.title) {
@@ -369,7 +409,7 @@ export async function exportPdf(
   }
 
   pdf.setTextColor(0);
-  addFooter(pdf, structureName, 1, totalPages, logoDataUrl);
+  addFooter(pdf, structureName, 1, totalPages, footerOpts);
 
   // ─── Page 2: Relationships table ───
   pdf.addPage();
@@ -391,7 +431,6 @@ export async function exportPdf(
   });
   relRows.sort((a, b) => relSortKey(a).localeCompare(relSortKey(b)));
 
-  // Determine if ownership columns have any data
   const hasPct = relRows.some((r) => r.pct != null);
   const hasUnits = relRows.some((r) => r.units != null);
   const hasCls = relRows.some((r) => r.cls != null);
@@ -419,11 +458,11 @@ export async function exportPdf(
     head: [relHead],
     body: relBody,
     styles: { fontSize: 8.5, cellPadding: 2 },
-    headStyles: { fillColor: [59, 130, 246], fontSize: 9 },
+    headStyles: { fillColor: brandRgb, fontSize: 9 },
     columnStyles: relColStyles,
     alternateRowStyles: { fillColor: [248, 248, 252] },
   });
-  addFooter(pdf, structureName, 2, totalPages, logoDataUrl);
+  addFooter(pdf, structureName, 2, totalPages, footerOpts);
 
   // ─── Page 3: Entities table ───
   pdf.addPage();
@@ -454,10 +493,10 @@ export async function exportPdf(
     head: [entHead],
     body: entBody,
     styles: { fontSize: 8.5, cellPadding: 2 },
-    headStyles: { fillColor: [59, 130, 246], fontSize: 9 },
+    headStyles: { fillColor: brandRgb, fontSize: 9 },
     alternateRowStyles: { fillColor: [248, 248, 252] },
   });
-  addFooter(pdf, structureName, 3, totalPages, logoDataUrl);
+  addFooter(pdf, structureName, 3, totalPages, footerOpts);
 
   pdf.save(`${structureName.replace(/\s+/g, "_")}_pack.pdf`);
 }

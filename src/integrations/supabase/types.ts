@@ -717,21 +717,42 @@ export type Database = {
       }
       tenants: {
         Row: {
+          brand_primary_color: string | null
           created_at: string
+          export_block_on_critical_health: boolean
+          export_default_view_mode: string
+          export_disclaimer_text: string | null
+          export_footer_text: string | null
+          export_show_disclaimer: boolean
+          firm_name: string
           id: string
           logo_url: string | null
           name: string
           updated_at: string
         }
         Insert: {
+          brand_primary_color?: string | null
           created_at?: string
+          export_block_on_critical_health?: boolean
+          export_default_view_mode?: string
+          export_disclaimer_text?: string | null
+          export_footer_text?: string | null
+          export_show_disclaimer?: boolean
+          firm_name?: string
           id?: string
           logo_url?: string | null
           name: string
           updated_at?: string
         }
         Update: {
+          brand_primary_color?: string | null
           created_at?: string
+          export_block_on_critical_health?: boolean
+          export_default_view_mode?: string
+          export_disclaimer_text?: string | null
+          export_footer_text?: string | null
+          export_show_disclaimer?: boolean
+          firm_name?: string
           id?: string
           logo_url?: string | null
           name?: string

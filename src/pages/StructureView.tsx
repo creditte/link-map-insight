@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useStructureData, useFilteredGraph } from "@/hooks/useStructureData";
 import { useOnboarding } from "@/hooks/useOnboarding";
 import { useSnapshots, loadSnapshotData, type SnapshotData } from "@/hooks/useSnapshots";
+import { useTenantSettings } from "@/hooks/useTenantSettings";
 import StructureGraph, { type LayoutMode, type LayoutStrategy } from "@/components/structure/StructureGraph";
 import GraphControls from "@/components/structure/GraphControls";
 import EntityDetailPanel from "@/components/structure/EntityDetailPanel";
@@ -35,7 +36,10 @@ export default function StructureView() {
   const { toast } = useToast();
   const { showOnboarding, dismiss: dismissOnboarding } = useOnboarding();
   const { snapshots, reload: reloadSnapshots } = useSnapshots(id);
+  const { tenant } = useTenantSettings();
 
+  // Apply tenant default view mode
+  const tenantDefaultView = (tenant?.export_default_view_mode as ViewMode) || "ownership";
   const [search, setSearch] = useState("");
   const [filterRelType, setFilterRelType] = useState("all");
   const [showFamily, setShowFamily] = useState(false);
@@ -47,7 +51,7 @@ export default function StructureView() {
   const [fitViewTrigger, setFitViewTrigger] = useState(0);
   const [layoutAlgo, setLayoutAlgo] = useState<LayoutMode>("balanced");
   const [pinnedNodeIds, setPinnedNodeIds] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<ViewMode>("ownership");
+  const [viewMode, setViewMode] = useState<ViewMode>(tenantDefaultView);
   const [showAiPanel, setShowAiPanel] = useState(false);
 
   // Snapshot viewing state
@@ -346,6 +350,8 @@ export default function StructureView() {
             snapshotCreatedAt={activeSnapshot?.created_at}
             isScenario={isScenario}
             scenarioLabel={scenarioLabel ?? undefined}
+            tenant={tenant}
+            disabled={!!(tenant?.export_block_on_critical_health && structureHealth?.status === "critical" && !isViewingSnapshot)}
           />
         </div>
       </div>
@@ -360,7 +366,13 @@ export default function StructureView() {
       />
 
       {/* Export blocked banner */}
-      {!isViewingSnapshot && <ExportBlockedBanner entities={entities} />}
+      {!isViewingSnapshot && (
+        <ExportBlockedBanner
+          entities={entities}
+          structureHealth={structureHealth}
+          blockOnCritical={tenant?.export_block_on_critical_health}
+        />
+      )}
 
       {!isViewingSnapshot && (
         <StructureHealthPanel health={structureHealth} onSelectEntity={(eid) => { setSelectedEntityId(eid); setSelectedEdgeId(null); }} />

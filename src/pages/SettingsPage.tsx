@@ -59,7 +59,7 @@ export default function SettingsPage() {
         )}
 
         <TabsContent value="tenant" className="mt-4">
-          <TenantSettings />
+          <TenantSettings isAdmin={isAdmin} />
         </TabsContent>
 
         {isAdmin && (

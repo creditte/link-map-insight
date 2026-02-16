@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Download, Image, FileText, Table } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,8 +16,7 @@ import {
   exportPdf,
 } from "@/lib/exportPack";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
-import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import type { TenantSettings } from "@/hooks/useTenantSettings";
 
 interface Props {
   graphRef: React.RefObject<HTMLElement | null>;
@@ -28,27 +27,18 @@ interface Props {
   snapshotCreatedAt?: string;
   isScenario?: boolean;
   scenarioLabel?: string;
+  tenant?: TenantSettings | null;
+  disabled?: boolean;
 }
 
-export default function ExportMenu({ graphRef, entities, relationships, structureName, snapshotName, snapshotCreatedAt, isScenario, scenarioLabel }: Props) {
+export default function ExportMenu({ graphRef, entities, relationships, structureName, snapshotName, snapshotCreatedAt, isScenario, scenarioLabel, tenant, disabled }: Props) {
   const { toast } = useToast();
-  const { user } = useAuth();
   const [exporting, setExporting] = useState(false);
-  const [tenantName, setTenantName] = useState("");
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const prefix = structureName.replace(/\s+/g, "_");
 
-  useEffect(() => {
-    if (!user) return;
-    supabase.from("tenants").select("name, logo_url").limit(1).single().then(({ data }) => {
-      if (data) {
-        setTenantName(data.name);
-        setLogoUrl((data as any).logo_url ?? null);
-      }
-    });
-  }, [user]);
-
-  const userName = user?.user_metadata?.full_name || user?.email || "";
+  const userName = "";
+  const tenantName = tenant?.firm_name || tenant?.name || "";
+  const logoUrl = tenant?.logo_url ?? null;
 
   const wrap = async (label: string, fn: () => Promise<void>) => {
     setExporting(true);
@@ -69,12 +59,23 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
     return el;
   };
 
-  const meta = { userName, tenantName, logoUrl: logoUrl ?? undefined, snapshotName, snapshotCreatedAt, isScenario, scenarioLabel };
+  const meta = {
+    userName,
+    tenantName,
+    logoUrl: logoUrl ?? undefined,
+    snapshotName,
+    snapshotCreatedAt,
+    isScenario,
+    scenarioLabel,
+    brandColor: tenant?.brand_primary_color ?? undefined,
+    footerText: tenant?.export_footer_text ?? undefined,
+    disclaimerText: tenant?.export_show_disclaimer ? (tenant?.export_disclaimer_text ?? undefined) : undefined,
+  };
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5" disabled={exporting}>
+        <Button variant="outline" size="sm" className="gap-1.5" disabled={exporting || disabled}>
           <Download className="h-3.5 w-3.5" />
           {exporting ? "Exporting…" : "Export"}
         </Button>
