@@ -130,6 +130,65 @@ export type Database = {
           },
         ]
       }
+      entity_merges: {
+        Row: {
+          id: string
+          merged_at: string
+          merged_by: string
+          merged_entity_id: string
+          primary_entity_id: string
+          structure_id: string | null
+          tenant_id: string
+        }
+        Insert: {
+          id?: string
+          merged_at?: string
+          merged_by: string
+          merged_entity_id: string
+          primary_entity_id: string
+          structure_id?: string | null
+          tenant_id: string
+        }
+        Update: {
+          id?: string
+          merged_at?: string
+          merged_by?: string
+          merged_entity_id?: string
+          primary_entity_id?: string
+          structure_id?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entity_merges_merged_entity_id_fkey"
+            columns: ["merged_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entity_merges_primary_entity_id_fkey"
+            columns: ["primary_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entity_merges_structure_id_fkey"
+            columns: ["structure_id"]
+            isOneToOne: false
+            referencedRelation: "structures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entity_merges_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       feedback: {
         Row: {
           created_at: string

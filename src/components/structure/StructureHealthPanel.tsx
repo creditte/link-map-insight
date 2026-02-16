@@ -33,6 +33,7 @@ const WHY_IT_MATTERS: Record<string, string> = {
   missing_shareholder: "Companies typically have shareholders. Verify this is intentional or add them.",
   circular_ownership: "Circular ownership chains create legal and tax complications and are usually data errors.",
   unclassified: "Unclassified entities can't be validated properly. Classify them to improve data quality.",
+  duplicates_detected: "Duplicate entities can cause incorrect relationship mapping and inflated counts. Merge them to keep data clean.",
 };
 
 function IssueRow({ issue, onSelect }: { issue: ValidationIssue; onSelect?: (id: string) => void }) {

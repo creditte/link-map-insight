@@ -302,6 +302,28 @@ export function useStructureData(structureId: string | undefined) {
       }
     }
 
+    // --- E) Duplicate name detection within structure ---
+    const nameMap = new Map<string, EntityNode[]>();
+    for (const entity of entities) {
+      const norm = entity.name.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+      const arr = nameMap.get(norm) ?? [];
+      arr.push(entity);
+      nameMap.set(norm, arr);
+    }
+    for (const [, dupes] of nameMap) {
+      if (dupes.length < 2) continue;
+      const sameType = dupes.every((d) => d.entity_type === dupes[0].entity_type);
+      if (!sameType) continue;
+      warnings.push({
+        code: "duplicates_detected",
+        severity: "warning",
+        message: `${dupes.length} potential duplicates: "${dupes[0].name}"`,
+        entity_id: dupes[0].id,
+        entity_name: dupes[0].name,
+        details: { entity_ids: dupes.map((d) => d.id) },
+      });
+    }
+
     // --- Score calculation (cap unclassified penalty at -30 total) ---
     const unclassifiedCount = warnings.filter((w) => w.code === "unclassified").length;
     const otherWarningCount = warnings.length - unclassifiedCount;

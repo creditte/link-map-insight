@@ -15,22 +15,38 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { CheckCircle, Merge, ArrowRight, Loader2, AlertTriangle } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { CheckCircle, Merge, Loader2, AlertTriangle, Shield, Building2 } from "lucide-react";
 import { getEntityLabel } from "@/lib/entityTypes";
+
+interface DuplicateEntity {
+  id: string;
+  name: string;
+  type: string;
+  abn?: string | null;
+  acn?: string | null;
+  is_trustee_company?: boolean;
+  is_operating_entity?: boolean;
+  inbound_count?: number;
+  outbound_count?: number;
+}
 
 interface DuplicateGroup {
   normalizedName: string;
   similarity: number;
-  entities: { id: string; name: string; type: string }[];
+  entities: DuplicateEntity[];
 }
 
-interface ImpactedRelationship {
-  id: string;
-  relationship_type: string;
-  from_name: string;
-  to_name: string;
-  from_entity_id: string;
-  to_entity_id: string;
+interface MergePreview {
+  relationships_to_repoint: number;
+  potential_collisions: number;
 }
 
 export default function DuplicatesTab() {
@@ -42,7 +58,7 @@ export default function DuplicatesTab() {
   // Merge dialog state
   const [mergeGroup, setMergeGroup] = useState<DuplicateGroup | null>(null);
   const [primaryId, setPrimaryId] = useState<string>("");
-  const [impactedRels, setImpactedRels] = useState<ImpactedRelationship[]>([]);
+  const [mergePreview, setMergePreview] = useState<MergePreview | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [merging, setMerging] = useState(false);
 
@@ -81,55 +97,117 @@ export default function DuplicatesTab() {
       rows = fuzzyData ?? [];
     }
 
-    // Group by pair into clusters
-    const groupMap = new Map<string, { entities: Map<string, { id: string; name: string; type: string }>; similarity: number }>();
+    // Collect all entity IDs for enrichment
+    const allEntityIds = new Set<string>();
     for (const row of rows) {
-      // Use sorted IDs as key for exact pairs, or normalized name for clustering
-      const key = [row.entity_id_a, row.entity_id_b].sort().join("|");
-      if (!groupMap.has(key)) {
-        groupMap.set(key, { entities: new Map(), similarity: row.similarity ?? 1.0 });
-      }
-      const g = groupMap.get(key)!;
-      g.entities.set(row.entity_id_a, { id: row.entity_id_a, name: row.name_a, type: row.type_a });
-      g.entities.set(row.entity_id_b, { id: row.entity_id_b, name: row.name_b, type: row.type_b });
-      g.similarity = Math.max(g.similarity, row.similarity ?? 1.0);
+      allEntityIds.add(row.entity_id_a);
+      allEntityIds.add(row.entity_id_b);
     }
 
-    // Merge overlapping groups (union-find by entity ID)
-    const entityToGroup = new Map<string, string>();
-    const mergedGroups = new Map<string, { entities: Map<string, { id: string; name: string; type: string }>; similarity: number }>();
+    // Fetch full entity details
+    let entityDetails = new Map<string, any>();
+    if (allEntityIds.size > 0) {
+      const { data: entities } = await supabase
+        .from("entities")
+        .select("id, name, entity_type, abn, acn, is_trustee_company, is_operating_entity")
+        .in("id", Array.from(allEntityIds))
+        .is("deleted_at", null);
 
-    for (const [key, g] of groupMap) {
-      const entityIds = Array.from(g.entities.keys());
-      let targetKey: string | null = null;
-      for (const eid of entityIds) {
-        if (entityToGroup.has(eid)) {
-          targetKey = entityToGroup.get(eid)!;
-          break;
-        }
+      for (const e of entities ?? []) {
+        entityDetails.set(e.id, e);
       }
 
-      if (targetKey) {
-        const target = mergedGroups.get(targetKey)!;
-        for (const [eid, ent] of g.entities) {
-          target.entities.set(eid, ent);
-          entityToGroup.set(eid, targetKey);
-        }
-        target.similarity = Math.max(target.similarity, g.similarity);
-      } else {
-        mergedGroups.set(key, { entities: new Map(g.entities), similarity: g.similarity });
-        for (const eid of entityIds) {
-          entityToGroup.set(eid, key);
-        }
+      // Fetch relationship counts
+      const { data: rels } = await supabase
+        .from("relationships")
+        .select("id, from_entity_id, to_entity_id")
+        .is("deleted_at", null)
+        .or(
+          Array.from(allEntityIds).map((id) => `from_entity_id.eq.${id}`).join(",") +
+          "," +
+          Array.from(allEntityIds).map((id) => `to_entity_id.eq.${id}`).join(",")
+        );
+
+      const outboundCounts = new Map<string, number>();
+      const inboundCounts = new Map<string, number>();
+      for (const r of rels ?? []) {
+        outboundCounts.set(r.from_entity_id, (outboundCounts.get(r.from_entity_id) ?? 0) + 1);
+        inboundCounts.set(r.to_entity_id, (inboundCounts.get(r.to_entity_id) ?? 0) + 1);
       }
+
+      for (const [id, e] of entityDetails) {
+        e.outbound_count = outboundCounts.get(id) ?? 0;
+        e.inbound_count = inboundCounts.get(id) ?? 0;
+      }
+    }
+
+    // Group pairs into clusters using union-find
+    const parent = new Map<string, string>();
+    function find(x: string): string {
+      if (!parent.has(x)) parent.set(x, x);
+      if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!));
+      return parent.get(x)!;
+    }
+    function union(a: string, b: string) {
+      const pa = find(a), pb = find(b);
+      if (pa !== pb) parent.set(pa, pb);
+    }
+
+    const pairSimilarity = new Map<string, number>();
+    for (const row of rows) {
+      // Only cluster same type
+      const eA = entityDetails.get(row.entity_id_a);
+      const eB = entityDetails.get(row.entity_id_b);
+      if (!eA || !eB) continue;
+      if (eA.entity_type !== eB.entity_type) continue;
+
+      union(row.entity_id_a, row.entity_id_b);
+      const key = [row.entity_id_a, row.entity_id_b].sort().join("|");
+      pairSimilarity.set(key, Math.max(pairSimilarity.get(key) ?? 0, row.similarity ?? 1.0));
+    }
+
+    // Build clusters
+    const clusterMap = new Map<string, { entityIds: Set<string>; maxSimilarity: number }>();
+    for (const row of rows) {
+      const eA = entityDetails.get(row.entity_id_a);
+      const eB = entityDetails.get(row.entity_id_b);
+      if (!eA || !eB || eA.entity_type !== eB.entity_type) continue;
+
+      const root = find(row.entity_id_a);
+      if (!clusterMap.has(root)) {
+        clusterMap.set(root, { entityIds: new Set(), maxSimilarity: 0 });
+      }
+      const cluster = clusterMap.get(root)!;
+      cluster.entityIds.add(row.entity_id_a);
+      cluster.entityIds.add(row.entity_id_b);
+      cluster.maxSimilarity = Math.max(cluster.maxSimilarity, row.similarity ?? 1.0);
     }
 
     const result: DuplicateGroup[] = [];
-    for (const [key, g] of mergedGroups) {
-      const ents = Array.from(g.entities.values());
+    for (const [, cluster] of clusterMap) {
+      const ents: DuplicateEntity[] = Array.from(cluster.entityIds)
+        .map((id) => {
+          const e = entityDetails.get(id);
+          if (!e) return null;
+          return {
+            id: e.id,
+            name: e.name,
+            type: e.entity_type,
+            abn: e.abn,
+            acn: e.acn,
+            is_trustee_company: e.is_trustee_company,
+            is_operating_entity: e.is_operating_entity,
+            inbound_count: e.inbound_count ?? 0,
+            outbound_count: e.outbound_count ?? 0,
+          };
+        })
+        .filter(Boolean) as DuplicateEntity[];
+
+      if (ents.length < 2) continue;
+
       result.push({
         normalizedName: ents[0].name,
-        similarity: Math.round(g.similarity * 100),
+        similarity: Math.round(cluster.maxSimilarity * 100),
         entities: ents,
       });
     }
@@ -144,7 +222,6 @@ export default function DuplicatesTab() {
   }, [user?.id, loadDuplicates]);
 
   const openMergeDialog = (group: DuplicateGroup) => {
-    // Prevent merging across different entity types
     const types = new Set(group.entities.map((e) => e.type));
     if (types.size > 1) {
       toast({
@@ -156,58 +233,68 @@ export default function DuplicatesTab() {
     }
     setMergeGroup(group);
     setPrimaryId(group.entities[0].id);
-    setImpactedRels([]);
+    setMergePreview(null);
   };
 
-  // Load impacted relationships when primary changes
+  // Compute preview impact when primary changes
   const loadPreview = useCallback(async () => {
     if (!mergeGroup || !primaryId) return;
     setLoadingPreview(true);
 
     const duplicateIds = mergeGroup.entities.filter((e) => e.id !== primaryId).map((e) => e.id);
     if (duplicateIds.length === 0) {
-      setImpactedRels([]);
+      setMergePreview({ relationships_to_repoint: 0, potential_collisions: 0 });
       setLoadingPreview(false);
       return;
     }
 
-    const { data: rels } = await supabase
+    // Fetch relationships for duplicates
+    const { data: dupRels } = await supabase
       .from("relationships")
-      .select("id, relationship_type, from_entity_id, to_entity_id")
+      .select("id, from_entity_id, to_entity_id, relationship_type")
       .is("deleted_at", null)
       .or(
         duplicateIds.map((id) => `from_entity_id.eq.${id}`).join(",") +
-          "," +
-          duplicateIds.map((id) => `to_entity_id.eq.${id}`).join(",")
+        "," +
+        duplicateIds.map((id) => `to_entity_id.eq.${id}`).join(",")
       );
 
-    if (!rels || rels.length === 0) {
-      setImpactedRels([]);
-      setLoadingPreview(false);
-      return;
-    }
+    // Fetch relationships for primary
+    const { data: primaryRels } = await supabase
+      .from("relationships")
+      .select("id, from_entity_id, to_entity_id, relationship_type")
+      .is("deleted_at", null)
+      .or(`from_entity_id.eq.${primaryId},to_entity_id.eq.${primaryId}`);
 
-    const allEntityIds = new Set<string>();
-    for (const r of rels) {
-      allEntityIds.add(r.from_entity_id);
-      allEntityIds.add(r.to_entity_id);
-    }
-    const { data: entNames } = await supabase
-      .from("entities")
-      .select("id, name")
-      .in("id", Array.from(allEntityIds));
-    const nameMap = new Map((entNames ?? []).map((e) => [e.id, e.name]));
-
-    setImpactedRels(
-      rels.map((r) => ({
-        id: r.id,
-        relationship_type: r.relationship_type,
-        from_name: nameMap.get(r.from_entity_id) ?? "Unknown",
-        to_name: nameMap.get(r.to_entity_id) ?? "Unknown",
-        from_entity_id: r.from_entity_id,
-        to_entity_id: r.to_entity_id,
-      }))
+    const primaryKeys = new Set(
+      (primaryRels ?? []).map(
+        (r) => `${r.from_entity_id}|${r.to_entity_id}|${r.relationship_type}`
+      )
     );
+
+    let collisions = 0;
+    let repoints = 0;
+    const dupIdSet = new Set(duplicateIds);
+
+    for (const rel of dupRels ?? []) {
+      const newFrom = dupIdSet.has(rel.from_entity_id) ? primaryId : rel.from_entity_id;
+      const newTo = dupIdSet.has(rel.to_entity_id) ? primaryId : rel.to_entity_id;
+
+      if (newFrom === newTo) {
+        collisions++;
+        continue;
+      }
+
+      const key = `${newFrom}|${newTo}|${rel.relationship_type}`;
+      if (primaryKeys.has(key)) {
+        collisions++;
+      } else {
+        repoints++;
+        primaryKeys.add(key);
+      }
+    }
+
+    setMergePreview({ relationships_to_repoint: repoints, potential_collisions: collisions });
     setLoadingPreview(false);
   }, [mergeGroup, primaryId]);
 
@@ -220,83 +307,23 @@ export default function DuplicatesTab() {
     setMerging(true);
 
     const duplicateIds = mergeGroup.entities.filter((e) => e.id !== primaryId).map((e) => e.id);
-    const primaryEntity = mergeGroup.entities.find((e) => e.id === primaryId);
 
     try {
-      for (const dupId of duplicateIds) {
-        const dupEntity = mergeGroup.entities.find((e) => e.id === dupId);
+      const { data, error } = await supabase.functions.invoke("merge-entities", {
+        body: {
+          primary_entity_id: primaryId,
+          merged_entity_ids: duplicateIds,
+        },
+      });
 
-        // Reassign relationships: from_entity_id
-        await supabase
-          .from("relationships")
-          .update({ from_entity_id: primaryId } as any)
-          .eq("from_entity_id", dupId)
-          .is("deleted_at", null);
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
-        // Reassign relationships: to_entity_id
-        await supabase
-          .from("relationships")
-          .update({ to_entity_id: primaryId } as any)
-          .eq("to_entity_id", dupId)
-          .is("deleted_at", null);
-
-        // Reassign structure_entities links
-        const { data: dupLinks } = await supabase
-          .from("structure_entities")
-          .select("structure_id")
-          .eq("entity_id", dupId);
-
-        const { data: primaryLinks } = await supabase
-          .from("structure_entities")
-          .select("structure_id")
-          .eq("entity_id", primaryId);
-
-        const primaryStructures = new Set((primaryLinks ?? []).map((l) => l.structure_id));
-
-        for (const link of dupLinks ?? []) {
-          if (!primaryStructures.has(link.structure_id)) {
-            await supabase
-              .from("structure_entities")
-              .insert({ structure_id: link.structure_id, entity_id: primaryId });
-          }
-        }
-
-        // Remove duplicate's structure links
-        await supabase
-          .from("structure_entities")
-          .delete()
-          .eq("entity_id", dupId);
-
-        // Soft-delete the duplicate entity
-        await supabase
-          .from("entities")
-          .update({
-            deleted_at: new Date().toISOString(),
-            merged_into_entity_id: primaryId,
-          } as any)
-          .eq("id", dupId);
-
-        // Write audit_log entry for the merge
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("tenant_id")
-          .eq("user_id", user?.id ?? "")
-          .single();
-
-        if (profile && user?.id) {
-          await supabase.from("audit_log").insert({
-            tenant_id: profile.tenant_id,
-            user_id: user.id,
-            action: "entity_merge",
-            entity_type: "entity",
-            entity_id: primaryId,
-            before_state: { from_id: dupId, from_name: dupEntity?.name },
-            after_state: { to_id: primaryId, to_name: primaryEntity?.name },
-          } as any);
-        }
-      }
-
-      toast({ title: "Entities merged successfully" });
+      const primaryName = mergeGroup.entities.find((e) => e.id === primaryId)?.name ?? "entity";
+      toast({
+        title: `Merged ${duplicateIds.length} ${duplicateIds.length === 1 ? "entity" : "entities"} into "${primaryName}"`,
+        description: `${data.relationships_repointed} relationships re-pointed, ${data.relationships_deduped} deduplicated.`,
+      });
       setMergeGroup(null);
       loadDuplicates();
     } catch (err: any) {
@@ -308,7 +335,12 @@ export default function DuplicatesTab() {
   };
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Scanning for duplicates...</p>;
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground py-8">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Scanning for duplicates...
+      </div>
+    );
   }
 
   if (groups.length === 0) {
@@ -330,36 +362,32 @@ export default function DuplicatesTab() {
   return (
     <>
       <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          {groups.length} potential duplicate {groups.length === 1 ? "group" : "groups"} detected.
+          Review and merge to keep your data clean.
+        </p>
+
         {groups.map((group, idx) => {
           const types = new Set(group.entities.map((e) => e.type));
           const crossType = types.size > 1;
 
           return (
             <Card key={idx}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                        {group.similarity}% match
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                      {group.entities.length} likely duplicates
+                    </Badge>
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                      {group.similarity}% match
+                    </Badge>
+                    {crossType && (
+                      <Badge variant="destructive" className="text-[10px] px-1.5 py-0 gap-1">
+                        <AlertTriangle className="h-2.5 w-2.5" />
+                        Mixed types
                       </Badge>
-                      {crossType && (
-                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 gap-1">
-                          <AlertTriangle className="h-2.5 w-2.5" />
-                          Mixed types
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="space-y-1.5">
-                      {group.entities.map((e) => (
-                        <div key={e.id} className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{e.name}</span>
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
-                            {getEntityLabel(e.type)}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
+                    )}
                   </div>
                   <Button
                     size="sm"
@@ -370,6 +398,46 @@ export default function DuplicatesTab() {
                   >
                     <Merge className="h-3.5 w-3.5" /> Merge
                   </Button>
+                </div>
+
+                {/* Comparison table */}
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Name</TableHead>
+                        <TableHead className="text-xs">Type</TableHead>
+                        <TableHead className="text-xs">ABN</TableHead>
+                        <TableHead className="text-xs">ACN</TableHead>
+                        <TableHead className="text-xs text-center">Trustee Co</TableHead>
+                        <TableHead className="text-xs text-center">Operating</TableHead>
+                        <TableHead className="text-xs text-right">Rels (in/out)</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {group.entities.map((e) => (
+                        <TableRow key={e.id}>
+                          <TableCell className="text-xs font-medium py-2">{e.name}</TableCell>
+                          <TableCell className="text-xs py-2">
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                              {getEntityLabel(e.type)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs py-2 font-mono">{e.abn || "—"}</TableCell>
+                          <TableCell className="text-xs py-2 font-mono">{e.acn || "—"}</TableCell>
+                          <TableCell className="text-xs py-2 text-center">
+                            {e.is_trustee_company ? <Shield className="h-3.5 w-3.5 text-primary mx-auto" /> : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs py-2 text-center">
+                            {e.is_operating_entity ? <Building2 className="h-3.5 w-3.5 text-primary mx-auto" /> : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs py-2 text-right">
+                            {e.inbound_count ?? 0} / {e.outbound_count ?? 0}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               </CardContent>
             </Card>
@@ -383,8 +451,8 @@ export default function DuplicatesTab() {
           <DialogHeader>
             <DialogTitle>Merge Entities</DialogTitle>
             <DialogDescription>
-              Choose the primary entity to keep. All relationships and structure links from
-              duplicates will be reassigned to the primary. Duplicates will be soft-deleted.
+              Choose the primary entity to keep. All relationships from merged entities will be
+              reassigned to the primary. Merged entities will be soft-deleted and hidden.
             </DialogDescription>
           </DialogHeader>
 
@@ -392,7 +460,7 @@ export default function DuplicatesTab() {
             <div className="space-y-4">
               <div>
                 <Label className="text-xs font-medium text-muted-foreground mb-2 block">
-                  Select Primary Entity
+                  Select Primary Entity (keep)
                 </Label>
                 <RadioGroup value={primaryId} onValueChange={setPrimaryId}>
                   {mergeGroup.entities.map((e) => (
@@ -400,64 +468,53 @@ export default function DuplicatesTab() {
                       <RadioGroupItem value={e.id} id={`primary-${e.id}`} />
                       <Label htmlFor={`primary-${e.id}`} className="flex-1 cursor-pointer">
                         <span className="text-sm font-medium">{e.name}</span>
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-2">
-                          {getEntityLabel(e.type)}
-                        </Badge>
+                        {e.abn && (
+                          <span className="text-[10px] text-muted-foreground ml-2 font-mono">
+                            ABN: {e.abn}
+                          </span>
+                        )}
                       </Label>
-                      {e.id === primaryId && (
-                        <Badge className="text-[10px] px-1.5 py-0">Primary</Badge>
+                      {e.id === primaryId ? (
+                        <Badge className="text-[10px] px-1.5 py-0">Keep</Badge>
+                      ) : (
+                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Merge</Badge>
                       )}
                     </div>
                   ))}
                 </RadioGroup>
               </div>
 
-              {/* Side-by-side comparison */}
-              {mergeGroup.entities.length === 2 && (
-                <div>
-                  <Label className="text-xs font-medium text-muted-foreground mb-2 block">
-                    Comparison
-                  </Label>
-                  <div className="grid grid-cols-2 gap-2 rounded-md border p-3 text-xs">
-                    {mergeGroup.entities.map((e) => (
-                      <div key={e.id} className={e.id === primaryId ? "font-semibold" : "text-muted-foreground"}>
-                        <p className="truncate">{e.name}</p>
-                        <p className="text-[10px]">{getEntityLabel(e.type)}</p>
-                        {e.id === primaryId && <Badge className="text-[10px] px-1 py-0 mt-1">Keep</Badge>}
-                        {e.id !== primaryId && <Badge variant="destructive" className="text-[10px] px-1 py-0 mt-1">Remove</Badge>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Impacted relationships preview */}
-              <div>
-                <Label className="text-xs font-medium text-muted-foreground mb-2 block">
-                  Impacted Relationships ({loadingPreview ? "..." : impactedRels.length})
+              {/* Impact preview */}
+              <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Impact Preview
                 </Label>
                 {loadingPreview ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading...
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculating...
                   </div>
-                ) : impactedRels.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    No relationships will be reassigned.
-                  </p>
-                ) : (
-                  <div className="max-h-40 overflow-y-auto space-y-1 rounded-md border p-2">
-                    {impactedRels.map((r) => (
-                      <div key={r.id} className="flex items-center gap-1.5 text-xs">
-                        <span className="truncate max-w-[120px]">{r.from_name}</span>
-                        <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
-                        <span className="truncate max-w-[120px]">{r.to_name}</span>
-                        <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
-                          {r.relationship_type}
-                        </Badge>
-                      </div>
-                    ))}
+                ) : mergePreview ? (
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-muted-foreground">Relationships to re-point:</span>{" "}
+                      <span className="font-semibold">{mergePreview.relationships_to_repoint}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Collisions to deduplicate:</span>{" "}
+                      <span className="font-semibold">{mergePreview.potential_collisions}</span>
+                    </div>
                   </div>
-                )}
+                ) : null}
+              </div>
+
+              {/* Warning box */}
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p className="font-medium text-foreground">This action cannot be easily undone.</p>
+                  <p>All relationships from merged entities will be reassigned to the primary entity.</p>
+                  <p>Merged entities will be soft-deleted and hidden by default.</p>
+                </div>
               </div>
             </div>
           )}
@@ -466,13 +523,13 @@ export default function DuplicatesTab() {
             <Button variant="outline" onClick={() => setMergeGroup(null)} disabled={merging}>
               Cancel
             </Button>
-            <Button onClick={handleMerge} disabled={merging || !primaryId}>
+            <Button onClick={handleMerge} disabled={merging || !primaryId} variant="destructive">
               {merging ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-1" /> Merging...
                 </>
               ) : (
-                "Confirm Merge"
+                `Merge ${(mergeGroup?.entities.length ?? 1) - 1} into primary`
               )}
             </Button>
           </DialogFooter>
