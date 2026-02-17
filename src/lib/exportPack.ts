@@ -2,6 +2,7 @@ import { toPng, toSvg } from "html-to-image";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
+import type { HealthScoreV2 } from "@/lib/structureScoring";
 import { getEntityLabel } from "@/lib/entityTypes";
 import { EDGE_COLORS } from "@/components/structure/StructureGraph";
 
@@ -263,18 +264,26 @@ function addFooter(
   pdf.setDrawColor(200);
 }
 
+export interface PdfHealthOptions {
+  includeHealthSummary?: boolean;
+  healthScore?: HealthScoreV2;
+  includeChecklist?: boolean;
+}
+
 export async function exportPdf(
   graphElement: HTMLElement,
   entities: EntityNode[],
   relationships: RelationshipEdge[],
   structureName: string,
-  meta?: ExportMeta
+  meta?: ExportMeta,
+  healthOptions?: PdfHealthOptions
 ) {
   const exportDate = new Date().toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
-  const totalPages = meta?.disclaimerText ? 4 : 3;
+  const extraPages = (healthOptions?.includeHealthSummary ? 1 : 0) + (healthOptions?.includeChecklist ? 1 : 0);
+  const totalPages = (meta?.disclaimerText ? 4 : 3) + extraPages;
 
   const brandRgb = meta?.brandColor ? hexToRgb(meta.brandColor) : [59, 130, 246] as [number, number, number];
 
@@ -497,6 +506,103 @@ export async function exportPdf(
     alternateRowStyles: { fillColor: [248, 248, 252] },
   });
   addFooter(pdf, structureName, 3, totalPages, footerOpts);
+  let currentPage = meta?.disclaimerText ? 4 : 3;
+
+  // ─── Optional: Structure Health Summary page ───
+  if (healthOptions?.includeHealthSummary && healthOptions.healthScore) {
+    const hs = healthOptions.healthScore;
+    currentPage++;
+    pdf.addPage();
+    pdf.setFontSize(14);
+    pdf.text("Structure Health Summary", 14, 16);
+
+    pdf.setFontSize(11);
+    pdf.text(`Health Score: ${hs.displayScore.toFixed(1)} / 10 — ${hs.label}`, 14, 26);
+
+    pdf.setFontSize(8);
+    pdf.setTextColor(100);
+    pdf.text(`Last Reviewed: ${exportDate}`, 14, 33);
+    pdf.setFontSize(7);
+    pdf.setTextColor(140);
+    pdf.text(
+      "Reflects structural completeness and governance robustness based on recorded relationships. Does not assess tax outcomes.",
+      14,
+      39,
+      { maxWidth: pageW - 28 }
+    );
+    pdf.setTextColor(0);
+
+    // Category breakdown
+    pdf.setFontSize(9);
+    let hy = 50;
+    const cats = [
+      { label: "Control Integrity", val: hs.controlScore, max: 40 },
+      { label: "Governance Completeness", val: hs.governanceScore, max: 30 },
+      { label: "Structural Clarity", val: hs.structuralScore, max: 20 },
+      { label: "Data Completeness", val: hs.dataScore, max: 10 },
+    ];
+    for (const cat of cats) {
+      pdf.text(`${cat.label}: ${cat.val}/${cat.max}`, 14, hy);
+      hy += 6;
+    }
+
+    // Key gaps
+    hy += 4;
+    pdf.setFontSize(10);
+    pdf.text("Key Gaps", 14, hy);
+    hy += 6;
+    pdf.setFontSize(8);
+
+    const keyIssues = hs.issues.filter((i) => i.severity === "critical" || i.severity === "gap").slice(0, 6);
+    if (keyIssues.length === 0) {
+      pdf.text("No outstanding gaps.", 14, hy);
+    } else {
+      for (const issue of keyIssues) {
+        pdf.text(`• ${issue.message}`, 16, hy);
+        hy += 5;
+      }
+    }
+
+    if (hs.isCapped && hs.capReason) {
+      hy += 4;
+      pdf.setFontSize(7);
+      pdf.setTextColor(140);
+      pdf.text(hs.capReason, 14, hy, { maxWidth: pageW - 28 });
+      pdf.setTextColor(0);
+    }
+
+    addFooter(pdf, structureName, currentPage, totalPages, footerOpts);
+  }
+
+  // ─── Optional: Governance Checklist page ───
+  if (healthOptions?.includeChecklist && healthOptions.healthScore) {
+    const hs = healthOptions.healthScore;
+    currentPage++;
+    pdf.addPage();
+    pdf.setFontSize(14);
+    pdf.text("Governance Checklist", 14, 16);
+
+    pdf.setFontSize(8);
+    let cy = 26;
+    const allItems = hs.issues.map((i) => ({
+      done: false,
+      text: i.message,
+    }));
+
+    // Add "complete" items for things that passed
+    if (!hs.issues.some((i) => i.code === "circular_ownership")) {
+      allItems.unshift({ done: true, text: "No circular ownership detected" });
+    }
+
+    for (const item of allItems.slice(0, 20)) {
+      const checkbox = item.done ? "☑" : "☐";
+      pdf.text(`${checkbox}  ${item.text}`, 16, cy);
+      cy += 5;
+      if (cy > pageH - 30) break;
+    }
+
+    addFooter(pdf, structureName, currentPage, totalPages, footerOpts);
+  }
 
   pdf.save(`${structureName.replace(/\s+/g, "_")}_pack.pdf`);
 }

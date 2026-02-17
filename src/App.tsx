@@ -15,6 +15,7 @@ import Review from "./pages/Review";
 import SettingsPage from "./pages/SettingsPage";
 import NotFound from "./pages/NotFound";
 import StructureCompare from "./pages/StructureCompare";
+import ClientGovernance from "./pages/ClientGovernance";
 
 const queryClient = new QueryClient();
 
@@ -41,6 +42,7 @@ const App = () => (
               <Route path="/import" element={<Import />} />
               <Route path="/review" element={<Review />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/governance" element={<ClientGovernance />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
