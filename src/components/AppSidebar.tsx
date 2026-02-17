@@ -10,11 +10,13 @@ import {
   AlertTriangle,
   Settings,
   LogOut,
+  ShieldCheck,
 } from "lucide-react";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/structures", label: "Structures", icon: Network },
+  { to: "/governance", label: "Governance", icon: ShieldCheck },
   { to: "/import", label: "Import", icon: Upload },
   { to: "/review", label: "Review & Fix", icon: AlertTriangle },
   { to: "/settings", label: "Settings", icon: Settings },

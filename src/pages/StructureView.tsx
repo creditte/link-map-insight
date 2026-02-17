@@ -9,6 +9,7 @@ import { useStructureData, useFilteredGraph } from "@/hooks/useStructureData";
 import { useOnboarding } from "@/hooks/useOnboarding";
 import { useSnapshots, loadSnapshotData, type SnapshotData } from "@/hooks/useSnapshots";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
+import { computeHealthScoreV2 } from "@/lib/structureScoring";
 import StructureGraph, { type LayoutMode, type LayoutStrategy } from "@/components/structure/StructureGraph";
 import GraphControls from "@/components/structure/GraphControls";
 import EntityDetailPanel from "@/components/structure/EntityDetailPanel";
@@ -19,6 +20,8 @@ import ExportBlockedBanner from "@/components/structure/ExportBlockedBanner";
 import StructureHealthPanel from "@/components/structure/StructureHealthPanel";
 import OnboardingTooltips from "@/components/structure/OnboardingTooltips";
 import AiAssistantPanel from "@/components/structure/AiAssistantPanel";
+import CanvasHealthIndicator from "@/components/structure/CanvasHealthIndicator";
+import ReviewDiagramPanel from "@/components/structure/ReviewDiagramPanel";
 import CreateSnapshotDialog from "@/components/structure/CreateSnapshotDialog";
 import SnapshotSelector from "@/components/structure/SnapshotSelector";
 import CreateScenarioDialog from "@/components/structure/CreateScenarioDialog";
@@ -53,6 +56,13 @@ export default function StructureView() {
   const [pinnedNodeIds, setPinnedNodeIds] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<ViewMode>(tenantDefaultView);
   const [showAiPanel, setShowAiPanel] = useState(false);
+  const [showReviewPanel, setShowReviewPanel] = useState(false);
+
+  // Compute v2 health score
+  const healthV2 = useMemo(
+    () => computeHealthScoreV2(entities, relationships),
+    [entities, relationships]
+  );
 
   // Snapshot viewing state
   const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(null);
@@ -352,6 +362,7 @@ export default function StructureView() {
             scenarioLabel={scenarioLabel ?? undefined}
             tenant={tenant}
             disabled={!!(tenant?.export_block_on_critical_health && structureHealth?.status === "critical" && !isViewingSnapshot)}
+            healthV2={healthV2}
           />
         </div>
       </div>
@@ -382,7 +393,27 @@ export default function StructureView() {
       <div className="relative mt-3 flex-1 rounded-lg border bg-card overflow-hidden">
         {showOnboarding && !isViewingSnapshot && <OnboardingTooltips onDismiss={dismissOnboarding} />}
 
-        {showAiPanel && !isViewingSnapshot && (
+        {/* Canvas Health Indicator - always visible */}
+        {!isViewingSnapshot && (
+          <CanvasHealthIndicator
+            health={healthV2}
+            onClick={() => { setShowReviewPanel(true); setShowAiPanel(false); }}
+          />
+        )}
+
+        {/* Review Diagram Panel */}
+        {showReviewPanel && !isViewingSnapshot && (
+          <ReviewDiagramPanel
+            health={healthV2}
+            entities={visibleEntities}
+            relationships={visibleRelationships}
+            structureName={structureName}
+            onClose={() => setShowReviewPanel(false)}
+            onSelectEntity={(eid) => { setSelectedEntityId(eid); setSelectedEdgeId(null); }}
+          />
+        )}
+
+        {showAiPanel && !isViewingSnapshot && !showReviewPanel && (
           <AiAssistantPanel
             entities={visibleEntities}
             relationships={visibleRelationships}

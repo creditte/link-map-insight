@@ -19,8 +19,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Search, Network, Trash2, RotateCcw, History, Copy } from "lucide-react";
-import { HealthBadge } from "@/components/structure/StructureHealthPanel";
-import { computeStructureHealth, type EntityNode, type RelationshipEdge, type StructureHealth } from "@/hooks/useStructureData";
+import { HealthBadgeV2 } from "@/components/structure/StructureHealthPanel";
+import { computeHealthScoreV2Light } from "@/lib/structureScoring";
+import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 import { getSnapshotCount } from "@/hooks/useSnapshots";
 
 interface Structure {
@@ -49,7 +50,7 @@ export default function Structures() {
   const [sortBy, setSortBy] = useState<SortOption>("updated");
   const [filterMode, setFilterMode] = useState<FilterOption>("all");
 
-  const [healthMap, setHealthMap] = useState<Map<string, Pick<StructureHealth, "score" | "status">>>(new Map());
+  const [healthMap, setHealthMap] = useState<Map<string, { score: number; displayScore: number; label: string; status: "good" | "warning" | "critical" }>>(new Map());
   const [snapshotCounts, setSnapshotCounts] = useState<Map<string, number>>(new Map());
 
   const load = useCallback(async () => {
@@ -137,13 +138,13 @@ export default function Structures() {
     }
 
     // Compute health for each structure
-    const newHealthMap = new Map<string, Pick<StructureHealth, "score" | "status">>();
+    const newHealthMap = new Map<string, { score: number; displayScore: number; label: string; status: "good" | "warning" | "critical" }>();
     for (const sid of activeIds) {
       const entIds = seByStruct.get(sid) ?? [];
       const relIds = srByStruct.get(sid) ?? [];
       const ents = entIds.map((id) => entityById.get(id)).filter(Boolean) as EntityNode[];
       const rels = relIds.map((id) => relById.get(id)).filter(Boolean) as RelationshipEdge[];
-      newHealthMap.set(sid, computeStructureHealth(ents, rels));
+      newHealthMap.set(sid, computeHealthScoreV2Light(ents, rels));
     }
     setHealthMap(newHealthMap);
   }, [showDeleted]);
@@ -308,7 +309,7 @@ export default function Structures() {
                                 <Copy className="h-2.5 w-2.5" /> Scenario
                               </Badge>
                             )}
-                            {health && <HealthBadge score={health.score} status={health.status} />}
+                            {health && <HealthBadgeV2 displayScore={health.displayScore} label={health.label} status={health.status} />}
                           </div>
                           <div className="flex items-center gap-2">
                             <p className="text-xs text-muted-foreground">

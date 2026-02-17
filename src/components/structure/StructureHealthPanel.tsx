@@ -165,3 +165,13 @@ export function HealthBadge({ score, status }: { score: number; status: Structur
     </Badge>
   );
 }
+
+/** V2 badge showing /10 with label */
+export function HealthBadgeV2({ displayScore, label, status }: { displayScore: number; label: string; status: "good" | "warning" | "critical" }) {
+  return (
+    <Badge className={`text-[10px] px-1.5 py-0 gap-1 ${STATUS_COLORS[status]}`}>
+      <HeartPulse className="h-2.5 w-2.5" />
+      {displayScore.toFixed(1)}
+    </Badge>
+  );
+}
