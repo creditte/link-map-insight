@@ -72,12 +72,15 @@ export default function Dashboard() {
       });
 
       const data = await res.json();
-      if (!res.ok || !data.auth_url) {
+      console.log("[Xero OAuth] Response:", data);
+      
+      const oauthUrl = data.auth_url || data.url;
+      if (!res.ok || !oauthUrl) {
         throw new Error(data.error || "Failed to start Xero auth");
       }
 
-      console.log("[Xero OAuth] Full authorization URL:", data.auth_url);
-      window.location.href = data.auth_url;
+      console.log("[Xero OAuth] Full authorization URL:", oauthUrl);
+      window.location.href = oauthUrl;
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
