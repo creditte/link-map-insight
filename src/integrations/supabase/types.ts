@@ -941,6 +941,7 @@ export type Database = {
           type_b: string
         }[]
       }
+      get_my_tenant_user: { Args: never; Returns: Json }
       get_user_tenant_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
@@ -951,6 +952,7 @@ export type Database = {
       }
       is_owner: { Args: { _tenant_id: string }; Returns: boolean }
       is_owner_or_admin: { Args: { _tenant_id: string }; Returns: boolean }
+      link_tenant_user_on_login: { Args: never; Returns: Json }
       rpc_change_tenant_user_role: {
         Args: {
           p_new_role: string

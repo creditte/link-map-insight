@@ -39,42 +39,54 @@ export function useTenantUsers(): UseUsersResult {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
 
-    // Get tenant_id from profiles
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("tenant_id")
-      .eq("user_id", user.id)
-      .single();
+    // Step 1: backfill link by email if needed (safe security-definer RPC)
+    await supabase.rpc("link_tenant_user_on_login" as any);
 
-    if (!profile?.tenant_id) {
+    // Step 2: get current user's tenant_user row via security-definer to bypass RLS race
+    const { data: myTuRaw } = await supabase.rpc("get_my_tenant_user" as any);
+    const myTu = myTuRaw as TenantUser | null;
+
+    console.log("[useTenantUsers] currentTenantId:", myTu?.tenant_id ?? null);
+    console.log("[useTenantUsers] currentRole:", myTu?.role ?? null);
+    console.log("[useTenantUsers] currentStatus:", myTu?.status ?? null);
+
+    if (!myTu?.tenant_id) {
+      setCurrentUser(null);
+      setTenantId(null);
+      setUsers([]);
       setLoading(false);
       return;
     }
 
-    const tid = profile.tenant_id;
-    setTenantId(tid);
+    setCurrentUser(myTu);
+    setTenantId(myTu.tenant_id);
 
-    // Fetch tenant_users (RLS will filter by role)
+    // Step 3: Fetch all users in the tenant (RLS will enforce owner/admin-only reads)
     const { data, error } = await supabase
       .from("tenant_users")
       .select("*")
-      .eq("tenant_id", tid)
+      .eq("tenant_id", myTu.tenant_id)
       .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("[useTenantUsers] fetch error:", error.message);
+    }
 
     if (!error && data) {
       setUsers(data as TenantUser[]);
-      const me = data.find((u: TenantUser) => u.auth_user_id === user.id) as TenantUser | undefined;
-      setCurrentUser(me ?? null);
     }
 
     setLoading(false);
   }, [user?.id]);
 
   useEffect(() => {
-    if (user?.id) reload();
+    reload();
   }, [user?.id, reload]);
 
   const callAction = useCallback(
@@ -82,7 +94,7 @@ export function useTenantUsers(): UseUsersResult {
       const token = session?.access_token;
       if (!token || !tenantId) throw new Error("Not authenticated");
 
-      const key = payload.tenant_user_id as string ?? action;
+      const key = (payload.tenant_user_id as string) ?? action;
       setActionLoading(key);
       try {
         const res = await fetch(
