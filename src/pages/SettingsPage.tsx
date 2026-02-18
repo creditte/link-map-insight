@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Users, Building2, Shield, MessageSquare } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import UsersSettings from "@/components/settings/UsersSettings";
+import UsersManagement from "@/components/settings/UsersManagement";
 import TenantSettings from "@/components/settings/TenantSettings";
 import FeedbackSettings from "@/components/settings/FeedbackSettings";
 
@@ -54,7 +54,7 @@ export default function SettingsPage() {
 
         {isAdmin && (
           <TabsContent value="users" className="mt-4">
-            <UsersSettings />
+            <UsersManagement />
           </TabsContent>
         )}
 

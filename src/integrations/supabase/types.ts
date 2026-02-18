@@ -715,6 +715,101 @@ export type Database = {
           },
         ]
       }
+      tenant_user_audit_log: {
+        Row: {
+          action: string
+          actor_auth_user_id: string
+          created_at: string
+          id: string
+          meta: Json | null
+          target_email: string | null
+          target_tenant_user_id: string | null
+          tenant_id: string
+        }
+        Insert: {
+          action: string
+          actor_auth_user_id: string
+          created_at?: string
+          id?: string
+          meta?: Json | null
+          target_email?: string | null
+          target_tenant_user_id?: string | null
+          tenant_id: string
+        }
+        Update: {
+          action?: string
+          actor_auth_user_id?: string
+          created_at?: string
+          id?: string
+          meta?: Json | null
+          target_email?: string | null
+          target_tenant_user_id?: string | null
+          tenant_id?: string
+        }
+        Relationships: []
+      }
+      tenant_users: {
+        Row: {
+          accepted_at: string | null
+          auth_user_id: string | null
+          created_at: string
+          deleted_at: string | null
+          disabled_at: string | null
+          display_name: string | null
+          email: string
+          id: string
+          invited_at: string | null
+          invited_by: string | null
+          last_invited_at: string | null
+          role: string
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          auth_user_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          disabled_at?: string | null
+          display_name?: string | null
+          email: string
+          id?: string
+          invited_at?: string | null
+          invited_by?: string | null
+          last_invited_at?: string | null
+          role?: string
+          status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          auth_user_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          disabled_at?: string | null
+          display_name?: string | null
+          email?: string
+          id?: string
+          invited_at?: string | null
+          invited_by?: string | null
+          last_invited_at?: string | null
+          role?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_users_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
           brand_primary_color: string | null
@@ -853,6 +948,45 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      is_owner: { Args: { _tenant_id: string }; Returns: boolean }
+      is_owner_or_admin: { Args: { _tenant_id: string }; Returns: boolean }
+      rpc_change_tenant_user_role: {
+        Args: {
+          p_new_role: string
+          p_tenant_id: string
+          p_tenant_user_id: string
+        }
+        Returns: Json
+      }
+      rpc_create_tenant_user_invite: {
+        Args: {
+          p_display_name?: string
+          p_email: string
+          p_role: string
+          p_tenant_id: string
+        }
+        Returns: Json
+      }
+      rpc_disable_tenant_user: {
+        Args: { p_tenant_id: string; p_tenant_user_id: string }
+        Returns: Json
+      }
+      rpc_enable_tenant_user: {
+        Args: { p_tenant_id: string; p_tenant_user_id: string }
+        Returns: Json
+      }
+      rpc_reinvite_tenant_user: {
+        Args: { p_tenant_id: string; p_tenant_user_id: string }
+        Returns: Json
+      }
+      rpc_restore_tenant_user: {
+        Args: { p_tenant_id: string; p_tenant_user_id: string }
+        Returns: Json
+      }
+      rpc_soft_delete_tenant_user: {
+        Args: { p_tenant_id: string; p_tenant_user_id: string }
+        Returns: Json
       }
     }
     Enums: {
