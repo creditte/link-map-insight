@@ -79,17 +79,16 @@ function isCompany(t: string): boolean {
 // ── Labels ────────────────────────────────────────────────────────
 
 export function getHealthLabel(score: number): string {
-  const d = score / 10;
-  if (d >= 9.95) return "Structure Complete";
-  if (d >= 7) return "Minor Gaps";
-  if (d >= 5) return "Control Incomplete";
-  if (d >= 3) return "Governance Gaps";
+  if (score >= 100) return "Structure Complete";
+  if (score >= 70) return "Minor Gaps";
+  if (score >= 50) return "Control Incomplete";
+  if (score >= 30) return "Governance Gaps";
   return "Critical Issues";
 }
 
-export function getHealthStatus(displayScore: number): "good" | "warning" | "critical" {
-  if (displayScore >= 9) return "good";
-  if (displayScore >= 5) return "warning";
+export function getHealthStatus(score: number): "good" | "warning" | "critical" {
+  if (score >= 90) return "good";
+  if (score >= 50) return "warning";
   return "critical";
 }
 
@@ -508,7 +507,7 @@ export function computeHealthScoreV2(
   }
 
   const score = isCapped ? Math.min(rawScore, 90) : rawScore;
-  const displayScore = Math.round(score / 10 * 10) / 10; // one decimal
+  const displayScore = score; // same as score, kept for compatibility
 
   // ─── Categorize issues ──────────────────────────────────────────
 
@@ -573,8 +572,8 @@ export function computeHealthScoreV2Light(
   const full = computeHealthScoreV2(entities, relationships);
   return {
     score: full.score,
-    displayScore: full.displayScore,
+    displayScore: full.score,
     label: full.label,
-    status: getHealthStatus(full.displayScore),
+    status: getHealthStatus(full.score),
   };
 }
