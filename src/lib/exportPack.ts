@@ -517,7 +517,7 @@ export async function exportPdf(
     pdf.text("Structure Health Summary", 14, 16);
 
     pdf.setFontSize(11);
-    pdf.text(`Health Score: ${hs.displayScore.toFixed(1)} / 10 — ${hs.label}`, 14, 26);
+    pdf.text(`Health Score: ${hs.score} / 100 — ${hs.label}`, 14, 26);
 
     pdf.setFontSize(8);
     pdf.setTextColor(100);

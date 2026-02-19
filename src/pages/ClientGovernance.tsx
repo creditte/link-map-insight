@@ -188,7 +188,7 @@ export default function ClientGovernance() {
         crossObservations.push("No circular ownership detected");
       }
 
-      const requireUpdates = results.filter((r) => r.displayScore < 10);
+      const requireUpdates = results.filter((r) => r.score < 100);
       if (requireUpdates.length > 0) {
         crossObservations.push(`${requireUpdates.length} structure${requireUpdates.length > 1 ? "s" : ""} require${requireUpdates.length === 1 ? "s" : ""} updates`);
       }
@@ -197,17 +197,15 @@ export default function ClientGovernance() {
       const avgScore = results.length > 0
         ? Math.round(results.reduce((sum, r) => sum + r.score, 0) / results.length)
         : 100;
-      const clientDisplayScore = Math.round(avgScore / 10 * 10) / 10;
 
-      // Client 10/10 requires all structures at 10/10
-      const allPerfect = results.every((r) => r.displayScore >= 10);
+      // Client 100/100 requires all structures at 100
+      const allPerfect = results.every((r) => r.score >= 100);
       const finalClientScore = allPerfect ? avgScore : Math.min(avgScore, 99);
-      const finalClientDisplay = allPerfect ? clientDisplayScore : Math.min(clientDisplayScore, 9.9);
 
       setReview({
         timestamp: new Date().toISOString(),
         clientScore: finalClientScore,
-        clientDisplayScore: finalClientDisplay,
+        clientDisplayScore: finalClientScore,
         clientLabel: getHealthLabel(finalClientScore),
         structures: results,
         crossObservations,
@@ -252,7 +250,7 @@ export default function ClientGovernance() {
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
                   <HeartPulse className="h-5 w-5" />
-                  Client Governance Health: {review.clientDisplayScore.toFixed(1)} / 10
+                  Client Governance Health: {review.clientDisplayScore} / 100
                   <Badge className={`text-xs ${STATUS_COLORS[getHealthStatus(review.clientDisplayScore)]}`}>
                     {review.clientLabel}
                   </Badge>
@@ -268,7 +266,7 @@ export default function ClientGovernance() {
                 </span>
               </div>
               <p className="text-sm text-muted-foreground mt-1">
-                {review.structures.length} structures reviewed. {review.structures.filter((s) => s.displayScore < 10).length} require updates.
+                {review.structures.length} structures reviewed. {review.structures.filter((s) => s.score < 100).length} require updates.
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -285,7 +283,7 @@ export default function ClientGovernance() {
                   {review.structures.map((s) => (
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.name}</TableCell>
-                      <TableCell className="text-right tabular-nums font-semibold">{s.displayScore.toFixed(1)}</TableCell>
+                      <TableCell className="text-right tabular-nums font-semibold">{s.score}</TableCell>
                       <TableCell>
                         <Badge className={`text-[10px] ${STATUS_COLORS[s.status]}`}>
                           {s.label}

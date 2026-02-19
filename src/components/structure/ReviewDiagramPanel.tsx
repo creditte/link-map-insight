@@ -92,7 +92,7 @@ function IssueList({
 
 export default function ReviewDiagramPanel({ health, entities, relationships, structureName, onClose, onSelectEntity }: Props) {
   const { toast } = useToast();
-  const status = getHealthStatus(health.displayScore);
+  const status = getHealthStatus(health.score);
 
   // AI sections state
   const [explainContent, setExplainContent] = useState("");
@@ -130,7 +130,7 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
           entities,
           relationships,
           structureName,
-          healthScore: health.displayScore,
+          healthScore: health.score,
           healthLabel: health.label,
           auditSummary,
         }),
@@ -246,7 +246,7 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold tabular-nums">{health.displayScore.toFixed(1)} / 10</span>
+              <span className="text-sm font-bold tabular-nums">{health.score} / 100</span>
               <Badge className={`text-[10px] px-1.5 py-0 ${STATUS_BADGE[status]}`}>
                 {health.label}
               </Badge>
