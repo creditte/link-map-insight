@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { trace } from "@/lib/bootTrace";
 
 export interface TenantUser {
   id: string;
@@ -40,49 +41,68 @@ export function useTenantUsers(): UseUsersResult {
 
   const reload = useCallback(async () => {
     if (!user?.id) {
+      trace("useTenantUsers", "no user → skip");
       setLoading(false);
       return;
     }
     setLoading(true);
+    trace("useTenantUsers", "reload start", { userId: user.id });
 
-    // Step 1: backfill link by email if needed (safe security-definer RPC)
-    await supabase.rpc("link_tenant_user_on_login" as any);
+    try {
+      // Step 1: backfill link
+      trace("useTenantUsers", "calling link_tenant_user_on_login");
+      await supabase.rpc("link_tenant_user_on_login" as any);
 
-    // Step 2: get current user's tenant_user row via security-definer to bypass RLS race
-    const { data: myTuRaw } = await supabase.rpc("get_my_tenant_user" as any);
-    const myTu = myTuRaw as TenantUser | null;
+      // Step 2: get current user's tenant_user row
+      trace("useTenantUsers", "calling get_my_tenant_user");
+      const { data: myTuRaw, error: rpcErr } = await supabase.rpc("get_my_tenant_user" as any);
 
-    console.log("[useTenantUsers] currentTenantId:", myTu?.tenant_id ?? null);
-    console.log("[useTenantUsers] currentRole:", myTu?.role ?? null);
-    console.log("[useTenantUsers] currentStatus:", myTu?.status ?? null);
+      if (rpcErr) {
+        trace("useTenantUsers", "get_my_tenant_user error", { error: rpcErr.message });
+      }
 
-    if (!myTu?.tenant_id) {
-      setCurrentUser(null);
-      setTenantId(null);
-      setUsers([]);
+      const myTu = myTuRaw as TenantUser | null;
+      trace("useTenantUsers", "get_my_tenant_user result", {
+        tenantId: myTu?.tenant_id ?? null,
+        role: myTu?.role ?? null,
+        status: myTu?.status ?? null,
+      });
+
+      if (!myTu?.tenant_id) {
+        setCurrentUser(null);
+        setTenantId(null);
+        setUsers([]);
+        setLoading(false);
+        return;
+      }
+
+      setCurrentUser(myTu);
+      setTenantId(myTu.tenant_id);
+
+      // Step 3: Fetch all users in the tenant
+      trace("useTenantUsers", "fetching tenant_users list");
+      const { data, error } = await supabase
+        .from("tenant_users")
+        .select("*")
+        .eq("tenant_id", myTu.tenant_id)
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        trace("useTenantUsers", "tenant_users fetch error", { error: error.message });
+        console.error("[useTenantUsers] fetch error:", error.message);
+      }
+
+      if (!error && data) {
+        setUsers(data as TenantUser[]);
+        trace("useTenantUsers", "loaded users", { count: data.length });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      trace("useTenantUsers", "unexpected error", { error: msg });
+      console.error("[useTenantUsers] unexpected error:", msg);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setCurrentUser(myTu);
-    setTenantId(myTu.tenant_id);
-
-    // Step 3: Fetch all users in the tenant (RLS will enforce owner/admin-only reads)
-    const { data, error } = await supabase
-      .from("tenant_users")
-      .select("*")
-      .eq("tenant_id", myTu.tenant_id)
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      console.error("[useTenantUsers] fetch error:", error.message);
-    }
-
-    if (!error && data) {
-      setUsers(data as TenantUser[]);
-    }
-
-    setLoading(false);
   }, [user?.id]);
 
   useEffect(() => {

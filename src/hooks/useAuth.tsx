@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { trace } from "@/lib/bootTrace";
 
 // ── Boot state machine ──────────────────────────────────────────────
 export type BootStatus = "booting" | "authenticated" | "unauthenticated" | "error" | "timeout";
@@ -8,7 +9,7 @@ export type BootStatus = "booting" | "authenticated" | "unauthenticated" | "erro
 interface AuthContextType {
   user: User | null;
   session: Session | null;
-  loading: boolean; // kept for backward compat – true only when booting
+  loading: boolean;
   bootStatus: BootStatus;
   bootError: string | null;
   signOut: () => Promise<void>;
@@ -32,14 +33,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [bootError, setBootError] = useState<string | null>(null);
   const bootResolved = useRef(false);
 
+  trace("useAuth", "provider mount", { bootStatus: "booting" });
+
   useEffect(() => {
     // ── Timeout guard ───────────────────────────────────────────
     const timeout = setTimeout(() => {
       if (!bootResolved.current) {
         bootResolved.current = true;
+        const msg = `Authentication timed out after ${BOOT_TIMEOUT_MS / 1000}s`;
+        trace("useAuth", "TIMEOUT", { ms: BOOT_TIMEOUT_MS });
         console.error("[Auth] Boot timeout after", BOOT_TIMEOUT_MS, "ms");
         setBootStatus("timeout");
-        setBootError(`Authentication timed out after ${BOOT_TIMEOUT_MS / 1000}s`);
+        setBootError(msg);
       }
     }, BOOT_TIMEOUT_MS);
 
@@ -47,9 +52,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (bootResolved.current) return;
       bootResolved.current = true;
       clearTimeout(timeout);
+      const newStatus = s?.user ? "authenticated" : "unauthenticated";
+      trace("useAuth", `finishBoot → ${newStatus}`, { userId: s?.user?.id ?? null });
       setSession(s);
       setUser(s?.user ?? null);
-      setBootStatus(s?.user ? "authenticated" : "unauthenticated");
+      setBootStatus(newStatus);
     };
 
     const failBoot = (err: unknown) => {
@@ -57,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       bootResolved.current = true;
       clearTimeout(timeout);
       const msg = err instanceof Error ? err.message : String(err);
+      trace("useAuth", "failBoot → error", { error: msg });
       console.error("[Auth] Boot error:", msg);
       setBootStatus("error");
       setBootError(msg);
@@ -65,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // ── Auth state listener (set up BEFORE getSession) ──────────
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, s) => {
-        // After initial boot, keep state in sync
+        trace("useAuth", `onAuthStateChange(${_event})`, { userId: s?.user?.id ?? null, bootResolved: bootResolved.current });
         setSession(s);
         setUser(s?.user ?? null);
         if (bootResolved.current) {
@@ -77,16 +85,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     // ── Initial session fetch ───────────────────────────────────
+    trace("useAuth", "getSession start");
     supabase.auth.getSession().then(
       ({ data: { session: s }, error }) => {
+        trace("useAuth", "getSession resolved", { hasSession: !!s, error: error?.message ?? null });
         if (error) {
-          // 401 / 403 – clear auth and go unauthenticated
           failBoot(error);
           return;
         }
         finishBoot(s);
       },
-      (err) => failBoot(err)
+      (err) => {
+        trace("useAuth", "getSession rejected", { error: String(err) });
+        failBoot(err);
+      }
     );
 
     return () => {
@@ -96,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = async () => {
+    trace("useAuth", "signOut called");
     await supabase.auth.signOut();
     setBootStatus("unauthenticated");
   };
