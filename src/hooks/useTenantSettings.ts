@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { withTimeout } from "@/lib/bootTimeout";
+
+const TENANT_TIMEOUT_MS = 10_000;
 
 export interface TenantSettings {
   id: string;
@@ -15,28 +18,42 @@ export interface TenantSettings {
   export_default_view_mode: string;
 }
 
+export type TenantLoadStatus = "idle" | "loading" | "loaded" | "error" | "timeout";
+
 export function useTenantSettings() {
   const { user } = useAuth();
   const [tenant, setTenant] = useState<TenantSettings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<TenantLoadStatus>("idle");
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!user?.id) { setLoading(false); return; }
+    if (!user?.id) {
+      setLoading(false);
+      setStatus("loaded");
+      return;
+    }
     setLoading(true);
+    setStatus("loading");
+    setError(null);
+
     try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("tenant_id")
-        .eq("user_id", user.id)
-        .maybeSingle();
+      const { data: profile } = await withTimeout(
+        supabase.from("profiles").select("tenant_id").eq("user_id", user.id).maybeSingle(),
+        TENANT_TIMEOUT_MS,
+        "fetch profile"
+      );
 
-      if (!profile) { setLoading(false); return; }
+      if (!profile) {
+        setStatus("loaded");
+        return;
+      }
 
-      const { data } = await supabase
-        .from("tenants")
-        .select("*")
-        .eq("id", profile.tenant_id)
-        .maybeSingle();
+      const { data } = await withTimeout(
+        supabase.from("tenants").select("*").eq("id", profile.tenant_id).maybeSingle(),
+        TENANT_TIMEOUT_MS,
+        "fetch tenant"
+      );
 
       if (data) {
         setTenant({
@@ -52,6 +69,12 @@ export function useTenantSettings() {
           export_default_view_mode: data.export_default_view_mode ?? "full",
         });
       }
+      setStatus("loaded");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[useTenantSettings]", msg);
+      setError(msg);
+      setStatus(msg.includes("timeout") ? "timeout" : "error");
     } finally {
       setLoading(false);
     }
@@ -59,5 +82,5 @@ export function useTenantSettings() {
 
   useEffect(() => { load(); }, [load]);
 
-  return { tenant, loading, reload: load };
+  return { tenant, loading, status, error, reload: load };
 }

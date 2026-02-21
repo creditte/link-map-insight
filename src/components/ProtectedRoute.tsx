@@ -1,13 +1,30 @@
 import { Navigate } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth, BootStatus } from "@/hooks/useAuth";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
 import { Shield } from "lucide-react";
+import RecoveryScreen from "@/components/RecoveryScreen";
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-  const { tenant, loading: tenantLoading } = useTenantSettings();
+  const { bootStatus, bootError } = useAuth();
+  const { tenant, loading: tenantLoading, status: tenantStatus, error: tenantError } = useTenantSettings();
 
-  if (loading || tenantLoading) {
+  // ── Error / timeout states → recovery screen ──────────────────
+  if (bootStatus === "error" || bootStatus === "timeout") {
+    return (
+      <RecoveryScreen
+        title={bootStatus === "timeout" ? "Connection Timeout" : "Authentication Error"}
+        message={
+          bootStatus === "timeout"
+            ? "The app took too long to connect. Please check your network and try again."
+            : "We couldn't verify your session. Please reload or sign in again."
+        }
+        error={bootError ?? undefined}
+      />
+    );
+  }
+
+  // ── Still booting auth ────────────────────────────────────────
+  if (bootStatus === "booting") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <p className="text-muted-foreground">Loading...</p>
@@ -15,7 +32,29 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     );
   }
 
-  if (!user) return <Navigate to="/auth" replace />;
+  // ── Unauthenticated ───────────────────────────────────────────
+  if (bootStatus === "unauthenticated") {
+    return <Navigate to="/auth" replace />;
+  }
+
+  // ── Tenant loading states ─────────────────────────────────────
+  if (tenantStatus === "timeout" || tenantStatus === "error") {
+    return (
+      <RecoveryScreen
+        title={tenantStatus === "timeout" ? "Connection Timeout" : "Failed to Load Firm"}
+        message="We couldn't load your firm settings. Please reload or try again."
+        error={tenantError ?? undefined}
+      />
+    );
+  }
+
+  if (tenantLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
 
   if (!tenant) {
     return (
