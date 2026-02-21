@@ -15,11 +15,96 @@ function ElapsedTimer() {
   return <span className="text-xs text-muted-foreground">({elapsed}s)</span>;
 }
 
-function BootTraceOverlay() {
+/* ── Full Boot Debug Panel ──────────────────────────────────────────── */
+function BootDebugPanel({
+  bootStatus,
+  tenantStatus,
+  tenantLoading,
+  userId,
+  userEmail,
+  hasTenant,
+  tenantError,
+}: {
+  bootStatus: BootStatus;
+  tenantStatus: TenantLoadStatus;
+  tenantLoading: boolean;
+  userId: string | null;
+  userEmail: string | null;
+  hasTenant: boolean;
+  tenantError: string | null;
+}) {
+  const [elapsed, setElapsed] = useState(0);
+  const [swStatus, setSwStatus] = useState("checking…");
   const entries = getTrace();
+
+  useEffect(() => {
+    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) {
+      setSwStatus("not supported");
+      return;
+    }
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      if (regs.length === 0) {
+        setSwStatus("none registered");
+      } else {
+        const controlling = navigator.serviceWorker.controller;
+        setSwStatus(
+          controlling
+            ? `ACTIVE (scope: ${controlling.scriptURL})`
+            : `registered (${regs.length}) but not controlling`
+        );
+      }
+    });
+  }, []);
+
+  const buildTs = typeof __BUILD_TIMESTAMP__ !== "undefined" ? __BUILD_TIMESTAMP__ : "dev";
+
   return (
     <div className="fixed inset-0 z-[9999] overflow-auto bg-background p-4 font-mono text-xs">
-      <h2 className="text-sm font-bold mb-2">Boot Trace ({entries.length} entries)</h2>
+      <h2 className="text-base font-bold mb-3">🔧 Boot Debug Panel</h2>
+
+      <div className="grid grid-cols-2 gap-x-8 gap-y-1 mb-4 max-w-xl">
+        <span className="text-muted-foreground">Build:</span>
+        <span className="font-semibold">{buildTs}</span>
+
+        <span className="text-muted-foreground">Elapsed:</span>
+        <span>{elapsed}s</span>
+
+        <span className="text-muted-foreground">Service Worker:</span>
+        <span className={swStatus.startsWith("ACTIVE") ? "text-destructive font-bold" : ""}>{swStatus}</span>
+
+        <span className="text-muted-foreground">Auth Status:</span>
+        <span className={`font-semibold ${bootStatus === "authenticated" ? "text-green-600" : "text-orange-500"}`}>
+          {bootStatus}
+        </span>
+
+        <span className="text-muted-foreground">User ID:</span>
+        <span>{userId ?? "—"}</span>
+
+        <span className="text-muted-foreground">Email:</span>
+        <span>{userEmail ?? "—"}</span>
+
+        <span className="text-muted-foreground">Tenant Status:</span>
+        <span className={`font-semibold ${tenantStatus === "loaded" ? "text-green-600" : "text-orange-500"}`}>
+          {tenantStatus} {tenantLoading ? "(loading)" : ""}
+        </span>
+
+        <span className="text-muted-foreground">Has Tenant:</span>
+        <span>{hasTenant ? "YES" : "NO"}</span>
+
+        {tenantError && (
+          <>
+            <span className="text-muted-foreground">Tenant Error:</span>
+            <span className="text-destructive">{tenantError}</span>
+          </>
+        )}
+      </div>
+
+      <h3 className="text-sm font-bold mb-2">Boot Trace ({entries.length} entries)</h3>
       <table className="w-full border-collapse">
         <thead>
           <tr className="border-b text-left">
@@ -74,7 +159,17 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   // ── Debug overlay ─────────────────────────────────────────────
   if (showDebug) {
-    return <BootTraceOverlay />;
+    return (
+      <BootDebugPanel
+        bootStatus={bootStatus}
+        tenantStatus={tenantStatus}
+        tenantLoading={tenantLoading}
+        userId={user?.id ?? null}
+        userEmail={user?.email ?? null}
+        hasTenant={!!tenant}
+        tenantError={tenantError}
+      />
+    );
   }
 
   // ── Timed out waiting ─────────────────────────────────────────

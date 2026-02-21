@@ -2,13 +2,19 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 
+// ── Unregister any rogue service workers ────────────────────────────
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    for (const reg of regs) {
+      console.warn("[SW] Unregistering service worker:", reg.scope);
+      reg.unregister();
+    }
+  });
+}
+
 // ── Global Error Guards ─────────────────────────────────────────────
-// Prevent unhandled errors (including browser-extension noise) from
-// crashing the React tree or leaving the app in a hung state.
 window.addEventListener("error", (event) => {
   console.error("[GlobalError]", event.error ?? event.message);
-  // Prevent default only for extension errors – let React's own
-  // error boundary handle component errors.
 });
 
 window.addEventListener("unhandledrejection", (event) => {
