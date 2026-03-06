@@ -51,6 +51,10 @@ export function useTenantSettings() {
     setError(null);
 
     try {
+      // ── Step 0: sync tenant_users → profile link ─────────────
+      trace("useTenantSettings", "calling link_tenant_user_on_login");
+      await supabase.rpc("link_tenant_user_on_login" as any);
+
       // ── Step 1: fetch profile ─────────────────────────────────
       trace("useTenantSettings", "fetching profile");
       const { data: profile, error: profileErr } = await withTimeout(
