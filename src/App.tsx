@@ -17,6 +17,9 @@ import SettingsPage from "./pages/SettingsPage";
 import NotFound from "./pages/NotFound";
 import StructureCompare from "./pages/StructureCompare";
 import ClientGovernance from "./pages/ClientGovernance";
+import ProtectedAdminRoute from "@/components/ProtectedAdminRoute";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminTenantDetail from "./pages/admin/AdminTenantDetail";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +33,9 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               <Route path="/auth" element={<Auth />} />
+              {/* Super Admin routes */}
+              <Route path="/admin" element={<ProtectedAdminRoute><AdminDashboard /></ProtectedAdminRoute>} />
+              <Route path="/admin/tenants/:tenantId" element={<ProtectedAdminRoute><AdminTenantDetail /></ProtectedAdminRoute>} />
               <Route
                 element={
                   <ProtectedRoute>

@@ -715,6 +715,30 @@ export type Database = {
           },
         ]
       }
+      super_admins: {
+        Row: {
+          auth_user_id: string
+          created_at: string
+          display_name: string | null
+          email: string
+          id: string
+        }
+        Insert: {
+          auth_user_id: string
+          created_at?: string
+          display_name?: string | null
+          email: string
+          id?: string
+        }
+        Update: {
+          auth_user_id?: string
+          created_at?: string
+          display_name?: string | null
+          email?: string
+          id?: string
+        }
+        Relationships: []
+      }
       tenant_user_audit_log: {
         Row: {
           action: string
@@ -952,6 +976,7 @@ export type Database = {
       }
       is_owner: { Args: { _tenant_id: string }; Returns: boolean }
       is_owner_or_admin: { Args: { _tenant_id: string }; Returns: boolean }
+      is_super_admin: { Args: never; Returns: boolean }
       link_tenant_user_on_login: { Args: never; Returns: Json }
       rpc_change_tenant_user_role: {
         Args: {
@@ -959,6 +984,14 @@ export type Database = {
           p_tenant_id: string
           p_tenant_user_id: string
         }
+        Returns: Json
+      }
+      rpc_create_tenant: {
+        Args: { p_firm_name: string; p_name: string }
+        Returns: Json
+      }
+      rpc_create_tenant_owner: {
+        Args: { p_display_name?: string; p_email: string; p_tenant_id: string }
         Returns: Json
       }
       rpc_create_tenant_user_invite: {
@@ -976,6 +1009,11 @@ export type Database = {
       }
       rpc_enable_tenant_user: {
         Args: { p_tenant_id: string; p_tenant_user_id: string }
+        Returns: Json
+      }
+      rpc_list_all_tenants: { Args: never; Returns: Json }
+      rpc_list_tenant_users_admin: {
+        Args: { p_tenant_id: string }
         Returns: Json
       }
       rpc_reinvite_tenant_user: {
