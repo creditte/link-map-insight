@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth, BootStatus } from "@/hooks/useAuth";
 import { useTenantSettings, TenantLoadStatus } from "@/hooks/useTenantSettings";
+import { supabase } from "@/integrations/supabase/client";
 import { Shield } from "lucide-react";
 import RecoveryScreen from "@/components/RecoveryScreen";
 import { trace, getTrace, TraceEntry } from "@/lib/bootTrace";
@@ -139,6 +140,26 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const [searchParams] = useSearchParams();
   const showDebug = searchParams.get("debug") === "boot";
 
+  // Check onboarding_complete for password setup redirect
+  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
+
+  useEffect(() => {
+    if (bootStatus !== "authenticated" || !user) {
+      setOnboardingChecked(false);
+      return;
+    }
+    supabase
+      .from("profiles")
+      .select("onboarding_complete")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        setOnboardingComplete(data?.onboarding_complete ?? false);
+        setOnboardingChecked(true);
+      });
+  }, [bootStatus, user]);
+
   // ── Loading timeout – never stay on spinner forever ───────────
   const [timedOut, setTimedOut] = useState(false);
   const isStillLoading = bootStatus === "booting" || (bootStatus === "authenticated" && tenantLoading);
@@ -254,6 +275,11 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
         </div>
       </div>
     );
+  }
+
+  // ── Password setup required ────────────────────────────────────
+  if (onboardingChecked && onboardingComplete === false) {
+    return <Navigate to="/setup-password" replace />;
   }
 
   return <>{children}</>;
