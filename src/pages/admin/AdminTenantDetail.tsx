@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Loader2, UserPlus } from "lucide-react";
+import { ArrowLeft, Loader2, UserPlus, MailCheck } from "lucide-react";
 
 interface TenantUser {
   id: string;
@@ -37,6 +37,7 @@ export default function AdminTenantDetail() {
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState("owner");
+  const [resending, setResending] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchUsers = async () => {
@@ -55,24 +56,56 @@ export default function AdminTenantDetail() {
 
   useEffect(() => { fetchUsers(); }, [tenantId]);
 
+  const callAdminInvite = async (inviteEmail: string, inviteDisplayName?: string | null, inviteRole?: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-invite-user`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({
+          email: inviteEmail,
+          tenant_id: tenantId,
+          display_name: inviteDisplayName || null,
+          role: inviteRole || "owner",
+        }),
+      }
+    );
+    return res.json();
+  };
+
   const handleAddUser = async () => {
     if (!tenantId || !email.trim()) return;
     setCreating(true);
-    const { error } = await supabase.rpc("rpc_create_tenant_owner", {
-      p_tenant_id: tenantId,
-      p_email: email.trim(),
-      p_display_name: displayName.trim() || null,
-    });
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+
+    const result = await callAdminInvite(email.trim(), displayName.trim() || null, role);
+
+    if (result.error) {
+      toast({ title: "Error", description: result.error, variant: "destructive" });
     } else {
-      toast({ title: "User added as owner" });
+      toast({ title: "User invited", description: result.message || "Invitation email sent" });
       setDialogOpen(false);
       setEmail("");
       setDisplayName("");
+      setRole("owner");
       fetchUsers();
     }
     setCreating(false);
+  };
+
+  const handleResendInvite = async (u: TenantUser) => {
+    setResending(u.id);
+    const result = await callAdminInvite(u.email, u.display_name, u.role);
+    if (result.error) {
+      toast({ title: "Error resending", description: result.error, variant: "destructive" });
+    } else {
+      toast({ title: "Invite resent", description: `Email sent to ${u.email}` });
+    }
+    setResending(null);
   };
 
   return (
@@ -91,25 +124,38 @@ export default function AdminTenantDetail() {
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="gap-1.5">
-                <UserPlus className="h-4 w-4" /> Add Owner
+                <UserPlus className="h-4 w-4" /> Add User
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Add Tenant Owner</DialogTitle>
+                <DialogTitle>Invite User to Tenant</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-2">
                 <div className="space-y-2">
                   <Label>Email</Label>
-                  <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="owner@example.com" type="email" />
+                  <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="user@example.com" type="email" />
                 </div>
                 <div className="space-y-2">
                   <Label>Display Name (optional)</Label>
                   <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Jane Smith" />
                 </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select value={role} onValueChange={setRole}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="owner">Owner</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="user">User</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Button onClick={handleAddUser} disabled={creating || !email.trim()} className="w-full">
                   {creating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Add as Owner
+                  Send Invitation
                 </Button>
               </div>
             </DialogContent>
@@ -121,7 +167,7 @@ export default function AdminTenantDetail() {
             <Loader2 className="h-4 w-4 animate-spin" /> Loading users…
           </div>
         ) : users.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-8">No users yet. Add an owner to get this tenant started.</p>
+          <p className="text-sm text-muted-foreground py-8">No users yet. Add a user to get this tenant started.</p>
         ) : (
           <div className="space-y-2">
             {users.map((u) => (
@@ -134,6 +180,22 @@ export default function AdminTenantDetail() {
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-xs">{u.role}</Badge>
                     <Badge className={`text-xs ${statusColor[u.status] ?? ""}`}>{u.status}</Badge>
+                    {u.status === "invited" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1 text-xs"
+                        disabled={resending === u.id}
+                        onClick={() => handleResendInvite(u)}
+                      >
+                        {resending === u.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <MailCheck className="h-3 w-3" />
+                        )}
+                        Resend
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
