@@ -797,6 +797,7 @@ export type Database = {
         Row: {
           accepted_at: string | null
           auth_user_id: string | null
+          can_manage_integrations: boolean
           created_at: string
           deleted_at: string | null
           disabled_at: string | null
@@ -814,6 +815,7 @@ export type Database = {
         Insert: {
           accepted_at?: string | null
           auth_user_id?: string | null
+          can_manage_integrations?: boolean
           created_at?: string
           deleted_at?: string | null
           disabled_at?: string | null
@@ -831,6 +833,7 @@ export type Database = {
         Update: {
           accepted_at?: string | null
           auth_user_id?: string | null
+          can_manage_integrations?: boolean
           created_at?: string
           deleted_at?: string | null
           disabled_at?: string | null

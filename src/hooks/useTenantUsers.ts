@@ -19,6 +19,7 @@ export interface TenantUser {
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
+  can_manage_integrations: boolean;
 }
 
 export interface UseUsersResult {

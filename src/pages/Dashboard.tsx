@@ -21,7 +21,7 @@ export default function Dashboard() {
 
   const permissionsLoaded = !usersLoading && !tenantLoading;
   const userRole = currentUser?.role ?? null;
-  const canManageIntegrations = permissionsLoaded && (userRole === "owner" || (userRole === "admin" && tenant?.allow_admin_integrations === true));
+  const canManageIntegrations = permissionsLoaded && (userRole === "owner" || (userRole === "admin" && currentUser?.can_manage_integrations === true));
 
   useEffect(() => {
     // Handle Xero OAuth callback params

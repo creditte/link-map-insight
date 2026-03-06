@@ -294,28 +294,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
           </CardContent>
         </Card>
       )}
-      {/* Integrations Permission (owner only) */}
-      {isOwner && (
-        <Card className="max-w-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Link2 className="h-5 w-5 text-muted-foreground" />
-              Integrations Permission
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-0.5">
-                <Label className="text-sm">Allow Admins to Manage Integrations</Label>
-                <p className="text-xs text-muted-foreground">
-                  When enabled, admin users can connect and manage integrations like Xero Practice Manager.
-                </p>
-              </div>
-              <Switch checked={allowAdminIntegrations} onCheckedChange={setAllowAdminIntegrations} />
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Integration access is now managed per-user via Users tab */}
 
       {/* Save */}
       {isAdmin && (

@@ -177,6 +177,43 @@ Deno.serve(async (req) => {
       return json({ success: true });
     }
 
+    // ── toggle_integrations ──────────────────────────────────────────
+    if (action === "toggle_integrations") {
+      const { tenant_user_id, grant } = body;
+      if (!tenant_user_id || !tenant_id || grant === undefined) return json({ error: "tenant_user_id, tenant_id and grant required" }, 400);
+
+      // Verify caller is owner
+      const { data: callerTu } = await adminClient
+        .from("tenant_users")
+        .select("role")
+        .eq("tenant_id", tenant_id)
+        .eq("auth_user_id", callingUser.id)
+        .eq("status", "active")
+        .single();
+
+      if (callerTu?.role !== "owner") return json({ error: "Only owners can manage integration access" }, 403);
+
+      // Verify target is an admin
+      const { data: targetTu } = await adminClient
+        .from("tenant_users")
+        .select("role")
+        .eq("id", tenant_user_id)
+        .eq("tenant_id", tenant_id)
+        .single();
+
+      if (targetTu?.role !== "admin") return json({ error: "Integration access can only be granted to admin users" }, 400);
+
+      const { error: updateErr } = await adminClient
+        .from("tenant_users")
+        .update({ can_manage_integrations: !!grant })
+        .eq("id", tenant_user_id)
+        .eq("tenant_id", tenant_id);
+
+      if (updateErr) return json({ error: updateErr.message }, 400);
+
+      return json({ success: true });
+    }
+
     return json({ error: "Unknown action" }, 400);
   } catch (err: any) {
     console.error("manage-users error:", err);

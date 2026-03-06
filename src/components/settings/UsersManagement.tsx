@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   UserPlus, MoreHorizontal, Ban, CheckCircle, RefreshCw, Loader2,
-  Mail, Shield, ShieldCheck, Crown, Trash2, RotateCcw, Info,
+  Mail, Shield, ShieldCheck, Crown, Trash2, RotateCcw, Info, Link2,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -259,7 +259,16 @@ export default function UsersPage() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell><RoleBadge role={u.role} /></TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <RoleBadge role={u.role} />
+                        {u.role === "admin" && u.can_manage_integrations && (
+                          <Badge variant="outline" className="gap-1 text-[10px] border-green-500/60 text-green-600">
+                            <Link2 className="h-2.5 w-2.5" /> Integrations
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell><StatusBadge status={u.status} /></TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {u.last_invited_at
@@ -321,6 +330,24 @@ export default function UsersPage() {
                                   <Shield className="h-4 w-4 mr-2" /> Change role
                                 </DropdownMenuItem>
                               </>
+                            )}
+
+                            {/* Grant / Revoke Integration Access (admin only, owner action) */}
+                            {isOwner && u.role === "admin" && u.status !== "deleted" && (
+                              <DropdownMenuItem
+                                onClick={async () => {
+                                  const newVal = !u.can_manage_integrations;
+                                  try {
+                                    await callAction("toggle_integrations", { tenant_user_id: u.id, grant: newVal });
+                                    toast({ title: newVal ? "Integration access granted" : "Integration access revoked" });
+                                  } catch (e: any) {
+                                    toast({ title: "Failed", description: e.message, variant: "destructive" });
+                                  }
+                                }}
+                              >
+                                <Link2 className="h-4 w-4 mr-2" />
+                                {u.can_manage_integrations ? "Revoke Integration Access" : "Grant Integration Access"}
+                              </DropdownMenuItem>
                             )}
 
                             {/* Restore */}
