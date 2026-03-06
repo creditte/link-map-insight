@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Upload, Trash2, Loader2, Palette, FileText, Save } from "lucide-react";
+import { Building2, Upload, Trash2, Loader2, Palette, FileText, Save, Link2 } from "lucide-react";
+import { useTenantUsers } from "@/hooks/useTenantUsers";
 
 interface Props {
   isAdmin?: boolean;
@@ -18,6 +19,8 @@ interface Props {
 export default function TenantSettings({ isAdmin = false }: Props) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { currentUser } = useTenantUsers();
+  const isOwner = currentUser?.role === "owner";
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -33,6 +36,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [blockOnCritical, setBlockOnCritical] = useState(false);
   const [defaultViewMode, setDefaultViewMode] = useState("full");
+  const [allowAdminIntegrations, setAllowAdminIntegrations] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -54,6 +58,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
         setShowDisclaimer(tenant.export_show_disclaimer ?? false);
         setBlockOnCritical(tenant.export_block_on_critical_health ?? false);
         setDefaultViewMode(tenant.export_default_view_mode ?? "full");
+        setAllowAdminIntegrations((tenant as any).allow_admin_integrations ?? false);
       }
       setLoading(false);
     }
@@ -63,17 +68,21 @@ export default function TenantSettings({ isAdmin = false }: Props) {
   const handleSave = useCallback(async () => {
     if (!tenantId) return;
     setSaving(true);
+    const updatePayload: Record<string, unknown> = {
+      firm_name: firmName,
+      brand_primary_color: brandColor || null,
+      export_footer_text: exportFooter || null,
+      export_disclaimer_text: exportDisclaimer || null,
+      export_show_disclaimer: showDisclaimer,
+      export_block_on_critical_health: blockOnCritical,
+      export_default_view_mode: defaultViewMode,
+    };
+    if (isOwner) {
+      updatePayload.allow_admin_integrations = allowAdminIntegrations;
+    }
     const { error } = await supabase
       .from("tenants")
-      .update({
-        firm_name: firmName,
-        brand_primary_color: brandColor || null,
-        export_footer_text: exportFooter || null,
-        export_disclaimer_text: exportDisclaimer || null,
-        export_show_disclaimer: showDisclaimer,
-        export_block_on_critical_health: blockOnCritical,
-        export_default_view_mode: defaultViewMode,
-      })
+      .update(updatePayload as any)
       .eq("id", tenantId);
 
     if (error) {
@@ -83,7 +92,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
       toast({ title: "Settings saved" });
     }
     setSaving(false);
-  }, [tenantId, firmName, brandColor, exportFooter, exportDisclaimer, showDisclaimer, blockOnCritical, defaultViewMode, toast]);
+  }, [tenantId, firmName, brandColor, exportFooter, exportDisclaimer, showDisclaimer, blockOnCritical, defaultViewMode, allowAdminIntegrations, isOwner, toast]);
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -281,6 +290,28 @@ export default function TenantSettings({ isAdmin = false }: Props) {
                 <p className="text-xs text-muted-foreground">Prevent exports when structure health is Critical.</p>
               </div>
               <Switch checked={blockOnCritical} onCheckedChange={setBlockOnCritical} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {/* Integrations Permission (owner only) */}
+      {isOwner && (
+        <Card className="max-w-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Link2 className="h-5 w-5 text-muted-foreground" />
+              Integrations Permission
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label className="text-sm">Allow Admins to Manage Integrations</Label>
+                <p className="text-xs text-muted-foreground">
+                  When enabled, admin users can connect and manage integrations like Xero Practice Manager.
+                </p>
+              </div>
+              <Switch checked={allowAdminIntegrations} onCheckedChange={setAllowAdminIntegrations} />
             </div>
           </CardContent>
         </Card>

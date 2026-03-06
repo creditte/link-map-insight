@@ -1,0 +1,1 @@
+ALTER TABLE public.tenants ADD COLUMN allow_admin_integrations boolean NOT NULL DEFAULT false;
