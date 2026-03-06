@@ -175,7 +175,45 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 3. Audit
+    // 3. Directly link the new user to avoid handle_new_user race condition
+    const newUserId = inviteData?.user?.id;
+    if (newUserId) {
+      // Link tenant_users record
+      await adminClient
+        .from("tenant_users")
+        .update({
+          auth_user_id: newUserId,
+          status: "invited",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("tenant_id", tenant_id)
+        .eq("email", _email);
+
+      // Upsert profile with correct tenant (overrides handle_new_user fallback)
+      await adminClient
+        .from("profiles")
+        .upsert(
+          {
+            user_id: newUserId,
+            tenant_id,
+            full_name: display_name || "",
+            status: "active",
+            onboarding_complete: false,
+          },
+          { onConflict: "user_id" }
+        );
+
+      // Set correct user_roles
+      const appRole = (_role === "owner" || _role === "admin") ? "admin" : "user";
+      await adminClient
+        .from("user_roles")
+        .upsert(
+          { user_id: newUserId, role: appRole },
+          { onConflict: "user_id,role" }
+        );
+    }
+
+    // 4. Audit
     await adminClient.from("tenant_user_audit_log").insert({
       tenant_id,
       actor_auth_user_id: caller.id,
