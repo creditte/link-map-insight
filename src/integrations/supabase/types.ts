@@ -445,6 +445,27 @@ export type Database = {
           },
         ]
       }
+      roles: {
+        Row: {
+          created_at: string
+          id: string
+          is_super_admin: boolean
+          role_name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_super_admin?: boolean
+          role_name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_super_admin?: boolean
+          role_name?: string
+        }
+        Relationships: []
+      }
       snapshot_entities: {
         Row: {
           abn: string | null

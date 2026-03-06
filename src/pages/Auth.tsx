@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Navigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Navigate, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -9,13 +9,35 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 
 export default function Auth() {
-  const { user, loading } = useAuth();
+  const { user, loading, bootStatus } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [checkingAdmin, setCheckingAdmin] = useState(false);
 
-  if (loading) {
+  // After authentication, check if user is super admin and redirect accordingly
+  useEffect(() => {
+    if (bootStatus !== "authenticated" || !user) return;
+
+    setCheckingAdmin(true);
+    supabase
+      .from("super_admins")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          navigate("/admin", { replace: true });
+        } else {
+          navigate("/", { replace: true });
+        }
+        setCheckingAdmin(false);
+      });
+  }, [bootStatus, user, navigate]);
+
+  if (loading || checkingAdmin) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <p className="text-muted-foreground">Loading...</p>
@@ -23,7 +45,7 @@ export default function Auth() {
     );
   }
 
-  if (user) return <Navigate to="/" replace />;
+  if (user) return null; // useEffect handles redirect
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
