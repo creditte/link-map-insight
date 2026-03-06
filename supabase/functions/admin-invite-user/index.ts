@@ -17,6 +17,17 @@ Deno.serve(async (req) => {
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const frontendUrl = Deno.env.get("FRONTEND_URL") || supabaseUrl;
 
+    let setupPasswordRedirect = frontendUrl;
+    try {
+      const url = new URL(frontendUrl);
+      url.pathname = "/setup-password";
+      url.search = "";
+      url.hash = "";
+      setupPasswordRedirect = url.toString();
+    } catch {
+      // fallback to FRONTEND_URL as-is if parsing fails
+    }
+
     // Verify caller is a super admin
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -96,7 +107,7 @@ Deno.serve(async (req) => {
     const { data: inviteData, error: inviteError } =
       await adminClient.auth.admin.inviteUserByEmail(_email, {
         data: { full_name: display_name || "" },
-        redirectTo: frontendUrl,
+        redirectTo: setupPasswordRedirect,
       });
 
     if (inviteError) {
@@ -152,10 +163,10 @@ Deno.serve(async (req) => {
         }
 
         // Send a password recovery email so user can set password for new tenant
-        const { error: resetError } = await adminClient.auth.admin.generateLink({
+        const { error: _resetError } = await adminClient.auth.admin.generateLink({
           type: "recovery",
           email: _email,
-          options: { redirectTo: frontendUrl },
+          options: { redirectTo: setupPasswordRedirect },
         });
 
         return new Response(

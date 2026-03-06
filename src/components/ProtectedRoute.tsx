@@ -277,8 +277,17 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     );
   }
 
+  // ── Wait for onboarding check before allowing app access ──────
+  if (bootStatus === "authenticated" && !onboardingChecked) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-muted-foreground">Checking account setup… <ElapsedTimer /></p>
+      </div>
+    );
+  }
+
   // ── Password setup required ────────────────────────────────────
-  if (onboardingChecked && onboardingComplete === false) {
+  if (onboardingComplete === false) {
     return <Navigate to="/setup-password" replace />;
   }
 
