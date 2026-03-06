@@ -16,11 +16,12 @@ export default function Dashboard() {
   const [xeroLoading, setXeroLoading] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
-  const { currentUser } = useTenantUsers();
-  const { tenant } = useTenantSettings();
+  const { currentUser, loading: usersLoading } = useTenantUsers();
+  const { tenant, loading: tenantLoading } = useTenantSettings();
 
+  const permissionsLoaded = !usersLoading && !tenantLoading;
   const userRole = currentUser?.role ?? null;
-  const canManageIntegrations = userRole === "owner" || (userRole === "admin" && tenant?.allow_admin_integrations);
+  const canManageIntegrations = permissionsLoaded && (userRole === "owner" || (userRole === "admin" && tenant?.allow_admin_integrations === true));
 
   useEffect(() => {
     // Handle Xero OAuth callback params
