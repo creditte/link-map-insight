@@ -857,6 +857,7 @@ export type Database = {
       }
       tenants: {
         Row: {
+          allow_admin_integrations: boolean
           brand_primary_color: string | null
           created_at: string
           export_block_on_critical_health: boolean
@@ -871,6 +872,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          allow_admin_integrations?: boolean
           brand_primary_color?: string | null
           created_at?: string
           export_block_on_critical_health?: boolean
@@ -885,6 +887,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          allow_admin_integrations?: boolean
           brand_primary_color?: string | null
           created_at?: string
           export_block_on_critical_health?: boolean

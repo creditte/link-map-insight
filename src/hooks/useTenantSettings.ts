@@ -17,6 +17,7 @@ export interface TenantSettings {
   export_show_disclaimer: boolean;
   export_block_on_critical_health: boolean;
   export_default_view_mode: string;
+  allow_admin_integrations: boolean;
 }
 
 export type TenantLoadStatus = "idle" | "loading" | "loaded" | "no-profile" | "no-tenant" | "error" | "timeout";
@@ -109,6 +110,7 @@ export function useTenantSettings() {
         export_show_disclaimer: data.export_show_disclaimer ?? false,
         export_block_on_critical_health: data.export_block_on_critical_health ?? false,
         export_default_view_mode: data.export_default_view_mode ?? "full",
+        allow_admin_integrations: (data as any).allow_admin_integrations ?? false,
       });
       setStatus("loaded");
     } catch (err) {

@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Network, Users, Upload, ExternalLink, CheckCircle2, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useTenantUsers } from "@/hooks/useTenantUsers";
+import { useTenantSettings } from "@/hooks/useTenantSettings";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ structures: 0, entities: 0, imports: 0 });
@@ -14,6 +16,11 @@ export default function Dashboard() {
   const [xeroLoading, setXeroLoading] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
+  const { currentUser } = useTenantUsers();
+  const { tenant } = useTenantSettings();
+
+  const userRole = currentUser?.role ?? null;
+  const canManageIntegrations = userRole === "owner" || (userRole === "admin" && tenant?.allow_admin_integrations);
 
   useEffect(() => {
     // Handle Xero OAuth callback params
@@ -111,39 +118,41 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Xero Connection Card */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Xero Practice Manager</CardTitle>
-          {xeroConnected && (
-            <Badge variant="secondary" className="gap-1">
-              <CheckCircle2 className="h-3 w-3" />
-              Connected
-            </Badge>
-          )}
-        </CardHeader>
-        <CardContent>
-          {xeroConnected ? (
-            <p className="text-sm text-muted-foreground">
-              Your Xero Practice Manager account is connected. Client data can be synced.
-            </p>
-          ) : (
-            <div className="flex items-center gap-4">
-              <p className="text-sm text-muted-foreground flex-1">
-                Connect to Xero Practice Manager to import client relationships.
+      {/* Xero Connection Card - only for owners (and admins if permitted) */}
+      {canManageIntegrations && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">Xero Practice Manager</CardTitle>
+            {xeroConnected && (
+              <Badge variant="secondary" className="gap-1">
+                <CheckCircle2 className="h-3 w-3" />
+                Connected
+              </Badge>
+            )}
+          </CardHeader>
+          <CardContent>
+            {xeroConnected ? (
+              <p className="text-sm text-muted-foreground">
+                Your Xero Practice Manager account is connected. Client data can be synced.
               </p>
-              <Button onClick={handleConnectXero} disabled={xeroLoading} className="gap-2">
-                {xeroLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ExternalLink className="h-4 w-4" />
-                )}
-                Connect to Xero
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            ) : (
+              <div className="flex items-center gap-4">
+                <p className="text-sm text-muted-foreground flex-1">
+                  Connect to Xero Practice Manager to import client relationships.
+                </p>
+                <Button onClick={handleConnectXero} disabled={xeroLoading} className="gap-2">
+                  {xeroLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ExternalLink className="h-4 w-4" />
+                  )}
+                  Connect to Xero
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
