@@ -46,7 +46,7 @@ serve(async (req) => {
     }
 
     const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/xero-callback`;
-    const scopes = "openid profile email practicemanager.client.read practicemanager.staff.read offline_access";
+    const scopes = "openid profile email offline_access";
 
     // Store user_id in state so callback can associate the connection
     const state = btoa(JSON.stringify({ user_id: claimsData.claims.sub }));
