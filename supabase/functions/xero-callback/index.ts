@@ -63,10 +63,12 @@ serve(async (req) => {
     });
 
     let xeroTenantId = null;
+    let xeroOrgName = null;
     if (connectionsRes.ok) {
       const connections = await connectionsRes.json();
       if (connections.length > 0) {
         xeroTenantId = connections[0].tenantId;
+        xeroOrgName = connections[0].tenantName || null;
       }
     }
 
@@ -76,12 +78,16 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Get user's tenant_id from profiles
+    // Get user's tenant_id and email from profiles + auth
     const { data: profile } = await supabase
       .from("profiles")
       .select("tenant_id")
       .eq("user_id", userId)
       .single();
+
+    // Get user email for display
+    const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+    const connectedByEmail = authUser?.user?.email || null;
 
     if (!profile) {
       return Response.redirect(`${frontendUrl}/?xero=error&reason=no_profile`, 302);
@@ -97,6 +103,8 @@ serve(async (req) => {
           user_id: userId,
           tenant_id: profile.tenant_id,
           xero_tenant_id: xeroTenantId,
+          xero_org_name: xeroOrgName,
+          connected_by_email: connectedByEmail,
           access_token: tokens.access_token,
           refresh_token: tokens.refresh_token,
           expires_at: expiresAt,
