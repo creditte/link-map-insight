@@ -360,6 +360,9 @@ function StructureGraphInner({
       onEdgeClick={onEdgeClick}
       onPaneClick={onPaneClick}
       onNodeDoubleClick={onNodeDoubleClick}
+      onNodeContextMenu={onNodeContextMenu}
+      onEdgeContextMenu={onEdgeContextMenu}
+      onPaneContextMenu={onPaneContextMenu}
       nodeTypes={nodeTypes}
       nodesDraggable={nodesDraggableProp ?? layoutStrategy === "manual"}
       fitView
