@@ -85,6 +85,7 @@ export default function Dashboard() {
           Authorization: `Bearer ${session.access_token}`,
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
+        body: JSON.stringify({ origin: window.location.origin }),
       });
 
       const responseText = await res.text();
