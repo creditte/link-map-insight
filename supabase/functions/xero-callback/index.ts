@@ -17,16 +17,18 @@ serve(async (req) => {
     }
 
     if (!code || !stateParam) {
-      return Response.redirect(`${frontendUrl}/?xero=error&reason=missing_params`, 302);
+      return Response.redirect(`${defaultFrontendUrl}/?xero=error&reason=missing_params`, 302);
     }
 
-    // Decode state to get user_id
+    // Decode state to get user_id and origin
     let userId: string;
+    let frontendUrl: string;
     try {
       const state = JSON.parse(atob(decodeURIComponent(stateParam)));
       userId = state.user_id;
+      frontendUrl = state.origin || defaultFrontendUrl;
     } catch {
-      return Response.redirect(`${frontendUrl}/?xero=error&reason=invalid_state`, 302);
+      return Response.redirect(`${defaultFrontendUrl}/?xero=error&reason=invalid_state`, 302);
     }
 
     const clientId = Deno.env.get("XERO_CLIENT_ID")!;

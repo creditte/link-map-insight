@@ -48,8 +48,18 @@ serve(async (req) => {
     const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/xero-callback`;
     const scopes = "openid profile email offline_access";
 
-    // Store user_id in state so callback can associate the connection
-    const state = btoa(JSON.stringify({ user_id: claimsData.claims.sub }));
+    // Parse request body to get the caller's origin for post-OAuth redirect
+    let callerOrigin: string | undefined;
+    try {
+      const body = await req.json();
+      callerOrigin = body.origin;
+    } catch { /* no body */ }
+
+    // Store user_id and origin in state so callback can redirect correctly
+    const state = btoa(JSON.stringify({
+      user_id: claimsData.claims.sub,
+      origin: callerOrigin || Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app",
+    }));
 
     const authUrl =
       `https://login.xero.com/identity/connect/authorize?` +
