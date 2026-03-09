@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Network, Users, Upload, ExternalLink, CheckCircle2, Loader2 } from "lucide-react";
+import { Network, Users, Upload, ExternalLink, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [recentStructures, setRecentStructures] = useState<{ id: string; name: string; updated_at: string }[]>([]);
   const [xeroConnected, setXeroConnected] = useState(false);
   const [xeroLoading, setXeroLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const { currentUser, loading: usersLoading } = useTenantUsers();
@@ -96,6 +97,29 @@ export default function Dashboard() {
     }
   };
 
+  const handleSyncXpm = async () => {
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-xpm");
+      if (error) throw error;
+      toast({
+        title: "XPM Sync Complete",
+        description: `${data.entitiesCreated ?? 0} entities created, ${data.entitiesUpdated ?? 0} updated, ${data.relationshipsCreated ?? 0} relationships created.`,
+      });
+      // Reload stats
+      const [s, e, i] = await Promise.all([
+        supabase.from("structures").select("id", { count: "exact", head: true }),
+        supabase.from("entities").select("id", { count: "exact", head: true }),
+        supabase.from("import_logs").select("id", { count: "exact", head: true }),
+      ]);
+      setStats({ structures: s.count ?? 0, entities: e.count ?? 0, imports: i.count ?? 0 });
+    } catch (err: any) {
+      toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const statCards = [
     { label: "Structures", value: stats.structures, icon: Network },
     { label: "Entities", value: stats.entities, icon: Users },
@@ -133,9 +157,19 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             {xeroConnected ? (
-              <p className="text-sm text-muted-foreground">
-                Your Xero Practice Manager account is connected. Client data can be synced.
-              </p>
+              <div className="flex items-center gap-4">
+                <p className="text-sm text-muted-foreground flex-1">
+                  Your Xero Practice Manager account is connected. Sync to import client data.
+                </p>
+                <Button onClick={handleSyncXpm} disabled={syncing} variant="outline" className="gap-2">
+                  {syncing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  {syncing ? "Syncing..." : "Sync Now"}
+                </Button>
+              </div>
             ) : (
               <div className="flex items-center gap-4">
                 <p className="text-sm text-muted-foreground flex-1">
