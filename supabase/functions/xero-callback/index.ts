@@ -78,12 +78,16 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Get user's tenant_id from profiles
+    // Get user's tenant_id and email from profiles + auth
     const { data: profile } = await supabase
       .from("profiles")
       .select("tenant_id")
       .eq("user_id", userId)
       .single();
+
+    // Get user email for display
+    const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+    const connectedByEmail = authUser?.user?.email || null;
 
     if (!profile) {
       return Response.redirect(`${frontendUrl}/?xero=error&reason=no_profile`, 302);
