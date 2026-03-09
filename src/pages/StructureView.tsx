@@ -10,6 +10,7 @@ import { useOnboarding } from "@/hooks/useOnboarding";
 import { useSnapshots, loadSnapshotData, type SnapshotData } from "@/hooks/useSnapshots";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
 import { computeHealthScoreV2 } from "@/lib/structureScoring";
+import { supabase } from "@/integrations/supabase/client";
 import StructureGraph, { type LayoutMode, type LayoutStrategy } from "@/components/structure/StructureGraph";
 import GraphControls from "@/components/structure/GraphControls";
 import EntityDetailPanel from "@/components/structure/EntityDetailPanel";
@@ -25,6 +26,8 @@ import ReviewDiagramPanel from "@/components/structure/ReviewDiagramPanel";
 import CreateSnapshotDialog from "@/components/structure/CreateSnapshotDialog";
 import SnapshotSelector from "@/components/structure/SnapshotSelector";
 import CreateScenarioDialog from "@/components/structure/CreateScenarioDialog";
+import StructureContextMenu, { type ContextMenuState } from "@/components/structure/StructureContextMenu";
+import AddEntityDialog from "@/components/structure/AddEntityDialog";
 
 export type ViewMode = "ownership" | "control" | "full";
 
