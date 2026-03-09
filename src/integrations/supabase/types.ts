@@ -928,6 +928,7 @@ export type Database = {
         Row: {
           access_token: string
           connected_at: string | null
+          connected_by_email: string | null
           created_at: string | null
           expires_at: string
           id: string
@@ -935,11 +936,13 @@ export type Database = {
           tenant_id: string
           updated_at: string | null
           user_id: string
+          xero_org_name: string | null
           xero_tenant_id: string | null
         }
         Insert: {
           access_token: string
           connected_at?: string | null
+          connected_by_email?: string | null
           created_at?: string | null
           expires_at: string
           id?: string
@@ -947,11 +950,13 @@ export type Database = {
           tenant_id: string
           updated_at?: string | null
           user_id: string
+          xero_org_name?: string | null
           xero_tenant_id?: string | null
         }
         Update: {
           access_token?: string
           connected_at?: string | null
+          connected_by_email?: string | null
           created_at?: string | null
           expires_at?: string
           id?: string
@@ -959,6 +964,7 @@ export type Database = {
           tenant_id?: string
           updated_at?: string | null
           user_id?: string
+          xero_org_name?: string | null
           xero_tenant_id?: string | null
         }
         Relationships: []
