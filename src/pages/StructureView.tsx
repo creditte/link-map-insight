@@ -513,6 +513,7 @@ export default function StructureView() {
             dbPositions={displayPositions}
             onPositionsChanged={isViewingSnapshot ? () => {} : handlePositionsChanged}
             nodesDraggable={!isViewingSnapshot && dbLayoutMode === "manual"}
+            onContextMenu={handleContextMenu}
           />
         )}
 
