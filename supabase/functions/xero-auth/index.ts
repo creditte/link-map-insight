@@ -46,7 +46,7 @@ serve(async (req) => {
     }
 
     const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/xero-callback`;
-    const scopes = "openid profile email offline_access";
+    const scopes = "openid profile email offline_access practicemanager.client.read practicemanager.staff.read";
 
     // Parse request body to get the caller's origin for post-OAuth redirect
     let callerOrigin: string | undefined;
