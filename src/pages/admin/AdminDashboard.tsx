@@ -170,6 +170,9 @@ export default function AdminDashboard() {
               </div>
             </DialogContent>
           </Dialog>
+          <Button size="sm" variant="ghost" className="gap-1.5" onClick={signOut}>
+            <LogOut className="h-4 w-4" /> Sign Out
+          </Button>
         </div>
       </header>
 
