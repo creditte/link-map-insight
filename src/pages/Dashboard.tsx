@@ -58,12 +58,13 @@ export default function Dashboard() {
       });
       setRecentStructures((recent.data as any) ?? []);
 
-      // Check Xero connection status
+      // Check Xero connection status with details
       const { data: xeroData } = await supabase
         .from("xero_connections")
-        .select("id")
-        .limit(1);
-      setXeroConnected((xeroData?.length ?? 0) > 0);
+        .select("id, connected_at, expires_at, xero_tenant_id")
+        .limit(1)
+        .maybeSingle();
+      setXeroConnection(xeroData as any);
     }
     load();
   }, []);
