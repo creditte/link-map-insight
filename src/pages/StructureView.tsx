@@ -540,7 +540,30 @@ export default function StructureView() {
             onUpdated={handleEntityUpdated}
           />
         )}
+
+        {/* Context menu */}
+        {contextMenu && !isViewingSnapshot && (
+          <StructureContextMenu
+            menu={contextMenu}
+            onClose={() => setContextMenu(null)}
+            onAddEntity={handleAddEntityFromMenu}
+            onAddRelationship={handleAddRelationshipFromMenu}
+            onRemoveEntity={handleRemoveEntity}
+            onRemoveRelationship={handleRemoveRelationship}
+          />
+        )}
       </div>
+
+      {/* Add Entity Dialog */}
+      {tenantId && id && (
+        <AddEntityDialog
+          open={showAddEntityDialog}
+          onOpenChange={setShowAddEntityDialog}
+          structureId={id}
+          tenantId={tenantId}
+          onEntityCreated={handleEntityUpdated}
+        />
+      )}
     </div>
   );
 }
