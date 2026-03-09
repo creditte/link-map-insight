@@ -17,6 +17,8 @@ export default function Dashboard() {
     connected_at: string | null;
     expires_at: string;
     xero_tenant_id: string | null;
+    xero_org_name: string | null;
+    connected_by_email: string | null;
   } | null>(null);
   const [xeroLoading, setXeroLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
