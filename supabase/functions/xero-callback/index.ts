@@ -63,10 +63,12 @@ serve(async (req) => {
     });
 
     let xeroTenantId = null;
+    let xeroOrgName = null;
     if (connectionsRes.ok) {
       const connections = await connectionsRes.json();
       if (connections.length > 0) {
         xeroTenantId = connections[0].tenantId;
+        xeroOrgName = connections[0].tenantName || null;
       }
     }
 
