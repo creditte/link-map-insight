@@ -20,6 +20,7 @@ import Dagre from "@dagrejs/dagre";
 
 import EntityNodeComponent from "./EntityNode";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
+import type { ContextMenuState } from "./StructureContextMenu";
 
 const nodeTypes = { entity: EntityNodeComponent };
 
@@ -154,14 +155,16 @@ interface Props {
   dbPositions: Map<string, { x: number; y: number }>;
   onPositionsChanged: (positions: Map<string, { x: number; y: number }>) => void;
   nodesDraggable?: boolean;
+  onContextMenu?: (menu: ContextMenuState) => void;
 }
 
 function StructureGraphInner({
   entities, relationships, selectedEntityId, onSelectEntity, onSelectEdge,
   autoLayoutTrigger, layoutMode, layoutStrategy, pinnedNodeIds, onTogglePin, viewMode,
   searchHighlightId, fitViewTrigger, dbPositions, onPositionsChanged, nodesDraggable: nodesDraggableProp,
+  onContextMenu,
 }: Props) {
-  const { fitView } = useReactFlow();
+  const { fitView, screenToFlowPosition } = useReactFlow();
   const prevLayoutTrigger = useRef(0);
   const nodePositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
@@ -304,6 +307,49 @@ function StructureGraphInner({
     [onTogglePin]
   );
 
+  const onNodeContextMenu: NodeMouseHandler = useCallback(
+    (event, node) => {
+      event.preventDefault();
+      const entity = entities.find((e) => e.id === node.id);
+      onContextMenu?.({
+        type: "node",
+        x: event.clientX,
+        y: event.clientY,
+        nodeId: node.id,
+        nodeName: entity?.name ?? (node.data.label as string),
+      });
+    },
+    [onContextMenu, entities]
+  );
+
+  const onEdgeContextMenu = useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      event.preventDefault();
+      onContextMenu?.({
+        type: "edge",
+        x: event.clientX,
+        y: event.clientY,
+        edgeId: edge.id,
+        edgeLabel: edge.label as string,
+      });
+    },
+    [onContextMenu]
+  );
+
+  const onPaneContextMenu = useCallback(
+    (event: React.MouseEvent | MouseEvent) => {
+      event.preventDefault();
+      const flowPos = screenToFlowPosition({ x: (event as React.MouseEvent).clientX, y: (event as React.MouseEvent).clientY });
+      onContextMenu?.({
+        type: "pane",
+        x: (event as React.MouseEvent).clientX,
+        y: (event as React.MouseEvent).clientY,
+        flowPosition: flowPos,
+      });
+    },
+    [onContextMenu, screenToFlowPosition]
+  );
+
   return (
     <ReactFlow
       nodes={nodes}
@@ -314,6 +360,9 @@ function StructureGraphInner({
       onEdgeClick={onEdgeClick}
       onPaneClick={onPaneClick}
       onNodeDoubleClick={onNodeDoubleClick}
+      onNodeContextMenu={onNodeContextMenu}
+      onEdgeContextMenu={onEdgeContextMenu}
+      onPaneContextMenu={onPaneContextMenu}
       nodeTypes={nodeTypes}
       nodesDraggable={nodesDraggableProp ?? layoutStrategy === "manual"}
       fitView

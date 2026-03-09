@@ -10,6 +10,7 @@ import { useOnboarding } from "@/hooks/useOnboarding";
 import { useSnapshots, loadSnapshotData, type SnapshotData } from "@/hooks/useSnapshots";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
 import { computeHealthScoreV2 } from "@/lib/structureScoring";
+import { supabase } from "@/integrations/supabase/client";
 import StructureGraph, { type LayoutMode, type LayoutStrategy } from "@/components/structure/StructureGraph";
 import GraphControls from "@/components/structure/GraphControls";
 import EntityDetailPanel from "@/components/structure/EntityDetailPanel";
@@ -25,6 +26,8 @@ import ReviewDiagramPanel from "@/components/structure/ReviewDiagramPanel";
 import CreateSnapshotDialog from "@/components/structure/CreateSnapshotDialog";
 import SnapshotSelector from "@/components/structure/SnapshotSelector";
 import CreateScenarioDialog from "@/components/structure/CreateScenarioDialog";
+import StructureContextMenu, { type ContextMenuState } from "@/components/structure/StructureContextMenu";
+import AddEntityDialog from "@/components/structure/AddEntityDialog";
 
 export type ViewMode = "ownership" | "control" | "full";
 
@@ -57,6 +60,9 @@ export default function StructureView() {
   const [viewMode, setViewMode] = useState<ViewMode>(tenantDefaultView);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [showReviewPanel, setShowReviewPanel] = useState(false);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [showAddEntityDialog, setShowAddEntityDialog] = useState(false);
+  const [tenantId, setTenantId] = useState<string | null>(null);
 
   // Compute v2 health score
   const healthV2 = useMemo(
@@ -169,6 +175,69 @@ export default function StructureView() {
     setSelectedEdgeId(null);
     setFitViewTrigger((c) => c + 1);
   }, []);
+
+  // Fetch tenant_id from structure for entity creation
+  useMemo(() => {
+    if (!id) return;
+    supabase.from("structures").select("tenant_id").eq("id", id).single().then(({ data }) => {
+      if (data) setTenantId(data.tenant_id);
+    });
+  }, [id]);
+
+  // Context menu handlers
+  const handleContextMenu = useCallback((menu: ContextMenuState) => {
+    if (isViewingSnapshot) return;
+    setContextMenu(menu);
+  }, [isViewingSnapshot]);
+
+  const handleAddEntityFromMenu = useCallback(() => {
+    setContextMenu(null);
+    setShowAddEntityDialog(true);
+  }, []);
+
+  const handleAddRelationshipFromMenu = useCallback((nodeId: string) => {
+    setContextMenu(null);
+    setSelectedEntityId(nodeId);
+    setSelectedEdgeId(null);
+  }, []);
+
+  const handleRemoveEntity = useCallback(async (entityId: string) => {
+    setContextMenu(null);
+    const entity = entities.find((e) => e.id === entityId);
+    if (!entity) return;
+
+    // Soft-delete the entity
+    const { error } = await supabase
+      .from("entities")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", entityId);
+
+    if (error) {
+      toast({ title: "Failed to remove entity", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Entity removed", description: entity.name });
+      setSelectedEntityId(null);
+      reload();
+    }
+  }, [entities, toast, reload]);
+
+  const handleRemoveRelationship = useCallback(async (relId: string) => {
+    setContextMenu(null);
+    const rel = relationships.find((r) => r.id === relId);
+
+    const { error } = await supabase
+      .from("relationships")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", relId);
+
+    if (error) {
+      toast({ title: "Failed to remove relationship", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Relationship removed", description: rel?.relationship_type ?? "" });
+      setSelectedEdgeId(null);
+      reload();
+    }
+  }, [relationships, toast, reload]);
 
   if (loading || snapshotLoading) {
     return (
@@ -444,6 +513,7 @@ export default function StructureView() {
             dbPositions={displayPositions}
             onPositionsChanged={isViewingSnapshot ? () => {} : handlePositionsChanged}
             nodesDraggable={!isViewingSnapshot && dbLayoutMode === "manual"}
+            onContextMenu={handleContextMenu}
           />
         )}
 
@@ -470,7 +540,30 @@ export default function StructureView() {
             onUpdated={handleEntityUpdated}
           />
         )}
+
+        {/* Context menu */}
+        {contextMenu && !isViewingSnapshot && (
+          <StructureContextMenu
+            menu={contextMenu}
+            onClose={() => setContextMenu(null)}
+            onAddEntity={handleAddEntityFromMenu}
+            onAddRelationship={handleAddRelationshipFromMenu}
+            onRemoveEntity={handleRemoveEntity}
+            onRemoveRelationship={handleRemoveRelationship}
+          />
+        )}
       </div>
+
+      {/* Add Entity Dialog */}
+      {tenantId && id && (
+        <AddEntityDialog
+          open={showAddEntityDialog}
+          onOpenChange={setShowAddEntityDialog}
+          structureId={id}
+          tenantId={tenantId}
+          onEntityCreated={handleEntityUpdated}
+        />
+      )}
     </div>
   );
 }
