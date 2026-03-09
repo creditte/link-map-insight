@@ -185,7 +185,7 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">Xero Practice Manager</CardTitle>
-            {xeroConnected && (
+            {xeroConnection && (
               <Badge variant="secondary" className="gap-1">
                 <CheckCircle2 className="h-3 w-3" />
                 Connected
@@ -193,19 +193,38 @@ export default function Dashboard() {
             )}
           </CardHeader>
           <CardContent>
-            {xeroConnected ? (
-              <div className="flex items-center gap-4">
-                <p className="text-sm text-muted-foreground flex-1">
-                  Your Xero Practice Manager account is connected. Sync to import client data.
-                </p>
-                <Button onClick={handleSyncXpm} disabled={syncing} variant="outline" className="gap-2">
-                  {syncing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
+            {xeroConnection ? (
+              <div className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {xeroConnection.connected_at && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Calendar className="h-3.5 w-3.5 shrink-0" />
+                      <span>Connected: {new Date(xeroConnection.connected_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
                   )}
-                  {syncing ? "Syncing..." : "Sync Now"}
-                </Button>
+                  {xeroConnection.expires_at && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Clock className="h-3.5 w-3.5 shrink-0" />
+                      <span>Token expires: {new Date(xeroConnection.expires_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  )}
+                  {xeroConnection.xero_tenant_id && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Network className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Xero Org ID: {xeroConnection.xero_tenant_id}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button onClick={handleSyncXpm} disabled={syncing} variant="outline" className="gap-2">
+                    {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {syncing ? "Syncing..." : "Sync Now"}
+                  </Button>
+                  <Button onClick={handleDisconnectXero} disabled={disconnecting} variant="ghost" size="sm" className="gap-2 text-destructive hover:text-destructive">
+                    {disconnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unplug className="h-4 w-4" />}
+                    Disconnect
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="flex items-center gap-4">
@@ -213,11 +232,7 @@ export default function Dashboard() {
                   Connect to Xero Practice Manager to import client relationships.
                 </p>
                 <Button onClick={handleConnectXero} disabled={xeroLoading} className="gap-2">
-                  {xeroLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ExternalLink className="h-4 w-4" />
-                  )}
+                  {xeroLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
                   Connect to Xero
                 </Button>
               </div>
