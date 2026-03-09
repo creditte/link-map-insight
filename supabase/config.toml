@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.xero-callback]
 verify_jwt = false
+
+[functions.sync-xpm]
+verify_jwt = false

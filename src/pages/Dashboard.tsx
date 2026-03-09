@@ -157,9 +157,19 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             {xeroConnected ? (
-              <p className="text-sm text-muted-foreground">
-                Your Xero Practice Manager account is connected. Client data can be synced.
-              </p>
+              <div className="flex items-center gap-4">
+                <p className="text-sm text-muted-foreground flex-1">
+                  Your Xero Practice Manager account is connected. Sync to import client data.
+                </p>
+                <Button onClick={handleSyncXpm} disabled={syncing} variant="outline" className="gap-2">
+                  {syncing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  {syncing ? "Syncing..." : "Sync Now"}
+                </Button>
+              </div>
             ) : (
               <div className="flex items-center gap-4">
                 <p className="text-sm text-muted-foreground flex-1">
