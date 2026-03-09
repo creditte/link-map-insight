@@ -97,6 +97,29 @@ export default function Dashboard() {
     }
   };
 
+  const handleSyncXpm = async () => {
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-xpm");
+      if (error) throw error;
+      toast({
+        title: "XPM Sync Complete",
+        description: `${data.entitiesCreated ?? 0} entities created, ${data.entitiesUpdated ?? 0} updated, ${data.relationshipsCreated ?? 0} relationships created.`,
+      });
+      // Reload stats
+      const [s, e, i] = await Promise.all([
+        supabase.from("structures").select("id", { count: "exact", head: true }),
+        supabase.from("entities").select("id", { count: "exact", head: true }),
+        supabase.from("import_logs").select("id", { count: "exact", head: true }),
+      ]);
+      setStats({ structures: s.count ?? 0, entities: e.count ?? 0, imports: i.count ?? 0 });
+    } catch (err: any) {
+      toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const statCards = [
     { label: "Structures", value: stats.structures, icon: Network },
     { label: "Entities", value: stats.entities, icon: Users },
