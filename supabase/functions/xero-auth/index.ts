@@ -55,10 +55,22 @@ serve(async (req) => {
       callerOrigin = body.origin;
     } catch { /* no body */ }
 
-    // Store user_id and origin in state so callback can redirect correctly
+    // Generate CSRF token and store it server-side
+    const csrfToken = crypto.randomUUID();
+    const serviceClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    await serviceClient.from("xero_oauth_states").insert({
+      user_id: claimsData.claims.sub,
+      csrf_token: csrfToken,
+    });
+
+    // Store user_id, origin, and CSRF token in state
     const state = btoa(JSON.stringify({
       user_id: claimsData.claims.sub,
       origin: callerOrigin || Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app",
+      csrf: csrfToken,
     }));
 
     const authUrl =

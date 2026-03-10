@@ -8,7 +8,6 @@ serve(async (req) => {
     const stateParam = url.searchParams.get("state");
     const error = url.searchParams.get("error");
 
-    // Default frontend URL (will be overridden by state param if available)
     const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app";
 
     if (error) {
@@ -20,16 +19,53 @@ serve(async (req) => {
       return Response.redirect(`${defaultFrontendUrl}/?xero=error&reason=missing_params`, 302);
     }
 
-    // Decode state to get user_id and origin
+    // Decode state to get user_id, origin, and CSRF token
     let userId: string;
     let frontendUrl: string;
+    let csrfToken: string;
     try {
       const state = JSON.parse(atob(decodeURIComponent(stateParam)));
       userId = state.user_id;
       frontendUrl = state.origin || defaultFrontendUrl;
+      csrfToken = state.csrf;
     } catch {
       return Response.redirect(`${defaultFrontendUrl}/?xero=error&reason=invalid_state`, 302);
     }
+
+    if (!csrfToken) {
+      return Response.redirect(`${frontendUrl}/?xero=error&reason=missing_csrf`, 302);
+    }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    // Verify CSRF token - must exist, belong to user, not be used, and be recent (< 10 min)
+    const { data: csrfRecord, error: csrfError } = await supabase
+      .from("xero_oauth_states")
+      .select("id, user_id, created_at")
+      .eq("csrf_token", csrfToken)
+      .eq("user_id", userId)
+      .eq("used", false)
+      .maybeSingle();
+
+    if (csrfError || !csrfRecord) {
+      console.error("[xero-callback] CSRF validation failed:", csrfError);
+      return Response.redirect(`${frontendUrl}/?xero=error&reason=invalid_csrf`, 302);
+    }
+
+    // Check if token is recent (10 minutes)
+    const tokenAge = Date.now() - new Date(csrfRecord.created_at).getTime();
+    if (tokenAge > 10 * 60 * 1000) {
+      return Response.redirect(`${frontendUrl}/?xero=error&reason=expired_csrf`, 302);
+    }
+
+    // Mark CSRF token as used
+    await supabase
+      .from("xero_oauth_states")
+      .update({ used: true })
+      .eq("id", csrfRecord.id);
 
     const clientId = Deno.env.get("XERO_CLIENT_ID")!;
     const clientSecret = Deno.env.get("XERO_CLIENT_SECRET")!;
@@ -66,7 +102,6 @@ serve(async (req) => {
     let xeroOrgName = null;
     const connectionsBody = await connectionsRes.text();
     console.log("[xero-callback] GET /connections status:", connectionsRes.status);
-    console.log("[xero-callback] GET /connections response:", connectionsBody);
     if (connectionsRes.ok) {
       const connections = JSON.parse(connectionsBody);
       if (connections.length > 0) {
@@ -75,20 +110,13 @@ serve(async (req) => {
       }
     }
 
-    // Store in database using service role
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
-    // Get user's tenant_id and email from profiles + auth
+    // Get user's tenant_id and email
     const { data: profile } = await supabase
       .from("profiles")
       .select("tenant_id")
       .eq("user_id", userId)
       .single();
 
-    // Get user email for display
     const { data: authUser } = await supabase.auth.admin.getUserById(userId);
     const connectedByEmail = authUser?.user?.email || null;
 
@@ -98,7 +126,7 @@ serve(async (req) => {
 
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    // Upsert connection (one per user per tenant)
+    // Upsert connection
     const { error: dbError } = await supabase
       .from("xero_connections")
       .upsert(
@@ -121,6 +149,12 @@ serve(async (req) => {
       console.error("DB upsert error:", dbError);
       return Response.redirect(`${frontendUrl}/?xero=error&reason=db_error`, 302);
     }
+
+    // Clean up old CSRF tokens for this user
+    await supabase
+      .from("xero_oauth_states")
+      .delete()
+      .eq("user_id", userId);
 
     return Response.redirect(`${frontendUrl}/?xero=connected`, 302);
   } catch (err) {
