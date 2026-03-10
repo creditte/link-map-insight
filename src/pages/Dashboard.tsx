@@ -142,10 +142,9 @@ export default function Dashboard() {
     if (!xeroConnection) return;
     setDisconnecting(true);
     try {
-      const { error } = await supabase
-        .from("xero_connections")
-        .delete()
-        .eq("id", xeroConnection.id);
+      const { data: result, error } = await supabase.rpc("disconnect_xero_connection", {
+        p_connection_id: xeroConnection.id,
+      });
       if (error) throw error;
       setXeroConnection(null);
       toast({ title: "Xero Disconnected", description: "You can reconnect at any time." });
