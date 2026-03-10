@@ -969,11 +969,39 @@ export type Database = {
         }
         Relationships: []
       }
+      xero_oauth_states: {
+        Row: {
+          created_at: string
+          csrf_token: string
+          id: string
+          used: boolean
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          csrf_token: string
+          id?: string
+          used?: boolean
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          csrf_token?: string
+          id?: string
+          used?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      disconnect_xero_connection: {
+        Args: { p_connection_id: string }
+        Returns: Json
+      }
       find_duplicate_entities: {
         Args: { _tenant_id: string }
         Returns: {
@@ -1000,6 +1028,7 @@ export type Database = {
       }
       get_my_tenant_user: { Args: never; Returns: Json }
       get_user_tenant_id: { Args: { _user_id: string }; Returns: string }
+      get_xero_connection_info: { Args: never; Returns: Json }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
