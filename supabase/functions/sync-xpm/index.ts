@@ -185,18 +185,19 @@ Deno.serve(async (req) => {
       Accept: "application/xml",
     };
 
-    // ── Fetch Clients ─────────────────────────────────────────────────
-    console.log("[sync-xpm] Fetching clients...");
+    // ── Fetch Client Groups ─────────────────────────────────────────────
+    console.log("[sync-xpm] Fetching client groups...");
     const clientsRes = await fetch(
-      "https://api.xero.com/practicemanager/3.0/clients",
+      "https://api.xero.com/practicemanager/3.1/clientgroup.api/list",
       { headers: xeroHeaders },
     );
     if (!clientsRes.ok) {
       const errText = await clientsRes.text();
-      console.error("[sync-xpm] Clients fetch failed:", clientsRes.status, errText);
-      throw new Error(`Failed to fetch XPM clients: ${clientsRes.status}`);
+      console.error("[sync-xpm] Client groups fetch failed:", clientsRes.status, errText);
+      throw new Error(`Failed to fetch XPM client groups: ${clientsRes.status}`);
     }
     const clientsXml = await clientsRes.text();
+    console.log("[sync-xpm] Client groups response (first 2000 chars):", clientsXml.substring(0, 2000));
 
     // ── Fetch Client Relationships ────────────────────────────────────
     console.log("[sync-xpm] Fetching client relationships...");
