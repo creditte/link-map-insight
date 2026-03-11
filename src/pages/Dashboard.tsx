@@ -247,6 +247,8 @@ export default function Dashboard() {
         </Card>
       )}
 
+      {canManageIntegrations && xeroConnection && <XeroDebugPanel />}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Recent Structures</CardTitle>
