@@ -24,8 +24,7 @@ export default function Dashboard() {
   const [xeroLoading, setXeroLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
-  const [debugData, setDebugData] = useState<{ connections: any; contacts: any } | null>(null);
-  const [debugLoading, setDebugLoading] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const { currentUser, loading: usersLoading } = useTenantUsers();
