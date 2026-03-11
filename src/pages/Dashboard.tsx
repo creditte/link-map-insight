@@ -245,6 +245,31 @@ export default function Dashboard() {
                     Disconnect
                   </Button>
                 </div>
+                <div className="border-t pt-4 mt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-muted-foreground">Debug: Raw Xero API Responses (Temporary)</h3>
+                    <Button onClick={handleFetchDebug} disabled={debugLoading} variant="outline" size="sm" className="gap-2">
+                      {debugLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Fetch Contacts
+                    </Button>
+                  </div>
+                  {debugData && (
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-xs font-semibold mb-1">GET /connections</p>
+                        <pre className="bg-muted p-3 rounded text-xs overflow-auto max-h-60">
+                          {JSON.stringify(debugData.connections, null, 2)}
+                        </pre>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold mb-1">GET /api.xro/2.0/Contacts</p>
+                        <pre className="bg-muted p-3 rounded text-xs overflow-auto max-h-96">
+                          {JSON.stringify(debugData.contacts, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="flex items-center gap-4">
