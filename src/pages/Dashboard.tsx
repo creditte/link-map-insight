@@ -123,7 +123,7 @@ export default function Dashboard() {
       if (error) throw error;
       toast({
         title: "XPM Sync Complete",
-        description: `${data.entitiesCreated ?? 0} entities created, ${data.entitiesUpdated ?? 0} updated, ${data.relationshipsCreated ?? 0} relationships created.`,
+        description: `${data.contactsFetched ?? 0} contacts fetched, ${data.entitiesCreated ?? 0} created, ${data.entitiesUpdated ?? 0} updated.`,
       });
       // Reload stats
       const [s, e, i] = await Promise.all([

@@ -6,66 +6,15 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ── Entity type mapping from XPM ClientType ─────────────────────────────
+// ── Entity type mapping from Xero ContactGroups / heuristics ────────────
 const ENTITY_TYPE_MAP: Record<string, string> = {
   individual: "Individual",
   company: "Company",
   partnership: "Partnership",
   "sole trader": "Sole Trader",
   trust: "Trust",
-  "discretionary trust": "trust_discretionary",
-  "unit trust": "trust_unit",
-  "hybrid trust": "trust_hybrid",
-  "bare trust": "trust_bare",
-  "testamentary trust": "trust_testamentary",
-  "deceased estate": "trust_deceased_estate",
-  "family trust": "trust_family",
-  "self managed superannuation fund": "smsf",
   smsf: "smsf",
-  "incorporated association/club": "Incorporated Association/Club",
 };
-
-// ── Relationship type mapping from XPM ──────────────────────────────────
-const REL_TYPE_MAP: Record<string, string> = {
-  director: "director",
-  "director of": "director",
-  shareholder: "shareholder",
-  "shareholder of": "shareholder",
-  beneficiary: "beneficiary",
-  "beneficiary of": "beneficiary",
-  trustee: "trustee",
-  "trustee of": "trustee",
-  appointer: "appointer",
-  "appointer of": "appointer",
-  settlor: "settlor",
-  "settlor of": "settlor",
-  partner: "partner",
-  "partner of": "partner",
-  spouse: "spouse",
-  parent: "parent",
-  "parent of": "parent",
-  child: "child",
-  "child of": "child",
-  member: "member",
-  "member of": "member",
-};
-
-// ── XML parsing helpers ─────────────────────────────────────────────────
-function getTagText(xml: string, tag: string): string {
-  const re = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "i");
-  const m = xml.match(re);
-  return m ? m[1].trim() : "";
-}
-
-function getAllRecords(xml: string, tag: string): string[] {
-  const re = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "gi");
-  const results: string[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml)) !== null) {
-    results.push(m[1]);
-  }
-  return results;
-}
 
 // ── Token refresh ───────────────────────────────────────────────────────
 async function refreshAccessToken(
@@ -75,7 +24,6 @@ async function refreshAccessToken(
   const now = new Date();
   const expiresAt = new Date(connection.expires_at);
 
-  // If token is still valid (with 2min buffer), return it
   if (expiresAt.getTime() - now.getTime() > 120_000) {
     return connection.access_token;
   }
@@ -117,6 +65,71 @@ async function refreshAccessToken(
   return tokens.access_token;
 }
 
+// ── Fetch all contacts with pagination ──────────────────────────────────
+async function fetchAllContacts(accessToken: string, xeroTenantId: string): Promise<any[]> {
+  const allContacts: any[] = [];
+  let page = 1;
+
+  while (true) {
+    const url = `https://api.xero.com/api.xro/2.0/Contacts?page=${page}&includeArchived=false`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "xero-tenant-id": xeroTenantId,
+        Accept: "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[sync-xpm] Contacts fetch failed (page ${page}):`, res.status, errText);
+      throw new Error(`Failed to fetch Xero contacts: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const contacts = data.Contacts || [];
+    allContacts.push(...contacts);
+
+    // Xero returns up to 100 contacts per page
+    if (contacts.length < 100) break;
+    page++;
+  }
+
+  return allContacts;
+}
+
+// ── Guess entity type from contact data ─────────────────────────────────
+function guessEntityType(contact: any): string {
+  const name = (contact.Name || "").toLowerCase();
+  const isOrg = contact.IsCustomer || contact.IsSupplier;
+
+  // Trust indicators
+  if (name.includes("trust") || name.includes("as trustee for") || name.includes("atf")) {
+    if (name.includes("smsf") || name.includes("superannuation") || name.includes("super fund")) return "smsf";
+    if (name.includes("discretionary")) return "trust_discretionary";
+    if (name.includes("unit trust")) return "trust_unit";
+    if (name.includes("family trust")) return "trust_family";
+    return "Trust";
+  }
+
+  // Company indicators
+  if (name.includes("pty") || name.includes("ltd") || name.includes("limited") || name.includes("inc")) {
+    return "Company";
+  }
+
+  // Partnership indicators
+  if (name.includes("partnership") || name.includes(" & ") && !name.includes("pty")) {
+    return "Partnership";
+  }
+
+  // If it has a first + last name and no company markers, likely Individual
+  if (contact.FirstName && contact.LastName && !isOrg) {
+    return "Individual";
+  }
+
+  return "Unclassified";
+}
+
 // ── Main ────────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -152,7 +165,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Load Xero connection for this tenant
+    // Load Xero connection
     const { data: connections } = await supabase
       .from("xero_connections")
       .select("*")
@@ -179,83 +192,34 @@ Deno.serve(async (req) => {
     // Refresh token if needed
     const accessToken = await refreshAccessToken(supabase, connection);
 
-    const xeroHeaders = {
-      Authorization: `Bearer ${accessToken}`,
-      "xero-tenant-id": xeroTenantId,
-      Accept: "application/xml",
-    };
-
-    // ── Fetch Client Groups ─────────────────────────────────────────────
-    console.log("[sync-xpm] Fetching client groups...");
-    const clientsRes = await fetch(
-      "https://api.xero.com/practicemanager/3.1/clientgroup.api/list",
-      { headers: xeroHeaders },
-    );
-    if (!clientsRes.ok) {
-      const errText = await clientsRes.text();
-      console.error("[sync-xpm] Client groups fetch failed:", clientsRes.status, errText);
-      throw new Error(`Failed to fetch XPM client groups: ${clientsRes.status}`);
-    }
-    const clientsXml = await clientsRes.text();
-    console.log("[sync-xpm] Client groups response (first 2000 chars):", clientsXml.substring(0, 2000));
-
-    // ── Fetch Client Relationships ────────────────────────────────────
-    console.log("[sync-xpm] Fetching client relationships...");
-    const relsRes = await fetch(
-      "https://api.xero.com/practicemanager/3.0/clientrelationships",
-      { headers: xeroHeaders },
-    );
-    if (!relsRes.ok) {
-      const errText = await relsRes.text();
-      console.error("[sync-xpm] Relationships fetch failed:", relsRes.status, errText);
-      throw new Error(`Failed to fetch XPM relationships: ${relsRes.status}`);
-    }
-    const relsXml = await relsRes.text();
-
-    // ── Parse clients ─────────────────────────────────────────────────
-    const clientRecords = getAllRecords(clientsXml, "Client");
-    console.log(`[sync-xpm] Parsed ${clientRecords.length} clients`);
+    // ── Fetch Contacts via Accounting API ────────────────────────────────
+    console.log("[sync-xpm] Fetching contacts via accounting API...");
+    const contacts = await fetchAllContacts(accessToken, xeroTenantId);
+    console.log(`[sync-xpm] Fetched ${contacts.length} contacts`);
 
     const warnings: string[] = [];
     let entitiesCreated = 0;
     let entitiesUpdated = 0;
-    let relationshipsCreated = 0;
-    let relationshipsSkipped = 0;
 
-    // Map XPM ClientID → our entity id
-    const xpmIdToEntityId = new Map<string, string>();
+    // Map Xero ContactID → our entity id
+    const xeroIdToEntityId = new Map<string, string>();
 
-    for (const rec of clientRecords) {
-      const clientId = getTagText(rec, "ID");
-      const name = getTagText(rec, "Name");
-      const clientType = getTagText(rec, "Type") || getTagText(rec, "ClientType");
-      const uuid = getTagText(rec, "UUID");
-
+    for (const contact of contacts) {
+      const contactId = contact.ContactID;
+      const name = contact.Name;
       if (!name) continue;
 
-      const entityType = ENTITY_TYPE_MAP[clientType.toLowerCase()] ?? "Unclassified";
+      const entityType = guessEntityType(contact);
 
-      // Try to find existing entity by xpm_uuid first, then by name
+      // Try to find existing entity by xpm_uuid (we store ContactID there)
       let existingEntity: { id: string; entity_type: string; xpm_uuid: string | null } | null = null;
 
-      if (uuid) {
+      if (contactId) {
         const { data } = await supabase
           .from("entities")
           .select("id, entity_type, xpm_uuid")
           .eq("tenant_id", tenantId)
-          .eq("xpm_uuid", uuid)
-          .is("deleted_at", null)
-          .maybeSingle();
-        existingEntity = data;
-      }
-
-      if (!existingEntity && clientId) {
-        // Also try matching by xpm_uuid = clientId (for XPM IDs stored previously)
-        const { data } = await supabase
-          .from("entities")
-          .select("id, entity_type, xpm_uuid")
-          .eq("tenant_id", tenantId)
-          .eq("xpm_uuid", clientId)
+          .eq("xpm_uuid", contactId)
           .is("deleted_at", null)
           .maybeSingle();
         existingEntity = data;
@@ -277,22 +241,22 @@ Deno.serve(async (req) => {
         if (entityType !== "Unclassified" && existingEntity.entity_type === "Unclassified") {
           updates.entity_type = entityType;
         }
-        if (!existingEntity.xpm_uuid && (uuid || clientId)) {
-          updates.xpm_uuid = uuid || clientId;
+        if (!existingEntity.xpm_uuid && contactId) {
+          updates.xpm_uuid = contactId;
         }
         if (Object.keys(updates).length > 0) {
           updates.source = "imported";
           await supabase.from("entities").update(updates).eq("id", existingEntity.id);
           entitiesUpdated++;
         }
-        xpmIdToEntityId.set(clientId, existingEntity.id);
+        xeroIdToEntityId.set(contactId, existingEntity.id);
       } else {
         const { data, error } = await supabase
           .from("entities")
           .insert({
             tenant_id: tenantId,
             name,
-            xpm_uuid: uuid || clientId || null,
+            xpm_uuid: contactId || null,
             entity_type: entityType,
             source: "imported",
           })
@@ -303,107 +267,12 @@ Deno.serve(async (req) => {
           warnings.push(`Failed to create entity "${name}": ${error.message}`);
           continue;
         }
-        xpmIdToEntityId.set(clientId, data.id);
+        xeroIdToEntityId.set(contactId, data.id);
         entitiesCreated++;
       }
     }
 
-    // ── Parse relationships ───────────────────────────────────────────
-    const relRecords = getAllRecords(relsXml, "ClientRelationship");
-    console.log(`[sync-xpm] Parsed ${relRecords.length} relationships`);
-
-    const relDedupeSet = new Set<string>();
-
-    for (const rec of relRecords) {
-      const relType = getTagText(rec, "RelationshipType") || getTagText(rec, "Type");
-      const clientId = getTagText(rec, "ClientID") || getTagText(getTagText(rec, "Client"), "ID");
-      const relatedClientId = getTagText(rec, "RelatedClientID") || getTagText(getTagText(rec, "RelatedClient"), "ID");
-      const ownershipStr = getTagText(rec, "Percentage") || getTagText(rec, "OwnershipPercentage");
-
-      if (!relType || !clientId || !relatedClientId) {
-        relationshipsSkipped++;
-        continue;
-      }
-
-      const mappedType = REL_TYPE_MAP[relType.toLowerCase()];
-      if (!mappedType) {
-        warnings.push(`Unknown relationship type "${relType}"`);
-        relationshipsSkipped++;
-        continue;
-      }
-
-      let fromId = xpmIdToEntityId.get(clientId);
-      let toId = xpmIdToEntityId.get(relatedClientId);
-
-      if (!fromId || !toId) {
-        warnings.push(`Could not resolve entities for relationship: clientId=${clientId}, relatedClientId=${relatedClientId}`);
-        relationshipsSkipped++;
-        continue;
-      }
-
-      // Canonical direction for symmetric relationships
-      if (mappedType === "spouse" || mappedType === "partner") {
-        if (fromId > toId) [fromId, toId] = [toId, fromId];
-      }
-
-      const dedupeKey = `${mappedType}:${fromId}:${toId}`;
-      if (relDedupeSet.has(dedupeKey)) continue;
-      relDedupeSet.add(dedupeKey);
-
-      // Check existing
-      const { data: existingRel } = await supabase
-        .from("relationships")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("from_entity_id", fromId)
-        .eq("to_entity_id", toId)
-        .eq("relationship_type", mappedType)
-        .is("deleted_at", null)
-        .maybeSingle();
-
-      if (existingRel) {
-        // Update ownership if provided
-        if (ownershipStr) {
-          const pct = parseFloat(ownershipStr);
-          if (!isNaN(pct)) {
-            await supabase
-              .from("relationships")
-              .update({ ownership_percent: pct, source: "imported" })
-              .eq("id", existingRel.id);
-          }
-        }
-        continue;
-      }
-
-      const insertData: Record<string, any> = {
-        tenant_id: tenantId,
-        from_entity_id: fromId,
-        to_entity_id: toId,
-        relationship_type: mappedType,
-        source: "imported",
-        confidence: "imported",
-      };
-
-      if (ownershipStr) {
-        const pct = parseFloat(ownershipStr);
-        if (!isNaN(pct)) insertData.ownership_percent = pct;
-      }
-
-      const { error: relErr } = await supabase
-        .from("relationships")
-        .insert(insertData);
-
-      if (relErr) {
-        warnings.push(`Failed to create relationship ${mappedType}: ${relErr.message}`);
-        relationshipsSkipped++;
-        continue;
-      }
-
-      relationshipsCreated++;
-    }
-
     // ── Auto-create a structure if none exists ────────────────────────
-    // Check if there's a structure named "XPM Import" and link new entities to it
     let structureId: string | null = null;
     const { data: existingStruct } = await supabase
       .from("structures")
@@ -426,7 +295,7 @@ Deno.serve(async (req) => {
 
     // Link all synced entities to the structure
     if (structureId) {
-      const entityIds = Array.from(xpmIdToEntityId.values());
+      const entityIds = Array.from(xeroIdToEntityId.values());
       for (const entityId of entityIds) {
         await supabase
           .from("structure_entities")
@@ -435,36 +304,13 @@ Deno.serve(async (req) => {
             { onConflict: "structure_id,entity_id", ignoreDuplicates: true },
           );
       }
-
-      // Link relationships too
-      const { data: allRels } = await supabase
-        .from("relationships")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .is("deleted_at", null)
-        .in("from_entity_id", entityIds)
-        .in("to_entity_id", entityIds);
-
-      if (allRels) {
-        for (const rel of allRels) {
-          await supabase
-            .from("structure_relationships")
-            .upsert(
-              { structure_id: structureId, relationship_id: rel.id },
-              { onConflict: "structure_id,relationship_id", ignoreDuplicates: true },
-            );
-        }
-      }
     }
 
     const result = {
       success: true,
-      clientsFetched: clientRecords.length,
-      relationshipsFetched: relRecords.length,
+      contactsFetched: contacts.length,
       entitiesCreated,
       entitiesUpdated,
-      relationshipsCreated,
-      relationshipsSkipped,
       structureId,
       warnings,
     };
