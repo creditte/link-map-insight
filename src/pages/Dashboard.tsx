@@ -156,8 +156,6 @@ export default function Dashboard() {
     }
   };
 
-      {/* Xero Debug Panel - temporary */}
-      {canManageIntegrations && xeroConnection && <XeroDebugPanel />}
 
   const statCards = [
     { label: "Structures", value: stats.structures, icon: Network },
