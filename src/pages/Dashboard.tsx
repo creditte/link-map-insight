@@ -156,19 +156,6 @@ export default function Dashboard() {
     }
   };
 
-  const handleFetchDebug = async () => {
-    setDebugLoading(true);
-    setDebugData(null);
-    try {
-      const { data, error } = await supabase.functions.invoke("xero-debug");
-      if (error) throw error;
-      setDebugData(data);
-    } catch (err: any) {
-      toast({ title: "Debug Fetch Failed", description: err.message, variant: "destructive" });
-    } finally {
-      setDebugLoading(false);
-    }
-  };
 
   const statCards = [
     { label: "Structures", value: stats.structures, icon: Network },
