@@ -232,8 +232,8 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   // ── Unauthenticated ───────────────────────────────────────────
   if (bootStatus === "unauthenticated") {
-    trace("ProtectedRoute", "decision: unauthenticated → redirect /auth");
-    return <Navigate to="/auth" replace />;
+    trace("ProtectedRoute", "decision: unauthenticated → redirect /login");
+    return <Navigate to="/login" replace />;
   }
 
   // ── Tenant: error / timeout ───────────────────────────────────

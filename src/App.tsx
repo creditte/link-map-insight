@@ -8,6 +8,9 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import Auth from "./pages/Auth";
+import Signup from "./pages/Signup";
+import Login from "./pages/Login";
+import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import Structures from "./pages/Structures";
 import StructureView from "./pages/StructureView";
@@ -34,6 +37,9 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               <Route path="/auth" element={<Auth />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/setup-password" element={<SetupPassword />} />
               {/* Super Admin routes */}
               <Route path="/admin" element={<ProtectedAdminRoute><AdminDashboard /></ProtectedAdminRoute>} />
