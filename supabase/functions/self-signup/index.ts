@@ -75,13 +75,14 @@ Deno.serve(async (req) => {
     if (tuError) throw tuError;
 
     // 4. Create profile
-    const { error: profileError } = await supabaseAdmin.from("profiles").insert({
-      user_id: userId,
-      tenant_id: tenant.id,
-      full_name: fullName,
-      status: "active",
-      onboarding_complete: true, // self-signup users don't need password setup
-    });
+    const { error: profileError } = await supabaseAdmin.from("profiles")
+      .upsert({
+        user_id: userId,
+        tenant_id: tenant.id,
+        full_name: fullName,
+        status: "active",
+        onboarding_complete: true,
+      }, { onConflict: "user_id" });
     if (profileError) throw profileError;
 
     // 5. Create user_roles
