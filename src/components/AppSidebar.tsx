@@ -35,9 +35,7 @@ export default function AppSidebar() {
         {logoUrl ?
         <img src={`${logoUrl}?t=1`} alt="Firm logo" className="h-7 max-w-[80px] object-contain" /> :
         null}
-        
-
-        
+        <span className="truncate text-sm font-semibold">{firmName ?? "My Firm"}</span>
       </div>
       <nav className="flex-1 space-y-1 p-2">
         {navItems.map((item) =>
