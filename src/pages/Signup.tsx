@@ -34,7 +34,15 @@ export default function Signup() {
       const { data, error } = await supabase.functions.invoke("self-signup", {
         body: { fullName, email, password, firmName },
       });
-      if (error || data?.error) throw new Error(data?.error || error?.message || "Signup failed");
+      if (error || data?.error) {
+        const msg = data?.error || error?.message || "Signup failed";
+        if (msg.includes("already exists")) {
+          toast({ title: "Account exists", description: "An account with this email already exists. Please log in instead.", variant: "destructive" });
+        } else {
+          throw new Error(msg);
+        }
+        return;
+      }
 
       setSubmitted(true);
     } catch (err: any) {
