@@ -44,7 +44,14 @@ export default function Signup() {
         return;
       }
 
-      setSubmitted(true);
+      // Auto-confirmed, sign them in and redirect
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) {
+        // Fallback: show success and redirect to login
+        setSubmitted(true);
+        return;
+      }
+      window.location.href = "/onboarding";
     } catch (err: any) {
       toast({ title: "Signup failed", description: err.message, variant: "destructive" });
     } finally {
