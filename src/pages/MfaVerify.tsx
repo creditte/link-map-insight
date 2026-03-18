@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,6 +17,7 @@ export default function MfaVerify() {
   const [submitting, setSubmitting] = useState(false);
   const [method, setMethod] = useState<"totp" | "email" | null>(null);
   const [loading, setLoading] = useState(true);
+  const initialSentRef = useRef(false);
 
   useEffect(() => {
     if (bootStatus !== "authenticated" || !user) return;
@@ -44,7 +45,10 @@ export default function MfaVerify() {
 
       if (settings?.method === "email") {
         setMethod("email");
-        await sendEmailCode();
+        if (!initialSentRef.current) {
+          initialSentRef.current = true;
+          await sendEmailCode();
+        }
       }
     } catch (err) {
       console.error("[MfaVerify] detectMethod error:", err);
