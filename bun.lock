@@ -36,6 +36,7 @@
         "@radix-ui/react-tooltip": "^1.2.7",
         "@supabase/supabase-js": "^2.95.3",
         "@tanstack/react-query": "^5.83.0",
+        "@vitejs/plugin-react": "^6.0.1",
         "@vitejs/plugin-react-swc": "^4.3.0",
         "@xyflow/react": "^12.10.0",
         "class-variance-authority": "^0.7.1",
@@ -485,6 +486,8 @@
     "@typescript-eslint/visitor-keys": ["@typescript-eslint/visitor-keys@8.38.0", "", { "dependencies": { "@typescript-eslint/types": "8.38.0", "eslint-visitor-keys": "^4.2.1" } }, "sha512-pWrTcoFNWuwHlA9CvlfSsGWs14JxfN1TH25zM5L7o0pRLhsoZkDnTsXfQRJBEWJoV5DL0jf+Z+sxiud+K0mq1g=="],
 
     "@ungap/structured-clone": ["@ungap/structured-clone@1.3.0", "", {}, "sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g=="],
+
+    "@vitejs/plugin-react": ["@vitejs/plugin-react@6.0.1", "", { "dependencies": { "@rolldown/pluginutils": "1.0.0-rc.7" }, "peerDependencies": { "@rolldown/plugin-babel": "^0.1.7 || ^0.2.0", "babel-plugin-react-compiler": "^1.0.0", "vite": "^8.0.0" }, "optionalPeers": ["@rolldown/plugin-babel", "babel-plugin-react-compiler"] }, "sha512-l9X/E3cDb+xY3SWzlG1MOGt2usfEHGMNIaegaUGFsLkb3RCn/k8/TOXBcab+OndDI4TBtktT8/9BwwW8Vi9KUQ=="],
 
     "@vitejs/plugin-react-swc": ["@vitejs/plugin-react-swc@4.3.0", "", { "dependencies": { "@rolldown/pluginutils": "1.0.0-rc.7", "@swc/core": "^1.15.11" }, "peerDependencies": { "vite": "^4 || ^5 || ^6 || ^7 || ^8" } }, "sha512-mOkXCII839dHyAt/gpoSlm28JIVDwhZ6tnG6wJxUy2bmOx7UaPjvOyIDf3SFv5s7Eo7HVaq6kRcu6YMEzt5Z7w=="],
 
