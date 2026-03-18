@@ -325,6 +325,75 @@ export type Database = {
           },
         ]
       }
+      mfa_email_codes: {
+        Row: {
+          code: string
+          created_at: string
+          expires_at: string
+          id: string
+          used: boolean
+          user_id: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          used?: boolean
+          user_id: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          used?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
+      mfa_settings: {
+        Row: {
+          enrolled_at: string
+          method: string
+          user_id: string
+        }
+        Insert: {
+          enrolled_at?: string
+          method: string
+          user_id: string
+        }
+        Update: {
+          enrolled_at?: string
+          method?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      mfa_verifications: {
+        Row: {
+          expires_at: string
+          id: string
+          method: string
+          user_id: string
+          verified_at: string
+        }
+        Insert: {
+          expires_at: string
+          id?: string
+          method: string
+          user_id: string
+          verified_at?: string
+        }
+        Update: {
+          expires_at?: string
+          id?: string
+          method?: string
+          user_id?: string
+          verified_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
