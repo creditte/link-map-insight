@@ -45,7 +45,10 @@ export default function MfaVerify() {
 
       if (settings?.method === "email") {
         setMethod("email");
-        await sendEmailCode();
+        if (!initialSentRef.current) {
+          initialSentRef.current = true;
+          await sendEmailCode();
+        }
       }
     } catch (err) {
       console.error("[MfaVerify] detectMethod error:", err);
