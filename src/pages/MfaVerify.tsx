@@ -21,8 +21,9 @@ export default function MfaVerify() {
 
   useEffect(() => {
     if (bootStatus !== "authenticated" || !user) return;
+    if (method) return; // Already detected, don't re-run
     detectMethod();
-  }, [bootStatus, user]);
+  }, [bootStatus, user?.id]);
 
   async function detectMethod() {
     try {
