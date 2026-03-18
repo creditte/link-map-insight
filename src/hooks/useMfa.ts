@@ -45,12 +45,17 @@ export function useMfa() {
         .maybeSingle();
 
       if (settings?.method === "email") {
-        // Check if verified this session (non-expired verification record)
+        // Check if verified AFTER current session started (not a stale pre-logout record)
+        const sessionStart = session.expires_at
+          ? new Date((session.expires_at - 3600) * 1000).toISOString()
+          : new Date(0).toISOString();
+
         const { data: verif } = await (supabase as any)
           .from("mfa_verifications")
           .select("id")
           .eq("user_id", user.id)
           .gt("expires_at", new Date().toISOString())
+          .gte("verified_at", sessionStart)
           .order("verified_at", { ascending: false })
           .limit(1)
           .maybeSingle();
