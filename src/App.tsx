@@ -10,6 +10,8 @@ import AppLayout from "@/components/AppLayout";
 import Auth from "./pages/Auth";
 import Signup from "./pages/Signup";
 import Login from "./pages/Login";
+import MfaSetup from "./pages/MfaSetup";
+import MfaVerify from "./pages/MfaVerify";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import Structures from "./pages/Structures";
@@ -39,6 +41,8 @@ const App = () => (
               <Route path="/auth" element={<Auth />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/mfa-setup" element={<MfaSetup />} />
+              <Route path="/mfa-verify" element={<MfaVerify />} />
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/setup-password" element={<SetupPassword />} />
               {/* Super Admin routes */}

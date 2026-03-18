@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth, BootStatus } from "@/hooks/useAuth";
 import { useTenantSettings, TenantLoadStatus } from "@/hooks/useTenantSettings";
+import { useMfa } from "@/hooks/useMfa";
 import { supabase } from "@/integrations/supabase/client";
 import { Shield } from "lucide-react";
 import RecoveryScreen from "@/components/RecoveryScreen";
@@ -289,6 +290,30 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   // ── Password setup required ────────────────────────────────────
   if (onboardingComplete === false) {
     return <Navigate to="/setup-password" replace />;
+  }
+
+  // ── MFA enforcement ───────────────────────────────────────────
+  return <MfaGate>{children}</MfaGate>;
+}
+
+/** Inner component so useMfa only runs after auth + tenant are resolved */
+function MfaGate({ children }: { children: React.ReactNode }) {
+  const { status: mfaStatus, loading: mfaLoading } = useMfa();
+
+  if (mfaLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-muted-foreground">Checking security settings… <ElapsedTimer /></p>
+      </div>
+    );
+  }
+
+  if (mfaStatus === "not-enrolled") {
+    return <Navigate to="/mfa-setup" replace />;
+  }
+
+  if (mfaStatus === "needs-verification") {
+    return <Navigate to="/mfa-verify" replace />;
   }
 
   return <>{children}</>;
