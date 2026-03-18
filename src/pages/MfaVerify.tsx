@@ -17,6 +17,7 @@ export default function MfaVerify() {
   const [submitting, setSubmitting] = useState(false);
   const [method, setMethod] = useState<"totp" | "email" | null>(null);
   const [loading, setLoading] = useState(true);
+  const initialSentRef = useRef(false);
 
   useEffect(() => {
     if (bootStatus !== "authenticated" || !user) return;
