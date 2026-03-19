@@ -1,53 +1,83 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Separator } from "@/components/ui/separator";
-import { HeartPulse, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
-import { computeHealthScoreV2Light, getHealthLabel, getHealthStatus } from "@/lib/structureScoring";
+import {
+  HeartPulse,
+  RefreshCw,
+  AlertTriangle,
+  CheckCircle2,
+  ArrowRight,
+  AlertCircle,
+  Info,
+  Loader2,
+} from "lucide-react";
+import { computeHealthScoreV2, getHealthStatus } from "@/lib/structureScoring";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
-import { computeHealthScoreV2 } from "@/lib/structureScoring";
+
+/* ── Friendly labels ────────────────────────────────────────────── */
+
+function getFriendlyLabel(score: number): string {
+  if (score >= 100) return "Good";
+  if (score >= 70) return "Minor gaps";
+  if (score >= 50) return "Needs attention";
+  return "Critical";
+}
+
+function getScoreMessage(score: number, count: number): string {
+  if (count === 0) return "No structures to review yet.";
+  if (score >= 90) return "Your structures are in good shape.";
+  if (score >= 50) return "Some improvements needed across your structures.";
+  return "Your structures need attention.";
+}
+
+const STATUS_DOT: Record<string, string> = {
+  good: "bg-success",
+  warning: "bg-warning",
+  critical: "bg-destructive",
+};
+
+const STATUS_BG: Record<string, string> = {
+  good: "bg-success/10 text-success",
+  warning: "bg-warning/10 text-warning",
+  critical: "bg-destructive/10 text-destructive",
+};
+
+/* ── Types ──────────────────────────────────────────────────────── */
 
 interface StructureResult {
   id: string;
   name: string;
   score: number;
-  displayScore: number;
-  label: string;
   status: "good" | "warning" | "critical";
+  friendlyLabel: string;
   issues: string[];
+  criticalCount: number;
 }
 
 interface ClientReview {
   timestamp: string;
   clientScore: number;
-  clientDisplayScore: number;
-  clientLabel: string;
   structures: StructureResult[];
   crossObservations: string[];
+  criticalStructures: number;
+  needsAttention: number;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  good: "bg-emerald-500/10 text-emerald-700",
-  warning: "bg-amber-500/10 text-amber-700",
-  critical: "bg-red-500/10 text-red-700",
-};
+/* ── Page ───────────────────────────────────────────────────────── */
 
 export default function ClientGovernance() {
-  const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [review, setReview] = useState<ClientReview | null>(null);
   const [loading, setLoading] = useState(false);
   const [structuresChanged, setStructuresChanged] = useState(false);
 
-  // Check if structures have changed since last review
   useEffect(() => {
     if (!review) return;
-
     async function checkChanges() {
       const { data } = await supabase
         .from("structures")
@@ -55,11 +85,8 @@ export default function ClientGovernance() {
         .is("deleted_at", null)
         .order("updated_at", { ascending: false })
         .limit(1);
-
       if (data?.[0]) {
-        const lastUpdated = new Date(data[0].updated_at);
-        const reviewTime = new Date(review!.timestamp);
-        setStructuresChanged(lastUpdated > reviewTime);
+        setStructuresChanged(new Date(data[0].updated_at) > new Date(review!.timestamp));
       }
     }
     checkChanges();
@@ -67,9 +94,7 @@ export default function ClientGovernance() {
 
   const runReview = useCallback(async () => {
     setLoading(true);
-
     try {
-      // 1. Fetch all active structures
       const { data: structures } = await supabase
         .from("structures")
         .select("id, name")
@@ -84,7 +109,6 @@ export default function ClientGovernance() {
 
       const structureIds = structures.map((s) => s.id);
 
-      // 2. Fetch all entities and relationships
       const [seResult, srResult] = await Promise.all([
         supabase.from("structure_entities").select("structure_id, entity_id").in("structure_id", structureIds),
         supabase.from("structure_relationships").select("structure_id, relationship_id").in("structure_id", structureIds),
@@ -125,28 +149,19 @@ export default function ClientGovernance() {
       ]);
 
       const entityById = new Map<string, EntityNode>();
-      for (const e of (entResult.data ?? []) as any[]) {
-        entityById.set(e.id, e as EntityNode);
-      }
+      for (const e of (entResult.data ?? []) as any[]) entityById.set(e.id, e as EntityNode);
 
       const relById = new Map<string, RelationshipEdge>();
       for (const r of (relResult.data ?? []) as any[]) {
         relById.set(r.id, {
-          id: r.id,
-          from_entity_id: r.from_entity_id,
-          to_entity_id: r.to_entity_id,
-          relationship_type: r.relationship_type,
-          source_data: r.source,
-          ownership_percent: r.ownership_percent,
-          ownership_units: r.ownership_units,
-          ownership_class: r.ownership_class,
-          created_at: r.created_at,
+          id: r.id, from_entity_id: r.from_entity_id, to_entity_id: r.to_entity_id,
+          relationship_type: r.relationship_type, source_data: r.source,
+          ownership_percent: r.ownership_percent, ownership_units: r.ownership_units,
+          ownership_class: r.ownership_class, created_at: r.created_at,
         });
       }
 
-      // 3. Compute health for each structure
       const results: StructureResult[] = [];
-      const allIssues: string[] = [];
       let trustsWithoutCorporateTrustee = 0;
       let missingAppointerCount = 0;
       let circularCount = 0;
@@ -162,173 +177,248 @@ export default function ClientGovernance() {
           id: s.id,
           name: s.name,
           score: health.score,
-          displayScore: health.displayScore,
-          label: health.label,
-          status: getHealthStatus(health.displayScore),
+          status: getHealthStatus(health.score),
+          friendlyLabel: getFriendlyLabel(health.score),
           issues: health.issues.map((i) => i.message),
+          criticalCount: health.criticalGaps.length,
         });
 
-        // Cross-structure aggregation
         if (health.isCapped) trustsWithoutCorporateTrustee++;
         missingAppointerCount += health.issues.filter((i) => i.code === "missing_appointer").length;
         if (health.issues.some((i) => i.code === "circular_ownership")) circularCount++;
       }
 
-      // 4. Cross-structure observations
       const crossObservations: string[] = [];
-      if (trustsWithoutCorporateTrustee > 0) {
-        crossObservations.push(`${trustsWithoutCorporateTrustee} structure${trustsWithoutCorporateTrustee > 1 ? "s have" : " has"} trusts without corporate trustees recorded`);
-      }
-      if (missingAppointerCount > 0) {
-        crossObservations.push(`${missingAppointerCount} trust${missingAppointerCount > 1 ? "s" : ""} missing appointer across structures`);
-      }
-      if (circularCount > 0) {
+      if (trustsWithoutCorporateTrustee > 0)
+        crossObservations.push(`${trustsWithoutCorporateTrustee} structure${trustsWithoutCorporateTrustee > 1 ? "s have" : " has"} trusts without corporate trustees`);
+      if (missingAppointerCount > 0)
+        crossObservations.push(`${missingAppointerCount} trust${missingAppointerCount > 1 ? "s" : ""} missing appointers across structures`);
+      if (circularCount > 0)
         crossObservations.push(`${circularCount} structure${circularCount > 1 ? "s" : ""} with circular ownership detected`);
-      } else {
-        crossObservations.push("No circular ownership detected");
-      }
 
-      const requireUpdates = results.filter((r) => r.score < 100);
-      if (requireUpdates.length > 0) {
-        crossObservations.push(`${requireUpdates.length} structure${requireUpdates.length > 1 ? "s" : ""} require${requireUpdates.length === 1 ? "s" : ""} updates`);
-      }
-
-      // 5. Client-level score = average of all structure scores
       const avgScore = results.length > 0
         ? Math.round(results.reduce((sum, r) => sum + r.score, 0) / results.length)
         : 100;
-
-      // Client 100/100 requires all structures at 100
       const allPerfect = results.every((r) => r.score >= 100);
       const finalClientScore = allPerfect ? avgScore : Math.min(avgScore, 99);
+
+      const criticalStructures = results.filter((r) => r.status === "critical").length;
+      const needsAttention = results.filter((r) => r.score < 100).length;
 
       setReview({
         timestamp: new Date().toISOString(),
         clientScore: finalClientScore,
-        clientDisplayScore: finalClientScore,
-        clientLabel: getHealthLabel(finalClientScore),
-        structures: results,
+        structures: results.sort((a, b) => a.score - b.score),
         crossObservations,
+        criticalStructures,
+        needsAttention,
       });
 
       setStructuresChanged(false);
-      toast({ title: "Client review complete" });
+      toast({ title: "Health check complete" });
     } catch (e) {
-      console.error("Client review error:", e);
+      console.error("Review error:", e);
       toast({ title: "Review failed", variant: "destructive" });
     }
-
     setLoading(false);
   }, [toast]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Client Governance Health</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Review all structures for governance completeness
-          </p>
-        </div>
-        <Button onClick={runReview} disabled={loading} className="gap-2">
-          {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <HeartPulse className="h-4 w-4" />}
-          {loading ? "Reviewing..." : "Run Client Governance Review"}
-        </Button>
-      </div>
+    <div className="mx-auto max-w-3xl px-6 py-16 space-y-14">
+      {/* ── Hero / Empty State ── */}
+      {!review && !loading && (
+        <section className="text-center py-12 space-y-5">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-success/10">
+            <HeartPulse className="h-8 w-8 text-success" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+              Structure Health
+            </h1>
+            <p className="text-base text-muted-foreground max-w-md mx-auto">
+              Run a health check to assess the quality and completeness of all your client structures.
+            </p>
+          </div>
+          <Button
+            size="lg"
+            className="gap-2 rounded-xl px-6 text-sm font-medium"
+            onClick={runReview}
+          >
+            <HeartPulse className="h-4 w-4" />
+            Run Health Check
+          </Button>
+        </section>
+      )}
+
+      {loading && (
+        <section className="text-center py-20 space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+          <p className="text-sm text-muted-foreground">Analysing structures…</p>
+        </section>
+      )}
 
       {review && (
         <>
-          {structuresChanged && (
-            <div className="flex items-center gap-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              Client review out of date — structures have changed since last review.
+          {/* ── Score Hero ── */}
+          <section className="space-y-6">
+            <div className="flex items-start justify-between">
+              <div className="space-y-1">
+                <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+                  Structure Health
+                </h1>
+                <p className="text-base text-muted-foreground">
+                  {getScoreMessage(review.clientScore, review.structures.length)}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 rounded-xl text-xs shrink-0"
+                onClick={runReview}
+                disabled={loading}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Re-run
+              </Button>
             </div>
-          )}
 
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <HeartPulse className="h-5 w-5" />
-                  Client Governance Health: {review.clientDisplayScore} / 100
-                  <Badge className={`text-xs ${STATUS_COLORS[getHealthStatus(review.clientDisplayScore)]}`}>
-                    {review.clientLabel}
-                  </Badge>
-                </CardTitle>
-                <span className="text-xs text-muted-foreground">
-                  Last Reviewed: {new Date(review.timestamp).toLocaleString("en-AU", {
-                    day: "2-digit",
-                    month: "short",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+            {/* Score + stats row */}
+            <div className="flex items-center gap-8">
+              {/* Score circle */}
+              <div className="relative flex h-24 w-24 shrink-0 items-center justify-center">
+                <svg className="absolute inset-0 h-24 w-24 -rotate-90" viewBox="0 0 96 96">
+                  <circle cx="48" cy="48" r="42" fill="none" stroke="hsl(var(--border))" strokeWidth="6" />
+                  <circle
+                    cx="48" cy="48" r="42" fill="none"
+                    stroke={review.clientScore >= 90 ? "hsl(var(--success))" : review.clientScore >= 50 ? "hsl(var(--warning))" : "hsl(var(--destructive))"}
+                    strokeWidth="6"
+                    strokeLinecap="round"
+                    strokeDasharray={`${(review.clientScore / 100) * 264} 264`}
+                  />
+                </svg>
+                <span className="text-2xl font-bold tabular-nums text-foreground">
+                  {review.clientScore}
                 </span>
               </div>
-              <p className="text-sm text-muted-foreground mt-1">
-                {review.structures.length} structures reviewed. {review.structures.filter((s) => s.score < 100).length} require updates.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Structure table */}
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Structure</TableHead>
-                    <TableHead className="w-24 text-right">Score</TableHead>
-                    <TableHead className="w-36">Label</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {review.structures.map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.name}</TableCell>
-                      <TableCell className="text-right tabular-nums font-semibold">{s.score}</TableCell>
-                      <TableCell>
-                        <Badge className={`text-[10px] ${STATUS_COLORS[s.status]}`}>
-                          {s.label}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
 
-              <Separator />
-
-              {/* Cross-structure observations */}
-              <div>
-                <h4 className="text-sm font-semibold mb-2">Cross-Structure Observations</h4>
-                <ul className="space-y-1.5">
-                  {review.crossObservations.map((obs, idx) => (
-                    <li key={idx} className="flex items-start gap-2 text-xs text-muted-foreground">
-                      {obs.includes("No circular") || obs.includes("None") ? (
-                        <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500 mt-0.5" />
-                      ) : (
-                        <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500 mt-0.5" />
-                      )}
-                      {obs}
-                    </li>
-                  ))}
-                </ul>
+              {/* Stats */}
+              <div className="flex gap-10">
+                <div>
+                  <p className="text-2xl font-semibold tabular-nums text-foreground">{review.structures.length}</p>
+                  <p className="text-xs text-muted-foreground">Structures reviewed</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-semibold tabular-nums text-foreground">{review.needsAttention}</p>
+                  <p className="text-xs text-muted-foreground">Requiring updates</p>
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
+            </div>
 
-      {!review && !loading && (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <HeartPulse className="h-12 w-12 text-muted-foreground/30 mb-4" />
-            <p className="text-sm text-muted-foreground">
-              Click "Run Client Governance Review" to analyse all structures.
-            </p>
-            <p className="text-xs text-muted-foreground/60 mt-1">
-              The review will compute health scores for every active structure.
-            </p>
-          </CardContent>
-        </Card>
+            {structuresChanged && (
+              <div className="flex items-center gap-2 rounded-xl bg-warning/10 border border-warning/20 px-4 py-2.5 text-xs text-warning">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                Structures have changed since last review — consider re-running.
+              </div>
+            )}
+
+            {/* CTAs */}
+            {review.needsAttention > 0 && (
+              <div className="flex items-center gap-3">
+                <Button
+                  className="gap-2 rounded-xl px-5 text-sm font-medium"
+                  onClick={() => navigate("/review")}
+                >
+                  Review Issues
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+          </section>
+
+          {/* ── Priority Issues ── */}
+          {(review.criticalStructures > 0 || review.needsAttention > 0) && (
+            <section className="space-y-4">
+              <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                Priority Issues
+              </h2>
+              <div className="space-y-2">
+                {review.criticalStructures > 0 && (
+                  <div className="flex items-center gap-3 rounded-xl border border-destructive/20 bg-destructive/5 px-5 py-3.5">
+                    <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+                    <span className="text-sm text-foreground">
+                      <span className="font-semibold">{review.criticalStructures} structure{review.criticalStructures > 1 ? "s" : ""}</span>{" "}
+                      with critical issues
+                    </span>
+                  </div>
+                )}
+                {review.needsAttention > review.criticalStructures && (
+                  <div className="flex items-center gap-3 rounded-xl border border-warning/20 bg-warning/5 px-5 py-3.5">
+                    <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
+                    <span className="text-sm text-foreground">
+                      <span className="font-semibold">{review.needsAttention - review.criticalStructures} structure{(review.needsAttention - review.criticalStructures) > 1 ? "s" : ""}</span>{" "}
+                      need improvements
+                    </span>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* ── Structures List ── */}
+          <section className="space-y-4">
+            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+              All Structures
+            </h2>
+            <div className="space-y-1.5">
+              {review.structures.map((s) => (
+                <Link
+                  key={s.id}
+                  to={`/structures/${s.id}`}
+                  className="group flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4 transition-all hover:border-border hover:shadow-sm"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className={`h-2 w-2 rounded-full shrink-0 ${STATUS_DOT[s.status]}`} />
+                    <span className="text-sm font-medium text-foreground">{s.name}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm font-semibold tabular-nums text-foreground">{s.score}</span>
+                    <Badge
+                      variant="secondary"
+                      className={`text-[11px] rounded-md border-0 font-medium ${STATUS_BG[s.status]}`}
+                    >
+                      {s.friendlyLabel}
+                    </Badge>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          {/* ── Key Insights ── */}
+          {review.crossObservations.length > 0 && (
+            <section className="space-y-4">
+              <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                Key Insights
+              </h2>
+              <div className="rounded-2xl border border-border/60 bg-card p-5 space-y-3">
+                {review.crossObservations.map((obs, idx) => (
+                  <div key={idx} className="flex items-start gap-3 text-sm text-muted-foreground">
+                    <Info className="h-4 w-4 shrink-0 text-primary/60 mt-0.5" />
+                    <span>{obs}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Timestamp */}
+          <p className="text-xs text-muted-foreground/50 text-center">
+            Last reviewed {new Date(review.timestamp).toLocaleString("en-AU", {
+              day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+            })}
+          </p>
+        </>
       )}
     </div>
   );
