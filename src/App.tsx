@@ -10,6 +10,8 @@ import AppLayout from "@/components/AppLayout";
 import Auth from "./pages/Auth";
 import Signup from "./pages/Signup";
 import Login from "./pages/Login";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import MfaSetup from "./pages/MfaSetup";
 import MfaVerify from "./pages/MfaVerify";
 import Onboarding from "./pages/Onboarding";
@@ -41,6 +43,8 @@ const App = () => (
               <Route path="/auth" element={<Auth />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/mfa-setup" element={<MfaSetup />} />
               <Route path="/mfa-verify" element={<MfaVerify />} />
               <Route path="/onboarding" element={<Onboarding />} />
