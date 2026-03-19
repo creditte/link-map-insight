@@ -37,6 +37,28 @@ export function useMfa() {
           return;
         }
 
+        // Check if user verified via email fallback during this session
+        const sessionStart = session.expires_at
+          ? new Date((session.expires_at - 3600) * 1000).toISOString()
+          : new Date(0).toISOString();
+
+        const { data: emailFallback } = await (supabase as any)
+          .from("mfa_verifications")
+          .select("id")
+          .eq("user_id", user.id)
+          .gt("expires_at", new Date().toISOString())
+          .gte("verified_at", sessionStart)
+          .order("verified_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (emailFallback) {
+          setStatus("verified");
+          setMethod("totp");
+          setLoading(false);
+          return;
+        }
+
         if (aalData?.nextLevel === "aal2") {
           setStatus("needs-verification");
           setMethod("totp");
