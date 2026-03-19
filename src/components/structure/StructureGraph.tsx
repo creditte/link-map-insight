@@ -256,19 +256,39 @@ function StructureGraphInner({
     }
   }, [autoLayoutTrigger, entities, relationships, layoutMode, setNodes, fitView, getPinnedPositions]);
 
+  // Build issue lookup
+  const issueMap = useMemo(() => {
+    const map = new Map<string, { severity: string; tooltip: string }>();
+    for (const o of issueOverlays) {
+      const existing = map.get(o.entityId);
+      if (!existing || o.severity === "critical") {
+        map.set(o.entityId, { severity: o.severity, tooltip: o.tooltip });
+      }
+    }
+    return map;
+  }, [issueOverlays]);
+
   useEffect(() => {
     setNodes((nds) =>
-      nds.map((n) => ({
-        ...n,
-        selected: n.id === selectedEntityId,
-        style: {
-          opacity: searchHighlightId && n.id !== searchHighlightId ? 0.25 : 1,
-          transition: "opacity 0.2s ease",
-        },
-        data: { ...n.data, pinned: pinnedNodeIds.has(n.id) },
-      }))
+      nds.map((n) => {
+        const issue = issueMap.get(n.id);
+        return {
+          ...n,
+          selected: n.id === selectedEntityId,
+          style: {
+            opacity: searchHighlightId && n.id !== searchHighlightId ? 0.25 : 1,
+            transition: "opacity 0.2s ease",
+          },
+          data: {
+            ...n.data,
+            pinned: pinnedNodeIds.has(n.id),
+            issueSeverity: issue?.severity,
+            issueTooltip: issue?.tooltip,
+          },
+        };
+      })
     );
-  }, [selectedEntityId, pinnedNodeIds, searchHighlightId, setNodes]);
+  }, [selectedEntityId, pinnedNodeIds, searchHighlightId, setNodes, issueMap]);
 
   useEffect(() => {
     if (searchHighlightId) {
