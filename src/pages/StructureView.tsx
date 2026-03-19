@@ -72,6 +72,21 @@ export default function StructureView() {
     [entities, relationships]
   );
 
+  // Build issue overlays for entity nodes
+  const issueOverlays = useMemo(() => {
+    if (!healthV2?.issues) return [];
+    const overlays: Array<{ entityId: string; severity: "critical" | "warning"; tooltip: string }> = [];
+    for (const issue of healthV2.issues) {
+      if (!issue.entity_id || issue.severity === "info") continue;
+      overlays.push({
+        entityId: issue.entity_id,
+        severity: issue.severity === "critical" ? "critical" : "warning",
+        tooltip: issue.message,
+      });
+    }
+    return overlays;
+  }, [healthV2]);
+
   // Snapshot viewing state
   const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(null);
   const [snapshotData, setSnapshotData] = useState<SnapshotData | null>(null);
