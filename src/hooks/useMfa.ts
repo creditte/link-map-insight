@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 
@@ -11,8 +11,16 @@ export function useMfa() {
   const [method, setMethod] = useState<MfaMethod>(null);
   const [loading, setLoading] = useState(true);
 
+  // Use refs for session so token refreshes don't re-trigger the check
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+
+  // Track whether we've done the initial check to avoid re-running on token refresh
+  const hasChecked = useRef(false);
+
   const checkMfaStatus = useCallback(async () => {
-    if (!user || !session || bootStatus !== "authenticated") {
+    const currentSession = sessionRef.current;
+    if (!user || !currentSession || bootStatus !== "authenticated") {
       setLoading(false);
       return;
     }
@@ -38,8 +46,8 @@ export function useMfa() {
         }
 
         // Check if user verified via email fallback during this session
-        const sessionStart = session.expires_at
-          ? new Date((session.expires_at - 3600) * 1000).toISOString()
+        const sessionStart = currentSession.expires_at
+          ? new Date((currentSession.expires_at - 3600) * 1000).toISOString()
           : new Date(0).toISOString();
 
         const { data: emailFallback } = await (supabase as any)
@@ -75,8 +83,8 @@ export function useMfa() {
 
       if (settings?.method === "email") {
         // Check if verified AFTER current session started
-        const sessionStart = session.expires_at
-          ? new Date((session.expires_at - 3600) * 1000).toISOString()
+        const sessionStart = currentSession.expires_at
+          ? new Date((currentSession.expires_at - 3600) * 1000).toISOString()
           : new Date(0).toISOString();
 
         const { data: verif } = await (supabase as any)
@@ -114,11 +122,22 @@ export function useMfa() {
     } finally {
       setLoading(false);
     }
-  }, [user, session, bootStatus]);
+  }, [user?.id, bootStatus]);
 
   useEffect(() => {
-    checkMfaStatus();
+    // Only run the full check once per user session, not on every token refresh
+    if (bootStatus === "authenticated" && user && !hasChecked.current) {
+      hasChecked.current = true;
+      checkMfaStatus();
+    } else if (bootStatus !== "authenticated") {
+      hasChecked.current = false;
+    }
+  }, [bootStatus, user?.id, checkMfaStatus]);
+
+  const refetch = useCallback(() => {
+    // Manual refetch always runs
+    return checkMfaStatus();
   }, [checkMfaStatus]);
 
-  return { status, method, loading, refetch: checkMfaStatus };
+  return { status, method, loading, refetch };
 }
