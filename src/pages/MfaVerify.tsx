@@ -20,12 +20,26 @@ export default function MfaVerify() {
   const [hasTotpFactor, setHasTotpFactor] = useState(false);
   const [loading, setLoading] = useState(true);
   const emailSentForSession = useRef(false);
+  const autoSubmitTriggered = useRef(false);
 
   useEffect(() => {
     if (bootStatus !== "authenticated" || !user) return;
     if (preferredMethod) return;
     detectMethod();
   }, [bootStatus, user?.id]);
+
+  const handleVerify = activeMethod === "totp" ? verifyTotp : verifyEmail;
+
+  // Auto-submit when 6 digits entered
+  useEffect(() => {
+    if (code.length === 6 && !submitting && !autoSubmitTriggered.current && !loading) {
+      autoSubmitTriggered.current = true;
+      handleVerify();
+    }
+    if (code.length < 6) {
+      autoSubmitTriggered.current = false;
+    }
+  }, [code, submitting, loading, handleVerify]);
 
   async function detectMethod() {
     try {
@@ -72,18 +86,19 @@ export default function MfaVerify() {
 
   function switchToEmail() {
     setCode("");
+    autoSubmitTriggered.current = false;
     setActiveMethod("email");
     if (!emailSentForSession.current) {
       emailSentForSession.current = true;
       sendEmailCode();
     } else {
-      // Already sent once this session, let user manually resend
       toast({ title: "Use existing code", description: "Check your email for the code already sent, or click Resend." });
     }
   }
 
   function switchToTotp() {
     setCode("");
+    autoSubmitTriggered.current = false;
     setActiveMethod("totp");
   }
 
@@ -110,6 +125,7 @@ export default function MfaVerify() {
     } catch (err: any) {
       toast({ title: "Invalid code", description: err.message, variant: "destructive" });
       setCode("");
+      autoSubmitTriggered.current = false;
     } finally {
       setSubmitting(false);
     }
@@ -127,42 +143,11 @@ export default function MfaVerify() {
     } catch (err: any) {
       toast({ title: "Invalid code", description: err.message, variant: "destructive" });
       setCode("");
+      autoSubmitTriggered.current = false;
     } finally {
       setSubmitting(false);
     }
   }
-
-  if (bootStatus === "booting") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (bootStatus === "unauthenticated" || !user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  // Auto-submit when 6 digits entered
-  const autoSubmitTriggered = useRef(false);
-  useEffect(() => {
-    if (code.length === 6 && !submitting && !autoSubmitTriggered.current) {
-      autoSubmitTriggered.current = true;
-      handleVerify();
-    }
-    if (code.length < 6) {
-      autoSubmitTriggered.current = false;
-    }
-  }, [code, submitting]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
