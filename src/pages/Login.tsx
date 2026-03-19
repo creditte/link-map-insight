@@ -116,13 +116,9 @@ export default function Login() {
             </form>
 
             <div className="mt-5 flex items-center justify-between text-sm">
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => toast({ title: "Coming soon", description: "Password reset will be available shortly." })}
-              >
+              <Link to="/forgot-password" className="text-muted-foreground hover:text-foreground transition-colors">
                 Forgot password?
-              </button>
+              </Link>
               <Link to="/signup" className="font-medium text-primary hover:underline">
                 Start Free Trial
               </Link>
