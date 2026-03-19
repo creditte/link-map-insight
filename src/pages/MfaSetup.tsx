@@ -149,6 +149,7 @@ export default function MfaSetup() {
     setCode("");
     setQrCode("");
     setFactorId("");
+    autoSubmitTriggered.current = false;
   }
 
   return (
