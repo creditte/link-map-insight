@@ -545,7 +545,7 @@ export default function StructureView() {
             onPositionsChanged={isViewingSnapshot ? () => {} : handlePositionsChanged}
             nodesDraggable={!isViewingSnapshot && dbLayoutMode === "manual"}
             onContextMenu={handleContextMenu}
-            issueOverlays={showFixMode ? issueOverlays : issueOverlays}
+            issueOverlays={issueOverlays}
           />
         )}
 
