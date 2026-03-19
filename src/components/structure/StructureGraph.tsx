@@ -138,6 +138,12 @@ export interface NodePosition {
   position_y: number | null;
 }
 
+export interface IssueOverlay {
+  entityId: string;
+  severity: "critical" | "warning";
+  tooltip: string;
+}
+
 interface Props {
   entities: EntityNode[];
   relationships: RelationshipEdge[];
@@ -156,13 +162,14 @@ interface Props {
   onPositionsChanged: (positions: Map<string, { x: number; y: number }>) => void;
   nodesDraggable?: boolean;
   onContextMenu?: (menu: ContextMenuState) => void;
+  issueOverlays?: IssueOverlay[];
 }
 
 function StructureGraphInner({
   entities, relationships, selectedEntityId, onSelectEntity, onSelectEdge,
   autoLayoutTrigger, layoutMode, layoutStrategy, pinnedNodeIds, onTogglePin, viewMode,
   searchHighlightId, fitViewTrigger, dbPositions, onPositionsChanged, nodesDraggable: nodesDraggableProp,
-  onContextMenu,
+  onContextMenu, issueOverlays = [],
 }: Props) {
   const { fitView, screenToFlowPosition } = useReactFlow();
   const prevLayoutTrigger = useRef(0);
@@ -249,19 +256,39 @@ function StructureGraphInner({
     }
   }, [autoLayoutTrigger, entities, relationships, layoutMode, setNodes, fitView, getPinnedPositions]);
 
+  // Build issue lookup
+  const issueMap = useMemo(() => {
+    const map = new Map<string, { severity: string; tooltip: string }>();
+    for (const o of issueOverlays) {
+      const existing = map.get(o.entityId);
+      if (!existing || o.severity === "critical") {
+        map.set(o.entityId, { severity: o.severity, tooltip: o.tooltip });
+      }
+    }
+    return map;
+  }, [issueOverlays]);
+
   useEffect(() => {
     setNodes((nds) =>
-      nds.map((n) => ({
-        ...n,
-        selected: n.id === selectedEntityId,
-        style: {
-          opacity: searchHighlightId && n.id !== searchHighlightId ? 0.25 : 1,
-          transition: "opacity 0.2s ease",
-        },
-        data: { ...n.data, pinned: pinnedNodeIds.has(n.id) },
-      }))
+      nds.map((n) => {
+        const issue = issueMap.get(n.id);
+        return {
+          ...n,
+          selected: n.id === selectedEntityId,
+          style: {
+            opacity: searchHighlightId && n.id !== searchHighlightId ? 0.25 : 1,
+            transition: "opacity 0.2s ease",
+          },
+          data: {
+            ...n.data,
+            pinned: pinnedNodeIds.has(n.id),
+            issueSeverity: issue?.severity,
+            issueTooltip: issue?.tooltip,
+          },
+        };
+      })
     );
-  }, [selectedEntityId, pinnedNodeIds, searchHighlightId, setNodes]);
+  }, [selectedEntityId, pinnedNodeIds, searchHighlightId, setNodes, issueMap]);
 
   useEffect(() => {
     if (searchHighlightId) {

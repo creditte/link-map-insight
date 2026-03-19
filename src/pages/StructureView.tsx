@@ -21,7 +21,8 @@ import ExportBlockedBanner from "@/components/structure/ExportBlockedBanner";
 import StructureHealthPanel from "@/components/structure/StructureHealthPanel";
 import OnboardingTooltips from "@/components/structure/OnboardingTooltips";
 import AiAssistantPanel from "@/components/structure/AiAssistantPanel";
-import CanvasHealthIndicator from "@/components/structure/CanvasHealthIndicator";
+import CanvasHealthBar from "@/components/structure/CanvasHealthBar";
+import CanvasFixMode from "@/components/structure/CanvasFixMode";
 import ReviewDiagramPanel from "@/components/structure/ReviewDiagramPanel";
 import CreateSnapshotDialog from "@/components/structure/CreateSnapshotDialog";
 import SnapshotSelector from "@/components/structure/SnapshotSelector";
@@ -60,6 +61,7 @@ export default function StructureView() {
   const [viewMode, setViewMode] = useState<ViewMode>(tenantDefaultView);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [showReviewPanel, setShowReviewPanel] = useState(false);
+  const [showFixMode, setShowFixMode] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showAddEntityDialog, setShowAddEntityDialog] = useState(false);
   const [tenantId, setTenantId] = useState<string | null>(null);
@@ -69,6 +71,21 @@ export default function StructureView() {
     () => computeHealthScoreV2(entities, relationships),
     [entities, relationships]
   );
+
+  // Build issue overlays for entity nodes
+  const issueOverlays = useMemo(() => {
+    if (!healthV2?.issues) return [];
+    const overlays: Array<{ entityId: string; severity: "critical" | "warning"; tooltip: string }> = [];
+    for (const issue of healthV2.issues) {
+      if (!issue.entity_id || issue.severity === "info") continue;
+      overlays.push({
+        entityId: issue.entity_id,
+        severity: issue.severity === "critical" ? "critical" : "warning",
+        tooltip: issue.message,
+      });
+    }
+    return overlays;
+  }, [healthV2]);
 
   // Snapshot viewing state
   const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(null);
@@ -462,16 +479,30 @@ export default function StructureView() {
       <div className="relative mt-3 flex-1 rounded-lg border bg-card overflow-hidden">
         {showOnboarding && !isViewingSnapshot && <OnboardingTooltips onDismiss={dismissOnboarding} />}
 
-        {/* Canvas Health Indicator - always visible */}
-        {!isViewingSnapshot && (
-          <CanvasHealthIndicator
+        {/* Canvas Health Bar - top of canvas */}
+        {!isViewingSnapshot && healthV2 && (
+          <CanvasHealthBar
             health={healthV2}
-            onClick={() => { setShowReviewPanel(true); setShowAiPanel(false); }}
+            onFixIssues={() => { setShowFixMode(true); setShowReviewPanel(false); setShowAiPanel(false); }}
+            onViewDetails={() => { setShowReviewPanel(true); setShowFixMode(false); setShowAiPanel(false); }}
+          />
+        )}
+
+        {/* Fix Mode overlay */}
+        {showFixMode && !isViewingSnapshot && healthV2 && (
+          <CanvasFixMode
+            issues={healthV2.issues}
+            entities={entities}
+            structureName={structureName}
+            onClose={() => setShowFixMode(false)}
+            onFocusEntity={(eid) => { setSelectedEntityId(eid); setSelectedEdgeId(null); setFitViewTrigger((c) => c + 1); }}
+            onEntityUpdated={handleEntityUpdated}
+            onExport={() => {/* handled by ExportMenu */}}
           />
         )}
 
         {/* Review Diagram Panel */}
-        {showReviewPanel && !isViewingSnapshot && (
+        {showReviewPanel && !isViewingSnapshot && !showFixMode && (
           <ReviewDiagramPanel
             health={healthV2}
             entities={visibleEntities}
@@ -514,6 +545,7 @@ export default function StructureView() {
             onPositionsChanged={isViewingSnapshot ? () => {} : handlePositionsChanged}
             nodesDraggable={!isViewingSnapshot && dbLayoutMode === "manual"}
             onContextMenu={handleContextMenu}
+            issueOverlays={issueOverlays}
           />
         )}
 

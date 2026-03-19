@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Pin, Star, Shield } from "lucide-react";
+import { Pin, Star, Shield, AlertCircle, AlertTriangle } from "lucide-react";
 import { getEntityIcon, getEntityColor, getEntityLabel } from "@/lib/entityTypes";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -12,9 +12,17 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
   const pinned = data.pinned as boolean;
   const isOperating = data.is_operating_entity as boolean;
   const isTrusteeCompany = data.is_trustee_company as boolean;
+  const issueSeverity = data.issueSeverity as string | undefined;
+  const issueTooltip = data.issueTooltip as string | undefined;
   const Icon = getEntityIcon(entityType);
   const colorClass = getEntityColor(entityType);
   const label = data.label as string;
+
+  const issueOutline = issueSeverity === "critical"
+    ? "ring-2 ring-red-500/60 ring-offset-1 ring-offset-card"
+    : issueSeverity === "warning"
+    ? "ring-2 ring-amber-500/50 ring-offset-1 ring-offset-card"
+    : "";
 
   return (
     <>
@@ -24,10 +32,22 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
           <TooltipTrigger asChild>
             <div
               className={`relative rounded-lg border-2 px-4 py-3 shadow-sm transition-shadow ${colorClass} ${
-                selected ? "ring-2 ring-ring shadow-md" : ""
+                selected ? "ring-2 ring-ring shadow-md" : issueOutline
               }`}
               style={{ width: NODE_WIDTH }}
             >
+              {/* Issue indicator dot */}
+              {issueSeverity && !selected && (
+                <div className={`absolute -top-1 -left-1 flex h-4 w-4 items-center justify-center rounded-full shadow-sm ${
+                  issueSeverity === "critical" ? "bg-red-500 text-white" : "bg-amber-500 text-white"
+                }`}>
+                  {issueSeverity === "critical"
+                    ? <AlertCircle className="h-2.5 w-2.5" />
+                    : <AlertTriangle className="h-2.5 w-2.5" />
+                  }
+                </div>
+              )}
+
               {/* Trustee Company badge */}
               {isTrusteeCompany && (
                 <TooltipProvider delayDuration={200}>
@@ -74,6 +94,11 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
               {getEntityLabel(entityType)}
               {isTrusteeCompany && " · Trustee Company"}
             </p>
+            {issueTooltip && (
+              <p className={`text-xs mt-1 ${issueSeverity === "critical" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>
+                ⚠ {issueTooltip}
+              </p>
+            )}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
