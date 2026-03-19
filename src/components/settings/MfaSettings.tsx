@@ -22,6 +22,22 @@ export default function MfaSettings() {
   const [factorId, setFactorId] = useState("");
   const [qrCode, setQrCode] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
+  const autoSubmitTriggered = useRef(false);
+
+  // Auto-submit when 6 digits entered
+  useEffect(() => {
+    if (code.length === 6 && !submitting && !autoSubmitTriggered.current) {
+      autoSubmitTriggered.current = true;
+      if (step === "totp-verify") {
+        confirmTotp();
+      } else if (step === "email-verify") {
+        confirmEmail();
+      }
+    }
+    if (code.length < 6) {
+      autoSubmitTriggered.current = false;
+    }
+  }, [code, submitting, step]);
 
   function reset() {
     setStep("idle");
@@ -29,6 +45,7 @@ export default function MfaSettings() {
     setFactorId("");
     setQrCode("");
     setTotpSecret("");
+    autoSubmitTriggered.current = false;
   }
 
   // ── Switch to TOTP ──────────────────────────────────────────
