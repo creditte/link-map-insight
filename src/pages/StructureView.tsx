@@ -479,16 +479,30 @@ export default function StructureView() {
       <div className="relative mt-3 flex-1 rounded-lg border bg-card overflow-hidden">
         {showOnboarding && !isViewingSnapshot && <OnboardingTooltips onDismiss={dismissOnboarding} />}
 
-        {/* Canvas Health Indicator - always visible */}
-        {!isViewingSnapshot && (
-          <CanvasHealthIndicator
+        {/* Canvas Health Bar - top of canvas */}
+        {!isViewingSnapshot && healthV2 && (
+          <CanvasHealthBar
             health={healthV2}
-            onClick={() => { setShowReviewPanel(true); setShowAiPanel(false); }}
+            onFixIssues={() => { setShowFixMode(true); setShowReviewPanel(false); setShowAiPanel(false); }}
+            onViewDetails={() => { setShowReviewPanel(true); setShowFixMode(false); setShowAiPanel(false); }}
+          />
+        )}
+
+        {/* Fix Mode overlay */}
+        {showFixMode && !isViewingSnapshot && healthV2 && (
+          <CanvasFixMode
+            issues={healthV2.issues}
+            entities={entities}
+            structureName={structureName}
+            onClose={() => setShowFixMode(false)}
+            onFocusEntity={(eid) => { setSelectedEntityId(eid); setSelectedEdgeId(null); setFitViewTrigger((c) => c + 1); }}
+            onEntityUpdated={handleEntityUpdated}
+            onExport={() => {/* handled by ExportMenu */}}
           />
         )}
 
         {/* Review Diagram Panel */}
-        {showReviewPanel && !isViewingSnapshot && (
+        {showReviewPanel && !isViewingSnapshot && !showFixMode && (
           <ReviewDiagramPanel
             health={healthV2}
             entities={visibleEntities}
