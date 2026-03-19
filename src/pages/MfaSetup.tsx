@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -21,6 +21,22 @@ export default function MfaSetup() {
   const [totpSecret, setTotpSecret] = useState("");
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const autoSubmitTriggered = useRef(false);
+
+  // Auto-submit when 6 digits entered
+  useEffect(() => {
+    if (code.length === 6 && !submitting && !autoSubmitTriggered.current) {
+      autoSubmitTriggered.current = true;
+      if (step === "totp-scan") {
+        verifyTotp();
+      } else if (step === "email-verify") {
+        verifyEmail();
+      }
+    }
+    if (code.length < 6) {
+      autoSubmitTriggered.current = false;
+    }
+  }, [code, submitting, step]);
 
   if (bootStatus === "booting") {
     return (
@@ -79,6 +95,7 @@ export default function MfaSetup() {
     } catch (err: any) {
       toast({ title: "Verification failed", description: err.message, variant: "destructive" });
       setCode("");
+      autoSubmitTriggered.current = false;
     } finally {
       setSubmitting(false);
     }
@@ -121,6 +138,7 @@ export default function MfaSetup() {
     } catch (err: any) {
       toast({ title: "Verification failed", description: err.message, variant: "destructive" });
       setCode("");
+      autoSubmitTriggered.current = false;
     } finally {
       setSubmitting(false);
     }
@@ -131,6 +149,7 @@ export default function MfaSetup() {
     setCode("");
     setQrCode("");
     setFactorId("");
+    autoSubmitTriggered.current = false;
   }
 
   return (
