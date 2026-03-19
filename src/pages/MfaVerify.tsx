@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Shield, Loader2 } from "lucide-react";
+import { Shield, Loader2, Smartphone, Mail } from "lucide-react";
 
 export default function MfaVerify() {
   const { user, bootStatus, signOut } = useAuth();
@@ -15,13 +15,15 @@ export default function MfaVerify() {
 
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [method, setMethod] = useState<"totp" | "email" | null>(null);
+  const [preferredMethod, setPreferredMethod] = useState<"totp" | "email" | null>(null);
+  const [activeMethod, setActiveMethod] = useState<"totp" | "email" | null>(null);
+  const [hasTotpFactor, setHasTotpFactor] = useState(false);
   const [loading, setLoading] = useState(true);
-  const initialSentRef = useRef(false);
+  const emailSentForSession = useRef(false);
 
   useEffect(() => {
     if (bootStatus !== "authenticated" || !user) return;
-    if (method) return; // Already detected, don't re-run
+    if (preferredMethod) return;
     detectMethod();
   }, [bootStatus, user?.id]);
 
@@ -30,26 +32,23 @@ export default function MfaVerify() {
       // Check TOTP factors
       const { data: factors } = await supabase.auth.mfa.listFactors();
       const totpFactor = factors?.totp?.find((f: any) => f.status === "verified");
+      setHasTotpFactor(!!totpFactor);
 
-      if (totpFactor) {
-        setMethod("totp");
-        setLoading(false);
-        return;
-      }
-
-      // Check email method
+      // Check mfa_settings preference
       const { data: settings } = await (supabase as any)
         .from("mfa_settings")
         .select("method")
         .eq("user_id", user!.id)
         .maybeSingle();
 
-      if (settings?.method === "email") {
-        setMethod("email");
-        if (!initialSentRef.current) {
-          initialSentRef.current = true;
-          await sendEmailCode();
-        }
+      const pref = settings?.method === "totp" && totpFactor ? "totp" : settings?.method === "email" ? "email" : totpFactor ? "totp" : "email";
+      setPreferredMethod(pref as "totp" | "email");
+      setActiveMethod(pref as "totp" | "email");
+
+      // Auto-send email code if email is the active method
+      if (pref === "email" && !emailSentForSession.current) {
+        emailSentForSession.current = true;
+        await sendEmailCode();
       }
     } catch (err) {
       console.error("[MfaVerify] detectMethod error:", err);
@@ -69,6 +68,23 @@ export default function MfaVerify() {
     } catch (err: any) {
       toast({ title: "Failed to send code", description: err.message, variant: "destructive" });
     }
+  }
+
+  function switchToEmail() {
+    setCode("");
+    setActiveMethod("email");
+    if (!emailSentForSession.current) {
+      emailSentForSession.current = true;
+      sendEmailCode();
+    } else {
+      // Already sent once this session, let user manually resend
+      toast({ title: "Use existing code", description: "Check your email for the code already sent, or click Resend." });
+    }
+  }
+
+  function switchToTotp() {
+    setCode("");
+    setActiveMethod("totp");
   }
 
   async function verifyTotp() {
@@ -136,7 +152,7 @@ export default function MfaVerify() {
     );
   }
 
-  const handleVerify = method === "totp" ? verifyTotp : verifyEmail;
+  const handleVerify = activeMethod === "totp" ? verifyTotp : verifyEmail;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
@@ -145,7 +161,7 @@ export default function MfaVerify() {
           <Shield className="h-8 w-8 mx-auto mb-2 text-primary" />
           <CardTitle className="text-xl font-bold">Two-Factor Verification</CardTitle>
           <CardDescription>
-            {method === "totp"
+            {activeMethod === "totp"
               ? "Enter the code from your authenticator app"
               : `Enter the code sent to ${user.email}`}
           </CardDescription>
@@ -172,11 +188,38 @@ export default function MfaVerify() {
               "Verify"
             )}
           </Button>
-          {method === "email" && (
+
+          {/* Method-specific actions */}
+          {activeMethod === "email" && (
             <Button variant="ghost" onClick={sendEmailCode} className="w-full text-sm">
               Resend Code
             </Button>
           )}
+
+          {/* Switch method options */}
+          <div className="border-t pt-3 space-y-1.5">
+            {activeMethod === "totp" && (
+              <Button
+                variant="ghost"
+                onClick={switchToEmail}
+                className="w-full text-sm gap-2 text-muted-foreground hover:text-foreground"
+              >
+                <Mail className="h-4 w-4" />
+                Can't access authenticator? Use email instead
+              </Button>
+            )}
+            {activeMethod === "email" && hasTotpFactor && (
+              <Button
+                variant="ghost"
+                onClick={switchToTotp}
+                className="w-full text-sm gap-2 text-muted-foreground hover:text-foreground"
+              >
+                <Smartphone className="h-4 w-4" />
+                Use authenticator app instead
+              </Button>
+            )}
+          </div>
+
           <Button
             variant="ghost"
             onClick={signOut}
