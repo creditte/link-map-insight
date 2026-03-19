@@ -61,6 +61,7 @@ export default function StructureView() {
   const [viewMode, setViewMode] = useState<ViewMode>(tenantDefaultView);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [showReviewPanel, setShowReviewPanel] = useState(false);
+  const [showFixMode, setShowFixMode] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showAddEntityDialog, setShowAddEntityDialog] = useState(false);
   const [tenantId, setTenantId] = useState<string | null>(null);
