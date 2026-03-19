@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -17,7 +16,6 @@ import {
   Network,
   Eye,
   AlertTriangle,
-  Zap,
   Share2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -55,7 +53,6 @@ export default function Dashboard() {
       (userRole === "admin" &&
         currentUser?.can_manage_integrations === true));
 
-  // Handle Xero OAuth callback
   useEffect(() => {
     const xeroStatus = searchParams.get("xero");
     if (xeroStatus === "connected") {
@@ -75,7 +72,6 @@ export default function Dashboard() {
     }
   }, [searchParams, setSearchParams, toast]);
 
-  // Load data
   useEffect(() => {
     async function load() {
       const [sCount, recent, xeroData] = await Promise.all([
@@ -183,21 +179,21 @@ export default function Dashboard() {
   const hasStructures = structureCount > 0;
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10 space-y-10">
-      {/* ── Hero Section ── */}
-      <section className="space-y-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
+    <div className="mx-auto max-w-3xl px-6 py-16 space-y-14">
+      {/* ── Hero ── */}
+      <section className="space-y-6">
+        <div className="space-y-2">
+          <h1 className="text-4xl font-semibold tracking-tight text-foreground">
             Build a structure
           </h1>
-          <p className="mt-1.5 text-muted-foreground">
+          <p className="text-base text-muted-foreground max-w-md">
             Create a clean, visual structure for your client in minutes.
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Button
             size="lg"
-            className="gap-2 shadow-sm"
+            className="gap-2 rounded-xl px-6 text-sm font-medium shadow-sm"
             onClick={() => navigate("/structures")}
           >
             <Plus className="h-4 w-4" />
@@ -207,7 +203,7 @@ export default function Dashboard() {
             <Button
               variant="outline"
               size="lg"
-              className="gap-2"
+              className="gap-2 rounded-xl px-6 text-sm font-medium"
               onClick={handleConnectXero}
               disabled={xeroLoading}
             >
@@ -222,184 +218,172 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* ── Recent Structures or Empty State ── */}
-      <section className="space-y-3">
+      {/* ── Recent Structures ── */}
+      <section className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold tracking-tight">
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
             Recent Structures
           </h2>
           {hasStructures && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1 text-muted-foreground"
-              asChild
+            <Link
+              to="/structures"
+              className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              <Link to="/structures">
-                View All <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </Button>
+              View All <ArrowRight className="h-3 w-3" />
+            </Link>
           )}
         </div>
 
         {hasStructures ? (
-          <div className="grid gap-2">
+          <div className="space-y-1.5">
             {recentStructures.map((s) => (
               <Link
                 key={s.id}
                 to={`/structures/${s.id}`}
-                className="group flex items-center justify-between rounded-lg border bg-card px-4 py-3 transition-colors hover:bg-accent"
+                className="group flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4 transition-all hover:border-border hover:shadow-sm"
               >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10">
+                <div className="flex items-center gap-3.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/8">
                     <Network className="h-4 w-4 text-primary" />
                   </div>
-                  <span className="text-sm font-medium">{s.name}</span>
+                  <span className="text-sm font-medium text-foreground">
+                    {s.name}
+                  </span>
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  {formatDistanceToNow(new Date(s.updated_at), {
-                    addSuffix: true,
-                  })}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    {formatDistanceToNow(new Date(s.updated_at), {
+                      addSuffix: true,
+                    })}
+                  </span>
+                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
+                </div>
               </Link>
             ))}
           </div>
         ) : (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-14 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 mb-4">
-                <Network className="h-6 w-6 text-primary" />
-              </div>
-              <h3 className="text-lg font-semibold">
-                Create your first structure
-              </h3>
-              <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground">
-                <li className="flex items-center gap-2">
-                  <Eye className="h-3.5 w-3.5" /> Visualise ownership clearly
-                </li>
-                <li className="flex items-center gap-2">
-                  <AlertTriangle className="h-3.5 w-3.5" /> Spot risks faster
-                </li>
-                <li className="flex items-center gap-2">
-                  <Share2 className="h-3.5 w-3.5" /> Share with clients easily
-                </li>
-              </ul>
-              <Button
-                className="mt-6 gap-2"
-                onClick={() => navigate("/structures")}
-              >
-                <Plus className="h-4 w-4" />
-                Create New Structure
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="rounded-2xl border border-dashed border-border/80 bg-card px-8 py-16 text-center">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/8">
+              <Network className="h-7 w-7 text-primary" />
+            </div>
+            <h3 className="text-lg font-semibold text-foreground">
+              Create your first structure
+            </h3>
+            <ul className="mt-4 inline-flex flex-col items-start gap-2.5 text-sm text-muted-foreground">
+              <li className="flex items-center gap-2.5">
+                <Eye className="h-4 w-4 text-primary/60" /> Visualise ownership
+                clearly
+              </li>
+              <li className="flex items-center gap-2.5">
+                <AlertTriangle className="h-4 w-4 text-warning/70" /> Spot risks
+                faster
+              </li>
+              <li className="flex items-center gap-2.5">
+                <Share2 className="h-4 w-4 text-primary/60" /> Share with clients
+                easily
+              </li>
+            </ul>
+            <Button
+              className="mt-8 gap-2 rounded-xl px-6"
+              onClick={() => navigate("/structures")}
+            >
+              <Plus className="h-4 w-4" />
+              Create New Structure
+            </Button>
+          </div>
         )}
       </section>
 
-      {/* ── Health Check & Review Cards ── */}
-      <section className="grid gap-4 sm:grid-cols-2">
-        {/* Health Check */}
-        <Card className="group relative overflow-hidden">
-          <CardContent className="p-6 space-y-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-success/10">
-                <HeartPulse className="h-5 w-5 text-success" />
-              </div>
-              <h3 className="font-semibold">Health Check</h3>
-            </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Assess the health of client structures and identify issues quickly.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 mt-1"
-              asChild
-            >
-              <Link to="/governance">
-                Run Health Check <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
+      {/* ── Workflow Cards ── */}
+      <section className="grid gap-5 sm:grid-cols-2">
+        <Link
+          to="/governance"
+          className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
+        >
+          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-success/10">
+            <HeartPulse className="h-5 w-5 text-success" />
+          </div>
+          <h3 className="text-[15px] font-semibold text-foreground">
+            Health Check
+          </h3>
+          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+            Assess the health of client structures and identify issues quickly.
+          </p>
+          <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-primary transition-colors group-hover:text-primary/80">
+            Run Health Check
+            <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </Link>
 
-        {/* Review & Improve */}
-        <Card className="group relative overflow-hidden">
-          <CardContent className="p-6 space-y-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-                <Sparkles className="h-5 w-5 text-primary" />
-              </div>
-              <h3 className="font-semibold">Review &amp; Improve</h3>
-            </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Review flagged issues and improve structure quality.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 mt-1"
-              asChild
-            >
-              <Link to="/review">
-                Review Issues <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <Link
+          to="/review"
+          className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
+        >
+          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/8">
+            <Sparkles className="h-5 w-5 text-primary" />
+          </div>
+          <h3 className="text-[15px] font-semibold text-foreground">
+            Review &amp; Improve
+          </h3>
+          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+            Review flagged issues and improve structure quality.
+          </p>
+          <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-primary transition-colors group-hover:text-primary/80">
+            Review Issues
+            <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </Link>
       </section>
 
-      {/* ── Xero Integration Status (de-emphasised) ── */}
+      {/* ── Xero Status ── */}
       {canManageIntegrations && xeroConnection && (
-        <section>
-          <Card>
-            <CardContent className="flex items-center justify-between p-4">
-              <div className="flex items-center gap-3">
-                <Badge
-                  variant="secondary"
-                  className="gap-1 bg-success/10 text-success border-0"
-                >
-                  <CheckCircle2 className="h-3 w-3" />
-                  Xero Connected
-                </Badge>
-                {xeroConnection.xero_org_name && (
-                  <span className="text-sm text-muted-foreground">
-                    {xeroConnection.xero_org_name}
-                  </span>
+        <section className="rounded-xl border border-border/60 bg-card px-5 py-3.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Badge
+                variant="secondary"
+                className="gap-1.5 rounded-md bg-success/10 text-success border-0 text-xs font-medium"
+              >
+                <CheckCircle2 className="h-3 w-3" />
+                Connected
+              </Badge>
+              {xeroConnection.xero_org_name && (
+                <span className="text-sm text-muted-foreground">
+                  {xeroConnection.xero_org_name}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                onClick={handleSyncXpm}
+                disabled={syncing}
+              >
+                {syncing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
                 )}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleSyncXpm}
-                  disabled={syncing}
-                >
-                  {syncing ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  )}
-                  {syncing ? "Syncing…" : "Sync Now"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="gap-1.5 text-muted-foreground"
-                  onClick={handleDisconnectXero}
-                  disabled={disconnecting}
-                >
-                  {disconnecting ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Unplug className="h-3.5 w-3.5" />
-                  )}
-                  Disconnect
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                {syncing ? "Syncing…" : "Sync"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                onClick={handleDisconnectXero}
+                disabled={disconnecting}
+              >
+                {disconnecting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Unplug className="h-3.5 w-3.5" />
+                )}
+                Disconnect
+              </Button>
+            </div>
+          </div>
         </section>
       )}
     </div>

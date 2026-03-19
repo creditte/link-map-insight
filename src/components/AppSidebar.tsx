@@ -30,9 +30,9 @@ export default function AppSidebar() {
   const logoUrl = tenant?.logo_url;
 
   return (
-    <aside className="flex h-screen w-56 flex-col border-r border-sidebar-border bg-sidebar">
-      {/* Logo / Workspace */}
-      <div className="flex h-14 items-center border-b border-sidebar-border px-4 gap-2.5">
+    <aside className="flex h-screen w-[220px] flex-col border-r border-border/50 bg-card/50">
+      {/* Logo */}
+      <div className="flex h-16 items-center gap-2.5 px-5">
         {logoUrl ? (
           <img
             src={`${logoUrl}?t=1`}
@@ -44,20 +44,20 @@ export default function AppSidebar() {
             <Network className="h-3.5 w-3.5 text-primary-foreground" />
           </div>
         )}
-        <span className="truncate text-sm font-semibold text-sidebar-foreground">
+        <span className="truncate text-sm font-semibold text-foreground">
           {firmName ?? "strukcha"}
         </span>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-0.5 px-2 pt-3">
+      {/* Nav */}
+      <nav className="flex-1 space-y-0.5 px-3 pt-2">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.to === "/"}
-            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            activeClassName="bg-accent text-foreground font-semibold"
           >
             <item.icon className="h-4 w-4" />
             {item.label}
@@ -66,15 +66,15 @@ export default function AppSidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-sidebar-border p-3 space-y-1">
-        <p className="mb-1 truncate text-[11px] text-sidebar-foreground/40">
+      <div className="border-t border-border/50 px-4 py-3.5 space-y-1.5">
+        <p className="truncate text-[11px] text-muted-foreground/60">
           {user?.email}
         </p>
         <FeedbackModal />
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start gap-2 text-sidebar-foreground/60 hover:text-sidebar-foreground"
+          className="w-full justify-start gap-2 text-xs text-muted-foreground hover:text-foreground"
           onClick={signOut}
         >
           <LogOut className="h-3.5 w-3.5" />
