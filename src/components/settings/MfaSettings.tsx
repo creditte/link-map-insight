@@ -145,6 +145,7 @@ export default function MfaSettings() {
     } catch (err: any) {
       toast({ title: "Verification failed", description: err.message, variant: "destructive" });
       setCode("");
+      autoSubmitTriggered.current = false;
     } finally {
       setSubmitting(false);
     }
