@@ -35,6 +35,12 @@ export default function MfaSettings() {
   async function startSwitchToTotp() {
     setSubmitting(true);
     try {
+      // Unenroll any existing TOTP factors first to avoid name conflicts
+      const { data: existingFactors } = await supabase.auth.mfa.listFactors();
+      for (const f of existingFactors?.totp ?? []) {
+        await supabase.auth.mfa.unenroll({ factorId: f.id });
+      }
+
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: "totp",
         friendlyName: "Authenticator App",
