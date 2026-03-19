@@ -72,7 +72,7 @@ export default function SettingsPage() {
           <TenantSettings isAdmin={isOwnerOrAdmin} />
         </TabsContent>
 
-        <TabsContent value="security" className="mt-4" forceMount>
+        <TabsContent value="security" className="mt-4">
           <MfaSettings />
         </TabsContent>
 
