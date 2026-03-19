@@ -169,7 +169,7 @@ function StructureGraphInner({
   entities, relationships, selectedEntityId, onSelectEntity, onSelectEdge,
   autoLayoutTrigger, layoutMode, layoutStrategy, pinnedNodeIds, onTogglePin, viewMode,
   searchHighlightId, fitViewTrigger, dbPositions, onPositionsChanged, nodesDraggable: nodesDraggableProp,
-  onContextMenu,
+  onContextMenu, issueOverlays = [],
 }: Props) {
   const { fitView, screenToFlowPosition } = useReactFlow();
   const prevLayoutTrigger = useRef(0);
