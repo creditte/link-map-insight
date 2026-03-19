@@ -148,12 +148,59 @@ export default function Review() {
               Scanning for issues…
             </div>
           ) : allResolved ? (
-            /* ── Completion state ── */
-            <div className="rounded-2xl border border-success/20 bg-success/5 px-8 py-14 text-center space-y-5">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-success/10">
-                <CheckCircle2 className="h-7 w-7 text-success" />
+            /* ── Completion state with celebration ── */
+            <div className="relative rounded-2xl border border-success/20 bg-success/5 px-8 py-14 text-center space-y-5 overflow-hidden">
+              {/* Confetti particles */}
+              <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+                {Array.from({ length: 24 }).map((_, i) => (
+                  <span
+                    key={i}
+                    className="absolute block rounded-full animate-confetti"
+                    style={{
+                      width: `${4 + Math.random() * 6}px`,
+                      height: `${4 + Math.random() * 6}px`,
+                      left: `${10 + Math.random() * 80}%`,
+                      top: "-8px",
+                      backgroundColor: [
+                        "hsl(var(--success))",
+                        "hsl(var(--primary))",
+                        "hsl(var(--warning))",
+                        "hsl(152 56% 70%)",
+                        "hsl(220 65% 70%)",
+                        "hsl(38 92% 65%)",
+                      ][i % 6],
+                      animationDelay: `${Math.random() * 0.6}s`,
+                      animationDuration: `${1.2 + Math.random() * 0.8}s`,
+                    }}
+                  />
+                ))}
               </div>
-              <div className="space-y-1.5">
+
+              {/* Animated checkmark */}
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-success/10 animate-scale-in">
+                <svg
+                  className="h-9 w-9 text-success"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle
+                    cx="12" cy="12" r="10"
+                    className="animate-draw-circle"
+                    style={{ strokeDasharray: 63, strokeDashoffset: 63 }}
+                  />
+                  <path
+                    d="M8 12l3 3 5-5"
+                    className="animate-draw-check"
+                    style={{ strokeDasharray: 14, strokeDashoffset: 14 }}
+                  />
+                </svg>
+              </div>
+
+              <div className="space-y-1.5 animate-fade-in-up" style={{ animationDelay: "0.5s", animationFillMode: "both" }}>
                 <h3 className="text-xl font-semibold text-foreground">
                   All issues resolved
                 </h3>
@@ -163,7 +210,8 @@ export default function Review() {
               </div>
               <Button
                 size="lg"
-                className="gap-2 rounded-xl px-6 text-sm font-medium"
+                className="gap-2 rounded-xl px-6 text-sm font-medium animate-fade-in-up"
+                style={{ animationDelay: "0.7s", animationFillMode: "both" }}
                 onClick={() => navigate("/structures")}
               >
                 <Download className="h-4 w-4" />
