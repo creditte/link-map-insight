@@ -670,6 +670,27 @@ export type Database = {
           },
         ]
       }
+      stripe_webhook_events: {
+        Row: {
+          event_type: string
+          id: string
+          payload: Json | null
+          processed_at: string
+        }
+        Insert: {
+          event_type: string
+          id: string
+          payload?: Json | null
+          processed_at?: string
+        }
+        Update: {
+          event_type?: string
+          id?: string
+          payload?: Json | null
+          processed_at?: string
+        }
+        Relationships: []
+      }
       structure_entities: {
         Row: {
           entity_id: string
@@ -959,9 +980,17 @@ export type Database = {
       }
       tenants: {
         Row: {
+          access_enabled: boolean | null
+          access_locked_reason: string | null
           allow_admin_integrations: boolean
           brand_primary_color: string | null
+          cancel_at_period_end: boolean | null
+          canceled_at: string | null
           created_at: string
+          current_period_end: string | null
+          current_period_start: string | null
+          diagram_count: number | null
+          diagram_limit: number | null
           export_block_on_critical_health: boolean
           export_default_view_mode: string
           export_disclaimer_text: string | null
@@ -971,15 +1000,27 @@ export type Database = {
           id: string
           logo_url: string | null
           name: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          subscription_plan: string | null
           subscription_status: string
           trial_ends_at: string | null
           trial_starts_at: string | null
+          trial_used_at: string | null
           updated_at: string
         }
         Insert: {
+          access_enabled?: boolean | null
+          access_locked_reason?: string | null
           allow_admin_integrations?: boolean
           brand_primary_color?: string | null
+          cancel_at_period_end?: boolean | null
+          canceled_at?: string | null
           created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          diagram_count?: number | null
+          diagram_limit?: number | null
           export_block_on_critical_health?: boolean
           export_default_view_mode?: string
           export_disclaimer_text?: string | null
@@ -989,15 +1030,27 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_plan?: string | null
           subscription_status?: string
           trial_ends_at?: string | null
           trial_starts_at?: string | null
+          trial_used_at?: string | null
           updated_at?: string
         }
         Update: {
+          access_enabled?: boolean | null
+          access_locked_reason?: string | null
           allow_admin_integrations?: boolean
           brand_primary_color?: string | null
+          cancel_at_period_end?: boolean | null
+          canceled_at?: string | null
           created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          diagram_count?: number | null
+          diagram_limit?: number | null
           export_block_on_critical_health?: boolean
           export_default_view_mode?: string
           export_disclaimer_text?: string | null
@@ -1007,9 +1060,13 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_plan?: string | null
           subscription_status?: string
           trial_ends_at?: string | null
           trial_starts_at?: string | null
+          trial_used_at?: string | null
           updated_at?: string
         }
         Relationships: []
