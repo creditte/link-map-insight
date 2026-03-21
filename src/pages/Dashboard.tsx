@@ -393,6 +393,7 @@ export default function Dashboard() {
           </div>
         </section>
       )}
+      <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
     </div>
   );
 }
