@@ -47,7 +47,10 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { currentUser, loading: usersLoading } = useTenantUsers();
   const { tenant, loading: tenantLoading } = useTenantSettings();
+  const { billing } = useBilling();
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
 
+  const atDiagramLimit = billing ? billing.diagram_count >= billing.diagram_limit : false;
   const permissionsLoaded = !usersLoading && !tenantLoading;
   const userRole = currentUser?.role ?? null;
   const canManageIntegrations =
