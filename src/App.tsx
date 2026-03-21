@@ -28,6 +28,8 @@ import SetupPassword from "./pages/SetupPassword";
 import ProtectedAdminRoute from "@/components/ProtectedAdminRoute";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminTenantDetail from "./pages/admin/AdminTenantDetail";
+import BillingSuccess from "./pages/BillingSuccess";
+import SubscriptionLocked from "./pages/SubscriptionLocked";
 
 const queryClient = new QueryClient();
 
@@ -49,6 +51,8 @@ const App = () => (
               <Route path="/mfa-verify" element={<MfaVerify />} />
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/setup-password" element={<SetupPassword />} />
+              <Route path="/billing/success" element={<BillingSuccess />} />
+              <Route path="/subscription-locked" element={<SubscriptionLocked />} />
               {/* Super Admin routes */}
               <Route path="/admin" element={<ProtectedAdminRoute><AdminDashboard /></ProtectedAdminRoute>} />
               <Route path="/admin/tenants/:tenantId" element={<ProtectedAdminRoute><AdminTenantDetail /></ProtectedAdminRoute>} />

@@ -1,9 +1,10 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Building2, MessageSquare, Shield, AlertTriangle, Lock } from "lucide-react";
+import { Users, Building2, MessageSquare, Shield, AlertTriangle, Lock, CreditCard } from "lucide-react";
 import UsersManagement from "@/components/settings/UsersManagement";
 import TenantSettings from "@/components/settings/TenantSettings";
 import FeedbackSettings from "@/components/settings/FeedbackSettings";
 import MfaSettings from "@/components/settings/MfaSettings";
+import BillingSettings from "@/components/settings/BillingSettings";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { Loader2 } from "lucide-react";
 
@@ -23,7 +24,6 @@ export default function SettingsPage() {
     );
   }
 
-  // Access removed screen for disabled/deleted users
   if (status === "disabled" || status === "deleted") {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -56,6 +56,11 @@ export default function SettingsPage() {
             <Lock className="h-3.5 w-3.5" /> Security
           </TabsTrigger>
           {isOwnerOrAdmin && (
+            <TabsTrigger value="billing" className="gap-1.5">
+              <CreditCard className="h-3.5 w-3.5" /> Billing
+            </TabsTrigger>
+          )}
+          {isOwnerOrAdmin && (
             <TabsTrigger value="feedback" className="gap-1.5">
               <MessageSquare className="h-3.5 w-3.5" /> Feedback
             </TabsTrigger>
@@ -75,6 +80,12 @@ export default function SettingsPage() {
         <TabsContent value="security" className="mt-4">
           <MfaSettings />
         </TabsContent>
+
+        {isOwnerOrAdmin && (
+          <TabsContent value="billing" className="mt-4">
+            <BillingSettings />
+          </TabsContent>
+        )}
 
         {isOwnerOrAdmin && (
           <TabsContent value="feedback" className="mt-4">
