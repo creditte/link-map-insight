@@ -292,7 +292,7 @@ export default function Dashboard() {
             </ul>
             <Button
               className="mt-8 gap-2 rounded-xl px-6"
-              onClick={() => navigate("/structures")}
+              onClick={() => atDiagramLimit ? setShowLimitDialog(true) : navigate("/structures")}
             >
               <Plus className="h-4 w-4" />
               Create New Structure
