@@ -152,7 +152,7 @@ export default function MfaSetup() {
         .upsert({ user_id: user.id, method: "email" }, { onConflict: "user_id" });
 
       toast({ title: "MFA Enabled", description: "Email verification is now set up." });
-      navigate("/", { replace: true });
+      await redirectAfterMfa(navigate);
     } catch (err: any) {
       toast({ title: "Verification failed", description: err.message, variant: "destructive" });
       setCode("");
