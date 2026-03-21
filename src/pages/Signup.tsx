@@ -312,7 +312,7 @@ export default function Signup() {
                 </Button>
 
                 <p className="text-center text-xs text-muted-foreground">
-                  7-day free trial · No credit card required
+                  7-day free trial · Then A$149/month · No credit card required
                 </p>
               </form>
             </CardContent>
