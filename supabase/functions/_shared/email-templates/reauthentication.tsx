@@ -19,10 +19,10 @@ interface ReauthenticationEmailProps {
 export const ReauthenticationEmail = ({ token }: ReauthenticationEmailProps) => (
   <Html lang="en" dir="ltr">
     <Head />
-    <Preview>Your verification code for Strukcha</Preview>
+    <Preview>Your verification code for strukcha</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Text style={brand}>Strukcha</Text>
+        <Text style={brand}>strukcha</Text>
         <Heading style={h1}>Confirm reauthentication</Heading>
         <Text style={text}>Use the code below to confirm your identity:</Text>
         <Text style={codeStyle}>{token}</Text>

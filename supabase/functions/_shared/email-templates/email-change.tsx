@@ -29,13 +29,13 @@ export const EmailChangeEmail = ({
 }: EmailChangeEmailProps) => (
   <Html lang="en" dir="ltr">
     <Head />
-    <Preview>Confirm your email change for Strukcha</Preview>
+    <Preview>Confirm your email change for strukcha</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Text style={brand}>Strukcha</Text>
+        <Text style={brand}>strukcha</Text>
         <Heading style={h1}>Confirm your email change</Heading>
         <Text style={text}>
-          You requested to change your email address for Strukcha from{' '}
+          You requested to change your email address for strukcha from{' '}
           <Link href={`mailto:${email}`} style={link}>
             {email}
           </Link>{' '}

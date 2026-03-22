@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
           await send("DATA");
 
           const emailBody = [
-            `From: Strukcha <${smtpUser}>`,
+            `From: strukcha <${smtpUser}>`,
             `To: ${user.email}`,
             `Subject: Your verification code: ${verificationCode}`,
             `MIME-Version: 1.0`,

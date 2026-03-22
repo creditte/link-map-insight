@@ -29,15 +29,15 @@ export const SignupEmail = ({
 }: SignupEmailProps) => (
   <Html lang="en" dir="ltr">
     <Head />
-    <Preview>Confirm your email for Strukcha</Preview>
+    <Preview>Confirm your email for strukcha</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Text style={brand}>Strukcha</Text>
+        <Text style={brand}>strukcha</Text>
         <Heading style={h1}>Confirm your email</Heading>
         <Text style={text}>
           Thanks for signing up for{' '}
           <Link href={siteUrl} style={link}>
-            <strong>Strukcha</strong>
+            <strong>strukcha</strong>
           </Link>
           !
         </Text>

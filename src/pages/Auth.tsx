@@ -94,7 +94,7 @@ export default function Auth() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold tracking-tight">Strukcha</CardTitle>
+          <CardTitle className="text-2xl font-bold tracking-tight">strukcha</CardTitle>
           <CardDescription>Sign in to your account</CardDescription>
         </CardHeader>
         <CardContent>
