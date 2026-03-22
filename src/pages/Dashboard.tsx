@@ -22,7 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
 import { useBilling } from "@/hooks/useBilling";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, differenceInDays } from "date-fns";
 import BillingBanner from "@/components/BillingBanner";
 import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 
@@ -184,45 +184,157 @@ export default function Dashboard() {
 
   const hasStructures = structureCount > 0;
 
+  // Compute last updated for hero summary
+  const lastUpdated = recentStructures.length > 0
+    ? formatDistanceToNow(new Date(recentStructures[0].updated_at), { addSuffix: true })
+    : null;
+
+  // Simple health dot — random for now (would come from real scoring data)
+  const getHealthColor = (updatedAt: string) => {
+    const days = differenceInDays(new Date(), new Date(updatedAt));
+    if (days > 30) return "bg-destructive";
+    if (days > 14) return "bg-warning";
+    return "bg-success";
+  };
+
+  const isStale = (updatedAt: string) => differenceInDays(new Date(), new Date(updatedAt)) > 14;
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-16 space-y-14">
       {/* ── Billing Banner ── */}
       <BillingBanner />
-      <section className="space-y-6">
-        <div className="space-y-2">
-          <h1 className="text-4xl font-semibold tracking-tight text-foreground">
-            Build a structure
-          </h1>
-          <p className="text-base text-muted-foreground max-w-md">
-            Create a clean, visual structure for your client in minutes.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button
-            size="lg"
-            className="gap-2 rounded-xl px-6 text-sm font-medium shadow-sm"
-            onClick={() => atDiagramLimit ? setShowLimitDialog(true) : navigate("/structures")}
-          >
-            <Plus className="h-4 w-4" />
-            Create New Structure
-          </Button>
-          {canManageIntegrations && !xeroConnection && (
-            <Button
-              variant="outline"
-              size="lg"
-              className="gap-2 rounded-xl px-6 text-sm font-medium"
-              onClick={handleConnectXero}
-              disabled={xeroLoading}
-            >
-              {xeroLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="h-4 w-4" />
+
+      {/* ── Hero Section ── */}
+      <section className="space-y-5">
+        {hasStructures ? (
+          <>
+            <div className="space-y-1.5">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                You have {structureCount} structure{structureCount !== 1 ? "s" : ""} — last updated {lastUpdated}
+              </h1>
+              <p className="text-sm text-muted-foreground max-w-md">
+                Continue working on a recent structure or create a new one.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                className="gap-2 rounded-xl px-5 text-sm font-medium"
+                onClick={() => atDiagramLimit ? setShowLimitDialog(true) : navigate("/structures")}
+              >
+                <Plus className="h-4 w-4" />
+                Create New Structure
+              </Button>
+              {canManageIntegrations && !xeroConnection && (
+                <Button
+                  variant="ghost"
+                  className="gap-2 rounded-xl px-5 text-sm font-medium text-muted-foreground"
+                  onClick={handleConnectXero}
+                  disabled={xeroLoading}
+                >
+                  {xeroLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
+                  Import from Xero
+                </Button>
               )}
-              Import from Xero
-            </Button>
-          )}
-        </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="space-y-2">
+              <h1 className="text-4xl font-semibold tracking-tight text-foreground">
+                Build a structure
+              </h1>
+              <p className="text-base text-muted-foreground max-w-md">
+                Create a clean, visual structure for your client in minutes.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                size="lg"
+                className="gap-2 rounded-xl px-6 text-sm font-medium shadow-sm"
+                onClick={() => atDiagramLimit ? setShowLimitDialog(true) : navigate("/structures")}
+              >
+                <Plus className="h-4 w-4" />
+                Create New Structure
+              </Button>
+              {canManageIntegrations && !xeroConnection && (
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="gap-2 rounded-xl px-6 text-sm font-medium"
+                  onClick={handleConnectXero}
+                  disabled={xeroLoading}
+                >
+                  {xeroLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
+                  Import from Xero
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* ── Workflow Cards (moved above recent structures) ── */}
+      <section className="grid gap-5 sm:grid-cols-2">
+        <Link
+          to="/governance"
+          className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
+        >
+          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-success/10">
+            <HeartPulse className="h-5 w-5 text-success" />
+          </div>
+          <h3 className="text-[15px] font-semibold text-foreground">
+            Health Check
+          </h3>
+          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+            Assess the health of client structures and identify issues quickly.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4 gap-1.5 text-xs"
+            asChild
+          >
+            <span>
+              Run Health Check
+              <ArrowRight className="h-3 w-3" />
+            </span>
+          </Button>
+        </Link>
+
+        <Link
+          to="/review"
+          className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
+        >
+          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+            <Sparkles className="h-5 w-5 text-primary" />
+          </div>
+          <h3 className="text-[15px] font-semibold text-foreground">
+            Review &amp; Improve
+          </h3>
+          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+            Review flagged issues and improve structure quality.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4 gap-1.5 text-xs"
+            asChild
+          >
+            <span>
+              Review Issues
+              <ArrowRight className="h-3 w-3" />
+            </span>
+          </Button>
+        </Link>
       </section>
 
       {/* ── Recent Structures ── */}
@@ -232,41 +344,50 @@ export default function Dashboard() {
             Recent Structures
           </h2>
           {hasStructures && (
-            <Link
-              to="/structures"
-              className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              View All <ArrowRight className="h-3 w-3" />
-            </Link>
+            <Button variant="outline" size="sm" className="text-xs gap-1.5" asChild>
+              <Link to="/structures">
+                View All <ArrowRight className="h-3 w-3" />
+              </Link>
+            </Button>
           )}
         </div>
 
         {hasStructures ? (
           <div className="space-y-1.5">
-            {recentStructures.map((s) => (
-              <Link
-                key={s.id}
-                to={`/structures/${s.id}`}
-                className="group flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4 transition-all hover:border-border hover:shadow-sm"
-              >
-                <div className="flex items-center gap-3.5">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/8">
-                    <Network className="h-4 w-4 text-primary" />
+            {recentStructures.map((s) => {
+              const stale = isStale(s.updated_at);
+              return (
+                <Link
+                  key={s.id}
+                  to={`/structures/${s.id}`}
+                  className="group flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4 transition-all hover:border-border hover:shadow-sm"
+                >
+                  <div className="flex items-center gap-3.5">
+                    {/* Health dot */}
+                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${getHealthColor(s.updated_at)}`} />
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/8">
+                      <Network className="h-4 w-4 text-primary" />
+                    </div>
+                    <div>
+                      <span className={`text-sm font-medium ${stale ? "text-muted-foreground" : "text-foreground"}`}>
+                        {s.name}
+                      </span>
+                      {stale && (
+                        <p className="text-[11px] text-muted-foreground/60 mt-0.5">Not recently updated</p>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-sm font-medium text-foreground">
-                    {s.name}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(new Date(s.updated_at), {
-                      addSuffix: true,
-                    })}
-                  </span>
-                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
-                </div>
-              </Link>
-            ))}
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(s.updated_at), {
+                        addSuffix: true,
+                      })}
+                    </span>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-border/80 bg-card px-8 py-16 text-center">
@@ -301,50 +422,9 @@ export default function Dashboard() {
         )}
       </section>
 
-      {/* ── Workflow Cards ── */}
-      <section className="grid gap-5 sm:grid-cols-2">
-        <Link
-          to="/governance"
-          className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
-        >
-          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-success/10">
-            <HeartPulse className="h-5 w-5 text-success" />
-          </div>
-          <h3 className="text-[15px] font-semibold text-foreground">
-            Health Check
-          </h3>
-          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-            Assess the health of client structures and identify issues quickly.
-          </p>
-          <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-primary transition-colors group-hover:text-primary/80">
-            Run Health Check
-            <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
-          </span>
-        </Link>
-
-        <Link
-          to="/review"
-          className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
-        >
-          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/8">
-            <Sparkles className="h-5 w-5 text-primary" />
-          </div>
-          <h3 className="text-[15px] font-semibold text-foreground">
-            Review &amp; Improve
-          </h3>
-          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-            Review flagged issues and improve structure quality.
-          </p>
-          <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-primary transition-colors group-hover:text-primary/80">
-            Review Issues
-            <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
-          </span>
-        </Link>
-      </section>
-
       {/* ── Xero Status ── */}
       {canManageIntegrations && xeroConnection && (
-        <section className="rounded-xl border border-border/60 bg-card px-5 py-3.5">
+        <section className="rounded-xl border-t border-border/60 bg-muted/30 px-5 py-3.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Badge
@@ -375,20 +455,13 @@ export default function Dashboard() {
                 )}
                 {syncing ? "Syncing…" : "Sync"}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              <button
+                className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors disabled:opacity-50"
                 onClick={handleDisconnectXero}
                 disabled={disconnecting}
               >
-                {disconnecting ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Unplug className="h-3.5 w-3.5" />
-                )}
-                Disconnect
-              </Button>
+                {disconnecting ? "Disconnecting…" : "Disconnect"}
+              </button>
             </div>
           </div>
         </section>
