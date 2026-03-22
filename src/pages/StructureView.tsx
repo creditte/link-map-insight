@@ -794,6 +794,7 @@ export default function StructureView() {
             nodesDraggable={!isViewingSnapshot && dbLayoutMode === "manual"}
             onContextMenu={handleContextMenu}
             issueOverlays={issueOverlays}
+            onConnect={handleConnect}
           />
         )}
 
