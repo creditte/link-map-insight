@@ -2,6 +2,7 @@ import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import FeedbackModal from "@/components/FeedbackModal";
 import {
   Home,
@@ -12,22 +13,27 @@ import {
   Settings,
   LogOut,
 } from "lucide-react";
+import { useLocation } from "react-router-dom";
 
 const navItems = [
-  { to: "/", label: "Home", icon: Home },
-  { to: "/structures", label: "Structures", icon: Network },
-  { to: "/governance", label: "Health Check", icon: HeartPulse },
-  { to: "/review", label: "Review & Improve", icon: Sparkles },
-  { to: "/import", label: "Import", icon: Upload },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/", label: "Home", icon: Home, requiresStructure: false },
+  { to: "/structures", label: "Structures", icon: Network, requiresStructure: false },
+  { to: "/governance", label: "Health Check", icon: HeartPulse, requiresStructure: true },
+  { to: "/review", label: "Review & Improve", icon: Sparkles, requiresStructure: true },
+  { to: "/import", label: "Import", icon: Upload, requiresStructure: false },
+  { to: "/settings", label: "Settings", icon: Settings, requiresStructure: false },
 ];
 
 export default function AppSidebar() {
   const { signOut, user } = useAuth();
   const { tenant } = useTenantSettings();
+  const location = useLocation();
 
   const firmName = tenant?.firm_name || tenant?.name;
   const logoUrl = tenant?.logo_url;
+
+  // Check if a structure is currently selected (i.e. on a /structures/:id route)
+  const isStructureSelected = /^\/structures\/[^/]+/.test(location.pathname);
 
   return (
     <aside className="flex h-screen w-[220px] flex-col border-r border-border/50 bg-card/50">
@@ -51,18 +57,40 @@ export default function AppSidebar() {
 
       {/* Nav */}
       <nav className="flex-1 space-y-0.5 px-3 pt-2">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === "/"}
-            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            activeClassName="bg-accent text-foreground font-semibold"
-          >
-            <item.icon className="h-4 w-4" />
-            {item.label}
-          </NavLink>
-        ))}
+        {navItems.map((item) => {
+          const disabled = item.requiresStructure && !isStructureSelected;
+
+          if (disabled) {
+            return (
+              <Tooltip key={item.to}>
+                <TooltipTrigger asChild>
+                  <div
+                    className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium text-muted-foreground/50 cursor-not-allowed select-none"
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="text-xs">
+                  Select a structure to use this feature.
+                </TooltipContent>
+              </Tooltip>
+            );
+          }
+
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to === "/"}
+              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              activeClassName="bg-accent text-foreground font-semibold"
+            >
+              <item.icon className="h-4 w-4" />
+              {item.label}
+            </NavLink>
+          );
+        })}
       </nav>
 
       {/* Footer */}
