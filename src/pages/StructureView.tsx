@@ -756,9 +756,22 @@ export default function StructureView() {
           />
         )}
 
+        {/* Relationship type picker for drag-to-connect */}
+        {pendingConnection && (
+          <RelationshipTypePicker
+            open={true}
+            fromEntityName={entities.find(e => e.id === pendingConnection.source)?.name ?? "Entity"}
+            toEntityName={entities.find(e => e.id === pendingConnection.target)?.name ?? "Entity"}
+            onConfirm={handleConfirmRelationship}
+            onCancel={() => setPendingConnection(null)}
+          />
+        )}
+
         {visibleEntities.length === 0 ? (
           <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-muted-foreground">No entities to display.</p>
+            <div className="rounded-xl border-2 border-dashed border-border/60 px-10 py-12 text-center max-w-sm">
+              <p className="text-sm text-muted-foreground">Right-click anywhere on the canvas to add your first entity.</p>
+            </div>
           </div>
         ) : (
           <StructureGraph
