@@ -284,57 +284,53 @@ export default function Dashboard() {
 
       {/* ── Workflow Cards (moved above recent structures) ── */}
       <section className="grid gap-5 sm:grid-cols-2">
-        <Link
-          to="/governance"
-          className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
-        >
-          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-success/10">
-            <HeartPulse className="h-5 w-5 text-success" />
-          </div>
-          <h3 className="text-[15px] font-semibold text-foreground">
-            Health Check
-          </h3>
-          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-            Assess the health of client structures and identify issues quickly.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-4 gap-1.5 text-xs"
-            asChild
-          >
-            <span>
-              Run Health Check
-              <ArrowRight className="h-3 w-3" />
-            </span>
-          </Button>
-        </Link>
-
-        <Link
-          to="/review"
-          className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
-        >
-          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-            <Sparkles className="h-5 w-5 text-primary" />
-          </div>
-          <h3 className="text-[15px] font-semibold text-foreground">
-            Review &amp; Improve
-          </h3>
-          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-            Review flagged issues and improve structure quality.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-4 gap-1.5 text-xs"
-            asChild
-          >
-            <span>
-              Review Issues
-              <ArrowRight className="h-3 w-3" />
-            </span>
-          </Button>
-        </Link>
+        {structureCount === 0 ? (
+          <>
+            <div className="rounded-2xl border border-border/60 bg-card p-6 opacity-50 cursor-not-allowed">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-success/10">
+                <HeartPulse className="h-5 w-5 text-success" />
+              </div>
+              <h3 className="text-[15px] font-semibold text-foreground">Health Check</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">Assess the health of client structures and identify issues quickly.</p>
+              <Button variant="secondary" size="sm" className="mt-4 gap-1.5 text-xs" disabled>
+                Run Health Check <ArrowRight className="h-3 w-3" />
+              </Button>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-card p-6 opacity-50 cursor-not-allowed">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                <Sparkles className="h-5 w-5 text-primary" />
+              </div>
+              <h3 className="text-[15px] font-semibold text-foreground">Review &amp; Improve</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">Review flagged issues and improve structure quality.</p>
+              <Button variant="secondary" size="sm" className="mt-4 gap-1.5 text-xs" disabled>
+                Review Issues <ArrowRight className="h-3 w-3" />
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <Link to="/governance" className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-success/10">
+                <HeartPulse className="h-5 w-5 text-success" />
+              </div>
+              <h3 className="text-[15px] font-semibold text-foreground">Health Check</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">Assess the health of client structures and identify issues quickly.</p>
+              <Button size="sm" className="mt-4 gap-1.5 text-xs" asChild>
+                <span>Run Health Check <ArrowRight className="h-3 w-3" /></span>
+              </Button>
+            </Link>
+            <Link to="/review" className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                <Sparkles className="h-5 w-5 text-primary" />
+              </div>
+              <h3 className="text-[15px] font-semibold text-foreground">Review &amp; Improve</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">Review flagged issues and improve structure quality.</p>
+              <Button size="sm" className="mt-4 gap-1.5 text-xs" asChild>
+                <span>Review Issues <ArrowRight className="h-3 w-3" /></span>
+              </Button>
+            </Link>
+          </>
+        )}
       </section>
 
       {/* ── Recent Structures ── */}
