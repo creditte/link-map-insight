@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Upload, Trash2, Loader2, Palette, FileText, Save, Link2 } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Building2, Upload, Trash2, Loader2, Palette, FileText, Save, ChevronDown, X } from "lucide-react";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 
 interface Props {
@@ -26,6 +27,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // Form state
   const [firmName, setFirmName] = useState("");
@@ -37,6 +39,14 @@ export default function TenantSettings({ isAdmin = false }: Props) {
   const [blockOnCritical, setBlockOnCritical] = useState(false);
   const [defaultViewMode, setDefaultViewMode] = useState("full");
   const [allowAdminIntegrations, setAllowAdminIntegrations] = useState(false);
+
+  // Track initial state for dirty detection
+  const [initial, setInitial] = useState<Record<string, unknown>>({});
+  const currentState = {
+    firmName, brandColor, exportFooter, exportDisclaimer, showDisclaimer,
+    blockOnCritical, defaultViewMode, allowAdminIntegrations,
+  };
+  const isDirty = JSON.stringify(currentState) !== JSON.stringify(initial);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -50,15 +60,30 @@ export default function TenantSettings({ isAdmin = false }: Props) {
 
       if (tenant) {
         setTenantId(tenant.id);
-        setFirmName(tenant.firm_name ?? tenant.name);
+        const fn = tenant.firm_name ?? tenant.name;
+        const bc = tenant.brand_primary_color ?? "#0F172A";
+        const ef = tenant.export_footer_text ?? "";
+        const ed = tenant.export_disclaimer_text ?? "";
+        const sd = tenant.export_show_disclaimer ?? false;
+        const boc = tenant.export_block_on_critical_health ?? false;
+        const dvm = tenant.export_default_view_mode ?? "full";
+        const aai = (tenant as any).allow_admin_integrations ?? false;
+
+        setFirmName(fn);
         setLogoUrl(tenant.logo_url ?? null);
-        setBrandColor(tenant.brand_primary_color ?? "#0F172A");
-        setExportFooter(tenant.export_footer_text ?? "");
-        setExportDisclaimer(tenant.export_disclaimer_text ?? "");
-        setShowDisclaimer(tenant.export_show_disclaimer ?? false);
-        setBlockOnCritical(tenant.export_block_on_critical_health ?? false);
-        setDefaultViewMode(tenant.export_default_view_mode ?? "full");
-        setAllowAdminIntegrations((tenant as any).allow_admin_integrations ?? false);
+        setBrandColor(bc);
+        setExportFooter(ef);
+        setExportDisclaimer(ed);
+        setShowDisclaimer(sd);
+        setBlockOnCritical(boc);
+        setDefaultViewMode(dvm);
+        setAllowAdminIntegrations(aai);
+
+        setInitial({
+          firmName: fn, brandColor: bc, exportFooter: ef, exportDisclaimer: ed,
+          showDisclaimer: sd, blockOnCritical: boc, defaultViewMode: dvm,
+          allowAdminIntegrations: aai,
+        });
       }
       setLoading(false);
     }
@@ -90,9 +115,21 @@ export default function TenantSettings({ isAdmin = false }: Props) {
       toast({ title: "Save failed", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Settings saved" });
+      setInitial({ ...currentState });
     }
     setSaving(false);
   }, [tenantId, firmName, brandColor, exportFooter, exportDisclaimer, showDisclaimer, blockOnCritical, defaultViewMode, allowAdminIntegrations, isOwner, toast]);
+
+  const handleDiscard = () => {
+    setFirmName(initial.firmName as string);
+    setBrandColor(initial.brandColor as string);
+    setExportFooter(initial.exportFooter as string);
+    setExportDisclaimer(initial.exportDisclaimer as string);
+    setShowDisclaimer(initial.showDisclaimer as boolean);
+    setBlockOnCritical(initial.blockOnCritical as boolean);
+    setDefaultViewMode(initial.defaultViewMode as string);
+    setAllowAdminIntegrations(initial.allowAdminIntegrations as boolean);
+  };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -143,7 +180,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
   if (loading) return <p className="text-sm text-muted-foreground">Loading...</p>;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-20">
       <div>
         <h2 className="text-lg font-semibold">Firm Settings</h2>
         <p className="text-sm text-muted-foreground">
@@ -230,6 +267,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
               />
               <Input value={brandColor} onChange={(e) => setBrandColor(e.target.value)} className="w-28 font-mono text-xs" placeholder="#0F172A" />
             </div>
+            <p className="text-xs text-muted-foreground">Used as accent colour in exported PDFs and reports.</p>
           </CardContent>
         </Card>
       )}
@@ -284,24 +322,43 @@ export default function TenantSettings({ isAdmin = false }: Props) {
                 />
               </div>
             )}
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-0.5">
-                <Label className="text-sm">Block Exports on Critical Health</Label>
-                <p className="text-xs text-muted-foreground">Prevent exports when structure health is Critical.</p>
-              </div>
-              <Switch checked={blockOnCritical} onCheckedChange={setBlockOnCritical} />
-            </div>
+
+            {/* Advanced section */}
+            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+              <CollapsibleTrigger className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors pt-2">
+                <ChevronDown className={`h-4 w-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />
+                Advanced
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm">Block Exports on Critical Health</Label>
+                    <p className="text-xs text-muted-foreground">Prevent exports when structure health is Critical.</p>
+                  </div>
+                  <Switch checked={blockOnCritical} onCheckedChange={setBlockOnCritical} />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           </CardContent>
         </Card>
       )}
-      {/* Integration access is now managed per-user via Users tab */}
 
-      {/* Save */}
-      {isAdmin && (
-        <Button onClick={handleSave} disabled={saving} className="gap-1.5">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? "Saving…" : "Save Settings"}
-        </Button>
+      {/* Sticky save bar */}
+      {isAdmin && isDirty && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 px-6 py-3">
+          <div className="mx-auto flex max-w-lg items-center justify-between">
+            <button
+              onClick={handleDiscard}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Discard changes
+            </button>
+            <Button onClick={handleSave} disabled={saving} className="gap-1.5">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {saving ? "Saving…" : "Save Settings"}
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );
