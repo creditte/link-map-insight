@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Pin, Star, Shield, AlertCircle, AlertTriangle } from "lucide-react";
 import { getEntityIcon, getEntityColor, getEntityLabel } from "@/lib/entityTypes";
@@ -17,6 +17,7 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
   const Icon = getEntityIcon(entityType);
   const colorClass = getEntityColor(entityType);
   const label = data.label as string;
+  const [hovered, setHovered] = useState(false);
 
   const issueOutline = issueSeverity === "critical"
     ? "ring-2 ring-red-500/60 ring-offset-1 ring-offset-card"
@@ -24,19 +25,28 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
     ? "ring-2 ring-amber-500/50 ring-offset-1 ring-offset-card"
     : "";
 
+  const handleClass = hovered || selected
+    ? "!bg-primary !w-3 !h-3 !border-2 !border-background transition-all"
+    : "!bg-muted-foreground !w-2 !h-2 !opacity-0 transition-all";
+
   return (
     <>
-      <Handle type="target" position={Position.Top} className="!bg-muted-foreground !w-2 !h-2" />
+      <Handle type="target" position={Position.Top} className={handleClass} />
+      <Handle type="source" position={Position.Bottom} className={handleClass} id="bottom" />
+      <Handle type="source" position={Position.Left} className={handleClass} id="left" />
+      <Handle type="source" position={Position.Right} className={handleClass} id="right" />
       <TooltipProvider delayDuration={300}>
         <Tooltip>
           <TooltipTrigger asChild>
             <div
+              onMouseEnter={() => setHovered(true)}
+              onMouseLeave={() => setHovered(false)}
               className={`relative rounded-lg border-2 px-4 py-3 pb-4 shadow-sm transition-shadow ${colorClass} ${
                 selected ? "ring-2 ring-ring shadow-md" : issueOutline
               } ${issueSeverity === "critical" && !selected ? "animate-pulse-subtle" : ""}`}
               style={{ width: NODE_WIDTH }}
             >
-              {/* Issue indicator dot — larger */}
+              {/* Issue indicator dot */}
               {issueSeverity && !selected && (
                 <div className={`absolute -top-1.5 -left-1.5 flex h-5 w-5 items-center justify-center rounded-full shadow-sm ${
                   issueSeverity === "critical" ? "bg-red-500 text-white" : "bg-amber-500 text-white"
@@ -113,7 +123,6 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground !w-2 !h-2" />
     </>
   );
 }
