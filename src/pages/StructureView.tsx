@@ -826,12 +826,35 @@ export default function StructureView() {
             menu={contextMenu}
             onClose={() => setContextMenu(null)}
             onAddEntity={handleAddEntityFromMenu}
+            onAddEntityWithType={handleAddEntityWithType}
             onAddRelationship={handleAddRelationshipFromMenu}
             onRemoveEntity={handleRemoveEntity}
             onRemoveRelationship={handleRemoveRelationship}
+            onEditEntity={handleEditEntity}
+            onDuplicateEntity={handleDuplicateEntity}
           />
         )}
       </div>
+
+      {/* Naming dialog for new manual structures */}
+      <Dialog open={showNamingDialog} onOpenChange={setShowNamingDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Name your structure</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={newStructureName}
+            onChange={(e) => setNewStructureName(e.target.value)}
+            placeholder="e.g. Smith Family Group"
+            autoFocus
+            onKeyDown={(e) => e.key === "Enter" && newStructureName.trim() && handleSaveStructureName()}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowNamingDialog(false); setSearchParams({}, { replace: true }); }}>Skip</Button>
+            <Button onClick={handleSaveStructureName} disabled={!newStructureName.trim()}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {tenantId && id && (
         <AddEntityDialog
