@@ -229,7 +229,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-3">
               <Button
                 className="gap-2 rounded-xl px-5 text-sm font-medium"
-                onClick={() => atDiagramLimit ? setShowLimitDialog(true) : navigate("/structures")}
+                onClick={handleCreateNew}
               >
                 <Plus className="h-4 w-4" />
                 Create New Structure
@@ -265,7 +265,7 @@ export default function Dashboard() {
               <Button
                 size="lg"
                 className="gap-2 rounded-xl px-6 text-sm font-medium shadow-sm"
-                onClick={() => atDiagramLimit ? setShowLimitDialog(true) : navigate("/structures")}
+                onClick={handleCreateNew}
               >
                 <Plus className="h-4 w-4" />
                 Create New Structure
@@ -418,7 +418,7 @@ export default function Dashboard() {
             </ul>
             <Button
               className="mt-8 gap-2 rounded-xl px-6"
-              onClick={() => atDiagramLimit ? setShowLimitDialog(true) : navigate("/structures")}
+              onClick={handleCreateNew}
             >
               <Plus className="h-4 w-4" />
               Create New Structure
