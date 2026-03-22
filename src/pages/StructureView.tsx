@@ -139,7 +139,7 @@ export default function StructureView() {
     if (displayEntities.length === 0) return null;
     let latest = "";
     for (const e of displayEntities) {
-      if (e.updated_at && e.updated_at > latest) latest = e.updated_at;
+      if (e.created_at && e.created_at > latest) latest = e.created_at;
     }
     if (!latest) return null;
     try { return formatDistanceToNow(new Date(latest), { addSuffix: true }); } catch { return null; }
