@@ -38,12 +38,15 @@ export default function CanvasHealthBar({ health, onFixIssues, onViewDetails }: 
 
   return (
     <div className={`absolute top-0 left-0 right-0 z-10 flex items-center gap-4 border-b px-4 py-2.5 backdrop-blur-md ${statusConfig.bg}`}>
-      {/* Score */}
+      {/* Score with label */}
       <div className="flex items-center gap-2.5 shrink-0">
         <HeartPulse className={`h-4 w-4 ${statusConfig.text}`} />
-        <span className={`text-sm font-semibold tabular-nums ${statusConfig.text}`}>
-          Structure Health: {health.score}%
-        </span>
+        <div className="flex flex-col">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 leading-none">Firm Health</span>
+          <span className={`text-sm font-semibold tabular-nums ${statusConfig.text}`}>
+            {health.score}%
+          </span>
+        </div>
       </div>
 
       {/* Progress bar */}
@@ -65,10 +68,8 @@ export default function CanvasHealthBar({ health, onFixIssues, onViewDetails }: 
         )}
       </div>
 
-      {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Actions */}
       {totalFixable > 0 && (
         <Button variant="default" size="sm" className="h-7 gap-1.5 text-xs" onClick={onFixIssues}>
           <Wrench className="h-3 w-3" />
