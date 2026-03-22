@@ -121,7 +121,7 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setShowPdfDialog(true)}>
-            <FileText className="h-4 w-4 mr-2" /> Full PDF Pack
+            <FileText className="h-4 w-4 mr-2" /> Premium PDF Report
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
