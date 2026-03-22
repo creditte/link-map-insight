@@ -414,6 +414,11 @@ export default function StructureView() {
                 <Copy className="h-3 w-3" /> Scenario
               </Badge>
             )}
+            {isManualStructure && !isScenario && (
+              <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
+                <PenTool className="h-2.5 w-2.5" /> Manual entry
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>{displayEntities.length} entities · {displayRelationships.length} relationships</span>
