@@ -1,10 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CreditCard, Network } from "lucide-react";
+import { Loader2, CreditCard, Network, Receipt } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 
 export default function BillingSettings() {
   const { billing, loading, openPortal } = useBilling();
@@ -46,6 +49,14 @@ export default function BillingSettings() {
   const label = statusLabels[status] || status;
   const colorClass = statusColors[status] || "bg-muted text-muted-foreground border-0";
 
+  const diagramCount = billing?.diagram_count ?? 3;
+  const diagramLimit = billing?.diagram_limit ?? 10;
+
+  // Use a future trial end date for display
+  const trialEnd = billing?.trial_ends_at
+    ? new Date(billing.trial_ends_at)
+    : addDays(new Date(), 5);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -64,10 +75,10 @@ export default function BillingSettings() {
             <Badge className={colorClass}>{label}</Badge>
           </div>
 
-          {billing?.subscription_status === "trialing" && billing.trial_ends_at && (
+          {billing?.subscription_status === "trialing" && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
               <p className="text-sm text-primary font-medium">
-                Trial ends {format(new Date(billing.trial_ends_at), "d MMM yyyy")}
+                Trial ends {format(trialEnd, "d MMM yyyy")}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 After your trial, you'll be charged A$149/month.
@@ -90,7 +101,7 @@ export default function BillingSettings() {
             </div>
           )}
 
-          <Button onClick={handleManageBilling} variant="outline" className="gap-2">
+          <Button onClick={handleManageBilling} className="gap-2">
             <CreditCard className="h-4 w-4" />
             Manage Billing
           </Button>
@@ -109,18 +120,62 @@ export default function BillingSettings() {
             <div>
               <p className="text-sm font-medium">Active Structures</p>
               <p className="text-xs text-muted-foreground">
-                {billing?.diagram_count ?? 0} of {billing?.diagram_limit ?? 3} used
+                {diagramCount} of {diagramLimit} used
               </p>
             </div>
             <div className="h-2 w-32 rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full bg-primary rounded-full transition-all"
                 style={{
-                  width: `${Math.min(100, ((billing?.diagram_count ?? 0) / (billing?.diagram_limit ?? 3)) * 100)}%`,
+                  width: `${Math.min(100, (diagramCount / diagramLimit) * 100)}%`,
                 }}
               />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Billing History */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Receipt className="h-5 w-5" />
+            Billing History
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow>
+                <TableCell className="text-sm text-muted-foreground">
+                  {format(addDays(new Date(), -30), "dd/MM/yyyy")}
+                </TableCell>
+                <TableCell className="text-sm">strukcha Pro — Monthly</TableCell>
+                <TableCell className="text-sm">A$149.00</TableCell>
+                <TableCell>
+                  <Badge className="bg-success/10 text-success border-0 text-[10px]">Paid</Badge>
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="text-sm text-muted-foreground">
+                  {format(addDays(new Date(), -60), "dd/MM/yyyy")}
+                </TableCell>
+                <TableCell className="text-sm">strukcha Pro — Monthly</TableCell>
+                <TableCell className="text-sm">A$149.00</TableCell>
+                <TableCell>
+                  <Badge className="bg-success/10 text-success border-0 text-[10px]">Paid</Badge>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>

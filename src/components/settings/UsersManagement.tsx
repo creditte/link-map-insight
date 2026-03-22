@@ -35,11 +35,11 @@ import { format } from "date-fns";
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
     case "active":
-      return <Badge variant="default" className="gap-1 text-[10px] font-medium"><CheckCircle className="h-2.5 w-2.5" /> Active</Badge>;
+      return <Badge className="gap-1 text-[10px] font-medium bg-primary text-primary-foreground border-transparent"><CheckCircle className="h-2.5 w-2.5" /> Active</Badge>;
     case "invited":
-      return <Badge variant="secondary" className="gap-1 text-[10px] font-medium"><Mail className="h-2.5 w-2.5" /> Invited</Badge>;
+      return <Badge className="gap-1 text-[10px] font-medium bg-muted text-muted-foreground border-transparent">Invited</Badge>;
     case "disabled":
-      return <Badge variant="destructive" className="gap-1 text-[10px] font-medium"><Ban className="h-2.5 w-2.5" /> Disabled</Badge>;
+      return <Badge className="gap-1 text-[10px] font-medium bg-destructive text-destructive-foreground border-transparent">Disabled</Badge>;
     case "deleted":
       return <Badge variant="outline" className="gap-1 text-[10px] font-medium text-muted-foreground"><Trash2 className="h-2.5 w-2.5" /> Deleted</Badge>;
     default:
@@ -189,19 +189,22 @@ export default function UsersPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
-        {STATUS_FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => toggleFilter(f)}
-            className={`rounded-full border px-3 py-1 text-xs font-medium capitalize transition-colors ${
-              statusFilters.has(f)
-                ? "bg-primary text-primary-foreground border-primary"
-                : "border-border text-muted-foreground hover:border-foreground/40"
-            }`}
-          >
-            {f}
-          </button>
-        ))}
+        {STATUS_FILTERS.map((f) => {
+          const count = users.filter((u) => u.status === f).length;
+          return (
+            <button
+              key={f}
+              onClick={() => toggleFilter(f)}
+              className={`rounded-full border px-3 py-1 text-xs font-medium capitalize transition-colors ${
+                statusFilters.has(f)
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:border-foreground/40"
+              }`}
+            >
+              {f} ({count})
+            </button>
+          );
+        })}
         {isOwnerOrAdmin && (
           <label className="ml-2 flex items-center gap-2 text-xs text-muted-foreground select-none cursor-pointer">
             <Switch
