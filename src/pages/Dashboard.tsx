@@ -25,6 +25,7 @@ import { useBilling } from "@/hooks/useBilling";
 import { formatDistanceToNow, differenceInDays } from "date-fns";
 import BillingBanner from "@/components/BillingBanner";
 import DiagramLimitDialog from "@/components/DiagramLimitDialog";
+import CreateStructureModal from "@/components/structure/CreateStructureModal";
 
 export default function Dashboard() {
   const [recentStructures, setRecentStructures] = useState<
