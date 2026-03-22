@@ -189,19 +189,22 @@ export default function UsersPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
-        {STATUS_FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => toggleFilter(f)}
-            className={`rounded-full border px-3 py-1 text-xs font-medium capitalize transition-colors ${
-              statusFilters.has(f)
-                ? "bg-primary text-primary-foreground border-primary"
-                : "border-border text-muted-foreground hover:border-foreground/40"
-            }`}
-          >
-            {f}
-          </button>
-        ))}
+        {STATUS_FILTERS.map((f) => {
+          const count = users.filter((u) => u.status === f).length;
+          return (
+            <button
+              key={f}
+              onClick={() => toggleFilter(f)}
+              className={`rounded-full border px-3 py-1 text-xs font-medium capitalize transition-colors ${
+                statusFilters.has(f)
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:border-foreground/40"
+              }`}
+            >
+              {f} ({count})
+            </button>
+          );
+        })}
         {isOwnerOrAdmin && (
           <label className="ml-2 flex items-center gap-2 text-xs text-muted-foreground select-none cursor-pointer">
             <Switch
