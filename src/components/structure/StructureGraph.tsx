@@ -164,6 +164,7 @@ interface Props {
   nodesDraggable?: boolean;
   onContextMenu?: (menu: ContextMenuState) => void;
   issueOverlays?: IssueOverlay[];
+  onConnect?: (connection: Connection) => void;
 }
 
 function StructureGraphInner({
