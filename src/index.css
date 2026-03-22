@@ -174,3 +174,17 @@
 .animate-fade-in-up {
   animation: fade-in-up 0.4s ease-out forwards;
 }
+
+@keyframes pulse-subtle {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+/* Increase minimap visibility */
+.react-flow__minimap {
+  opacity: 0.85 !important;
+}

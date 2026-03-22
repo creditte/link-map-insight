@@ -31,19 +31,19 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
         <Tooltip>
           <TooltipTrigger asChild>
             <div
-              className={`relative rounded-lg border-2 px-4 py-3 shadow-sm transition-shadow ${colorClass} ${
+              className={`relative rounded-lg border-2 px-4 py-3 pb-4 shadow-sm transition-shadow ${colorClass} ${
                 selected ? "ring-2 ring-ring shadow-md" : issueOutline
-              }`}
+              } ${issueSeverity === "critical" && !selected ? "animate-pulse-subtle" : ""}`}
               style={{ width: NODE_WIDTH }}
             >
-              {/* Issue indicator dot */}
+              {/* Issue indicator dot — larger */}
               {issueSeverity && !selected && (
-                <div className={`absolute -top-1 -left-1 flex h-4 w-4 items-center justify-center rounded-full shadow-sm ${
+                <div className={`absolute -top-1.5 -left-1.5 flex h-5 w-5 items-center justify-center rounded-full shadow-sm ${
                   issueSeverity === "critical" ? "bg-red-500 text-white" : "bg-amber-500 text-white"
                 }`}>
                   {issueSeverity === "critical"
-                    ? <AlertCircle className="h-2.5 w-2.5" />
-                    : <AlertTriangle className="h-2.5 w-2.5" />
+                    ? <AlertCircle className="h-3 w-3" />
+                    : <AlertTriangle className="h-3 w-3" />
                   }
                 </div>
               )}
@@ -81,7 +81,18 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
                   {label}
                 </span>
                 <div className="flex shrink-0 items-center gap-0.5 mt-0.5">
-                  {isOperating && <Star className="h-3 w-3 text-amber-500 fill-amber-500" />}
+                  {isOperating && (
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          Primary entity
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
                   {pinned && <Pin className="h-3 w-3 text-muted-foreground" />}
                 </div>
               </div>

@@ -25,8 +25,10 @@ export default function CanvasHealthIndicator({ health, onClick }: Props) {
           className={`absolute top-3 right-3 z-10 flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium shadow-sm backdrop-blur-sm transition-all hover:shadow-md cursor-pointer select-none ${STATUS_COLORS[status]}`}
         >
           <HeartPulse className="h-3.5 w-3.5" />
-          <span className="font-bold tabular-nums">{health.score}</span>
-          <span className="text-[10px] opacity-80">/ 100</span>
+          <div className="flex flex-col items-start">
+            <span className="text-[10px] uppercase tracking-wider opacity-60 leading-none">This Structure</span>
+            <span className="font-bold tabular-nums leading-tight">{health.score}<span className="text-[10px] opacity-80 font-normal"> / 100</span></span>
+          </div>
           <span className="hidden sm:inline text-[10px] opacity-70">— {health.label}</span>
         </button>
       </TooltipTrigger>
