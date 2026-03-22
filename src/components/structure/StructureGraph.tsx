@@ -379,6 +379,13 @@ function StructureGraphInner({
     [onContextMenu, screenToFlowPosition]
   );
 
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      onConnectProp?.(connection);
+    },
+    [onConnectProp]
+  );
+
   return (
     <ReactFlow
       nodes={nodes}
@@ -392,8 +399,10 @@ function StructureGraphInner({
       onNodeContextMenu={onNodeContextMenu}
       onEdgeContextMenu={onEdgeContextMenu}
       onPaneContextMenu={onPaneContextMenu}
+      onConnect={handleConnect}
       nodeTypes={nodeTypes}
       nodesDraggable={nodesDraggableProp ?? layoutStrategy === "manual"}
+      connectOnClick={false}
       fitView
       fitViewOptions={{ padding: 0.2 }}
       minZoom={0.2}
