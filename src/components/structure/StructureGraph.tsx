@@ -111,17 +111,50 @@ function buildEdgeLabel(r: RelationshipEdge): string {
 // (i.e., flip the DB direction so arrow flows toward the role holder)
 const REVERSE_ARROW_TYPES = new Set(["shareholder", "beneficiary"]);
 
-function buildEdges(relationships: RelationshipEdge[], viewMode: string = "full"): Edge[] {
+// Determine best source/target handles based on relative node positions
+function pickHandles(
+  sourcePos: { x: number; y: number } | undefined,
+  targetPos: { x: number; y: number } | undefined
+): { sourceHandle: string | undefined; targetHandle: string | undefined } {
+  if (!sourcePos || !targetPos) return { sourceHandle: "bottom", targetHandle: undefined };
+  const dx = targetPos.x - sourcePos.x;
+  const dy = targetPos.y - sourcePos.y;
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+
+  // Mostly vertical
+  if (absDy > absDx * 0.5) {
+    if (dy > 0) return { sourceHandle: "bottom", targetHandle: undefined }; // top handle is default target
+    return { sourceHandle: undefined, targetHandle: "bottom" };
+  }
+  // Mostly horizontal
+  if (dx > 0) return { sourceHandle: "right", targetHandle: "left" };
+  return { sourceHandle: "left", targetHandle: "right" };
+}
+
+function buildEdges(
+  relationships: RelationshipEdge[],
+  viewMode: string = "full",
+  nodePositions?: Map<string, { x: number; y: number }>
+): Edge[] {
   return relationships.map((r) => {
     const isControl = CONTROL_EDGE_TYPES.has(r.relationship_type);
     const deEmphasize = viewMode !== "control" && isControl;
     const flip = REVERSE_ARROW_TYPES.has(r.relationship_type);
+    const sourceId = flip ? r.to_entity_id : r.from_entity_id;
+    const targetId = flip ? r.from_entity_id : r.to_entity_id;
+    const { sourceHandle, targetHandle } = pickHandles(
+      nodePositions?.get(sourceId),
+      nodePositions?.get(targetId)
+    );
     return {
       id: r.id,
-      source: flip ? r.to_entity_id : r.from_entity_id,
-      target: flip ? r.from_entity_id : r.to_entity_id,
+      source: sourceId,
+      target: targetId,
+      sourceHandle,
+      targetHandle,
       label: buildEdgeLabel(r),
-      type: "default",
+      type: "smoothstep",
       animated: false,
       style: {
         stroke: EDGE_COLORS[r.relationship_type] ?? "#94a3b8",
