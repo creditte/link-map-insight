@@ -208,6 +208,10 @@ export default function EntityDetailPanel({
               <Switch id="is-trustee" checked={editIsTrustee} onCheckedChange={setEditIsTrustee} />
               <Label htmlFor="is-trustee" className="text-xs">Trustee Company</Label>
             </div>
+            <div className="flex items-center gap-2">
+              <Switch id="is-investment" checked={editIsInvestment} onCheckedChange={setEditIsInvestment} />
+              <Label htmlFor="is-investment" className="text-xs">Investment / Bucket Company</Label>
+            </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleSave} disabled={saving} className="flex-1">
                 {saving ? "Saving..." : "Save"}
