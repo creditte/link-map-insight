@@ -384,7 +384,7 @@ function issueToAction(issue: import("@/lib/structureScoring").ScoringIssue): st
   const name = issue.entity_name ?? "the entity";
   switch (issue.code) {
     case "missing_trustee": return `Assign a trustee to "${name}"`;
-    case "missing_appointer": return `Record an appointer for "${name}"`;
+    case "missing_appointer": return `Record an appointor for "${name}"`;
     case "missing_member": return `Add members to SMSF "${name}"`;
     case "missing_directors": return `Record directors for company "${name}"`;
     case "missing_shareholders": return `Add shareholders to company "${name}"`;
