@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
     if (!tenant) throw new Error("No tenant found");
 
     // Check if already active/trialing
-    if (["active", "trialing"].includes(tenant.subscription_status)) {
+    if (["active", "trialing"].includes(tenant.subscription_status) && tenant.subscription_status !== "trial_expired") {
       return new Response(JSON.stringify({ error: "Workspace already has an active subscription" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
