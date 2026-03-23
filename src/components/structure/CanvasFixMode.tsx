@@ -52,7 +52,7 @@ function getHumanIssueDescription(issue: ScoringIssue): string {
   switch (issue.code) {
     case "unclassified": return `Set the entity type for "${issue.entity_name}" to improve structure clarity.`;
     case "missing_trustee": return `"${issue.entity_name}" needs a trustee. Add one from the structure diagram.`;
-    case "missing_appointer": return `"${issue.entity_name}" needs an appointer. Add one from the structure diagram.`;
+    case "missing_appointer": return `"${issue.entity_name}" needs an appointor. Add one from the structure diagram.`;
     case "missing_member": return `"${issue.entity_name}" needs members. Add them from the structure diagram.`;
     case "missing_directors": return `"${issue.entity_name}" needs directors. Add them from the structure diagram.`;
     case "missing_shareholders": return `"${issue.entity_name}" needs shareholders. Add them from the structure diagram.`;

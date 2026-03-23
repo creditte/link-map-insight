@@ -248,7 +248,7 @@ export default function EntityDetailPanel({
                 items.length > 0 ? (
                   <div key={type}>
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-                      {type}s
+                      {type === "appointer" ? "Appointors" : `${type}s`}
                     </p>
                     {items.map((item) => (
                       <button

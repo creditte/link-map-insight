@@ -201,7 +201,7 @@ export function computeHealthScoreV2(
         code: "missing_appointer",
         category: "control",
         severity: "critical",
-        message: `Trust "${entity.name}" has no appointer recorded`,
+        message: `Trust "${entity.name}" has no appointor recorded`,
         entity_id: entity.id,
         entity_name: entity.name,
         deduction: ded,

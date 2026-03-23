@@ -199,7 +199,7 @@ export default function ClientGovernance() {
       if (trustsWithoutCorporateTrustee > 0)
         crossObservations.push(`${trustsWithoutCorporateTrustee} structure${trustsWithoutCorporateTrustee > 1 ? "s have" : " has"} trusts without corporate trustees`);
       if (missingAppointerCount > 0)
-        crossObservations.push(`${missingAppointerCount} trust${missingAppointerCount > 1 ? "s" : ""} missing appointers across structures`);
+        crossObservations.push(`${missingAppointerCount} trust${missingAppointerCount > 1 ? "s" : ""} missing appointors across structures`);
       if (circularCount > 0)
         crossObservations.push(`${circularCount} structure${circularCount > 1 ? "s" : ""} with circular ownership detected`);
 

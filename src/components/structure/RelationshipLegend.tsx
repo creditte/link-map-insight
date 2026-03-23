@@ -74,10 +74,10 @@ export default function RelationshipLegend({ visible, onToggle }: Props) {
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1.5">Relationships</p>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                  {Object.entries(EDGE_COLORS).map(([type, color]) => (
+                  {Object.entries(EDGE_COLORS).map(([type, { color, label }]) => (
                     <div key={type} className="flex items-center gap-1.5">
                       <div className="h-0.5 w-4 rounded-full" style={{ backgroundColor: color }} />
-                      <span className="text-[11px] capitalize">{type}</span>
+                      <span className="text-[11px]">{label}</span>
                     </div>
                   ))}
                 </div>

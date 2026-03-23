@@ -403,7 +403,7 @@ function issueToAction(issue: import("@/lib/structureScoring").ScoringIssue): st
 function issueToImpact(issue: import("@/lib/structureScoring").ScoringIssue): string {
   switch (issue.code) {
     case "missing_trustee": return "Without a trustee, the trust cannot legally administer assets or make distributions.";
-    case "missing_appointer": return "An appointer controls who serves as trustee - this is a critical governance safeguard.";
+    case "missing_appointer": return "An appointor controls who serves as trustee — this is a critical governance safeguard.";
     case "missing_member": return "SMSF members must be recorded to satisfy regulatory obligations.";
     case "missing_directors": return "Directors are legally required for company governance and ASIC compliance.";
     case "missing_shareholders": return "Shareholder records establish beneficial ownership and are required for compliance.";
