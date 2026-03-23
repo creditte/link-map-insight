@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Pencil, Plus, Star, Shield } from "lucide-react";
+import { X, Pencil, Plus, Star, Shield, Briefcase } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
