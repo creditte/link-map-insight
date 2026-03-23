@@ -74,6 +74,35 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
                   </Tooltip>
                 </TooltipProvider>
               )}
+              {/* Investment/Bucket Company badge */}
+              {isInvestmentCompany && !isTrusteeCompany && (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-teal-500 text-white shadow-sm">
+                        <Briefcase className="h-3 w-3" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      Investment / Bucket Company
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {isInvestmentCompany && isTrusteeCompany && (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="absolute -top-1.5 right-4 flex h-5 w-5 items-center justify-center rounded-full bg-teal-500 text-white shadow-sm">
+                        <Briefcase className="h-3 w-3" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      Investment / Bucket Company
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
               <div className="flex items-start gap-2">
                 <Icon className="h-4 w-4 shrink-0 opacity-70 mt-0.5" />
                 <span
