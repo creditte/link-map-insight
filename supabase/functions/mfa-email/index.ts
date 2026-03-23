@@ -6,6 +6,18 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const SITE_NAME = "strukcha";
+const SENDER_DOMAIN = "notify.strukcha.app";
+const FROM_DOMAIN = "strukcha.app";
+
+function renderMfaHtml(code: string): string {
+  return `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px">
+<h2 style="margin-bottom:16px;color:#18181b">Your verification code</h2>
+<p style="font-size:36px;letter-spacing:10px;font-weight:bold;text-align:center;background:#f4f4f5;padding:16px;border-radius:8px;margin:24px 0;color:#18181b">${code}</p>
+<p style="color:#71717a;font-size:14px">This code expires in 5 minutes. If you didn't request this, ignore this email.</p>
+</div>`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -59,75 +71,30 @@ Deno.serve(async (req) => {
         expires_at: expiresAt,
       });
 
-      // Send email via Gmail SMTP
-      const smtpUser = Deno.env.get("SMTP_USER");
-      const smtpPass = Deno.env.get("SMTP_PASS");
+      // Enqueue email via Lovable email queue
+      const messageId = crypto.randomUUID();
+      const { error: enqueueError } = await adminClient.rpc("enqueue_email", {
+        queue_name: "transactional_emails",
+        payload: {
+          message_id: messageId,
+          to: user.email,
+          from: `${SITE_NAME} <no-reply@${FROM_DOMAIN}>`,
+          sender_domain: SENDER_DOMAIN,
+          subject: `Your verification code: ${verificationCode}`,
+          html: renderMfaHtml(verificationCode),
+          text: `Your strukcha verification code is: ${verificationCode}. It expires in 5 minutes.`,
+          purpose: "transactional",
+          label: "mfa-email",
+          idempotency_key: messageId,
+          queued_at: new Date().toISOString(),
+        },
+      });
 
-      if (smtpUser && smtpPass) {
-        try {
-          // Use raw SMTP over TLS (port 465) via Deno's built-in TLS
-          const conn = await Deno.connectTls({ hostname: "smtp.gmail.com", port: 465 });
-          const encoder = new TextEncoder();
-          const decoder = new TextDecoder();
-
-          async function readLine(): Promise<string> {
-            const buf = new Uint8Array(1024);
-            const n = await conn.read(buf);
-            return decoder.decode(buf.subarray(0, n ?? 0));
-          }
-
-          async function send(cmd: string) {
-            await conn.write(encoder.encode(cmd + "\r\n"));
-            return await readLine();
-          }
-
-          // Read greeting
-          await readLine();
-          await send("EHLO strukcha.app");
-
-          // AUTH LOGIN
-          await send("AUTH LOGIN");
-          await send(btoa(smtpUser));
-          const authRes = await send(btoa(smtpPass));
-          if (!authRes.startsWith("235")) throw new Error("SMTP auth failed: " + authRes);
-
-          await send(`MAIL FROM:<${smtpUser}>`);
-          await send(`RCPT TO:<${user.email}>`);
-          await send("DATA");
-
-          const emailBody = [
-            `From: strukcha <${smtpUser}>`,
-            `To: ${user.email}`,
-            `Subject: Your verification code: ${verificationCode}`,
-            `MIME-Version: 1.0`,
-            `Content-Type: text/html; charset=UTF-8`,
-            ``,
-            `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px">`,
-            `<h2 style="margin-bottom:16px">Your verification code</h2>`,
-            `<p style="font-size:36px;letter-spacing:10px;font-weight:bold;text-align:center;`,
-            `background:#f4f4f5;padding:16px;border-radius:8px;margin:24px 0">`,
-            `${verificationCode}</p>`,
-            `<p style="color:#71717a;font-size:14px">This code expires in 5 minutes. If you didn't request this, ignore this email.</p>`,
-            `</div>`,
-            `.`,
-          ].join("\r\n");
-
-          const dataRes = await send(emailBody);
-          if (!dataRes.startsWith("250")) {
-            console.error("SMTP send may have failed:", dataRes);
-          }
-
-          await send("QUIT");
-          conn.close();
-
-          console.log(`[MFA] Email sent to ${user.email} via Gmail SMTP`);
-        } catch (e) {
-          console.error("SMTP email send failed:", e);
-          // Fallback: log code
-          console.log(`[MFA] Verification code for ${user.email}: ${verificationCode}`);
-        }
-      } else {
+      if (enqueueError) {
+        console.error("[MFA] Failed to enqueue email:", enqueueError);
         console.log(`[MFA] Verification code for ${user.email}: ${verificationCode}`);
+      } else {
+        console.log(`[MFA] Verification email enqueued for ${user.email}`);
       }
 
       return json({ ok: true });
