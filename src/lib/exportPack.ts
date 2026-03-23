@@ -33,8 +33,9 @@ function fmtPercent(v: number | null | undefined): string {
   return `${Number(v).toFixed(2).replace(/\.?0+$/, "")}%`;
 }
 
+const REL_DISPLAY_LABELS: Record<string, string> = { appointer: "Appointor" };
 function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+  return REL_DISPLAY_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /** Sanitise text: strip broken glyphs, control chars, replace fancy quotes/arrows */
