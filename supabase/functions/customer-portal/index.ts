@@ -33,10 +33,33 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("stripe_customer_id")
+      .select("stripe_customer_id, subscription_status")
       .eq("id", profile.tenant_id)
       .single();
-    if (!tenant?.stripe_customer_id) throw new Error("No billing account found");
+
+    if (!tenant?.stripe_customer_id) {
+      // No Stripe customer yet — create one and redirect to checkout instead
+      const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+      const customer = await stripe.customers.create({
+        email: userData.user.email,
+        metadata: { workspace_id: profile.tenant_id, owner_user_id: userData.user.id },
+      });
+
+      await supabaseAdmin
+        .from("tenants")
+        .update({ stripe_customer_id: customer.id })
+        .eq("id", profile.tenant_id);
+
+      const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";
+      const portalSession = await stripe.billingPortal.sessions.create({
+        customer: customer.id,
+        return_url: `${origin}/settings`,
+      });
+
+      return new Response(JSON.stringify({ url: portalSession.url }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
     const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";
