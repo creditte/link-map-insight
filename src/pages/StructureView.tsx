@@ -123,6 +123,24 @@ export default function StructureView() {
 
   const handleConfirmRelationship = useCallback(async (relationshipType: string) => {
     if (!pendingConnection || !tenantId || !id) return;
+
+    // Check for duplicate relationship
+    const { data: existing } = await supabase
+      .from("relationships")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("from_entity_id", pendingConnection.source)
+      .eq("to_entity_id", pendingConnection.target)
+      .eq("relationship_type", relationshipType as any)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (existing) {
+      toast({ title: "Duplicate relationship", description: "This relationship already exists.", variant: "destructive" });
+      setPendingConnection(null);
+      return;
+    }
+
     const { data: rel, error } = await supabase.from("relationships").insert({
       from_entity_id: pendingConnection.source,
       to_entity_id: pendingConnection.target,

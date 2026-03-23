@@ -118,6 +118,23 @@ export default function EntityDetailPanel({
       if (newRelOwnershipClass) insertData.ownership_class = newRelOwnershipClass;
     }
 
+    // Check for duplicate
+    const { data: existing } = await supabase
+      .from("relationships")
+      .select("id")
+      .eq("tenant_id", entityData.tenant_id)
+      .eq("from_entity_id", entity.id)
+      .eq("to_entity_id", newRelTarget)
+      .eq("relationship_type", newRelType as any)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (existing) {
+      toast({ title: "Duplicate relationship", description: "This relationship already exists.", variant: "destructive" });
+      setAddingRel(false);
+      return;
+    }
+
     const { data: newRel, error } = await supabase
       .from("relationships")
       .insert(insertData as any)
