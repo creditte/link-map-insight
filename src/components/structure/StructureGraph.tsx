@@ -264,6 +264,8 @@ function StructureGraphInner({
         }
       }
       if (hasDrag && layoutStrategy === "manual") {
+        // Rebuild edges with updated positions for smart handle routing
+        setEdges(buildEdges(relationships, viewMode, nodePositionsRef.current));
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = setTimeout(() => {
           onPositionsChanged(new Map(nodePositionsRef.current));
