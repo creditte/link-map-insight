@@ -258,7 +258,7 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
               </SelectContent>
             </Select>
           ) : (
-            <Badge variant="secondary" className="text-xs">{relationship.relationship_type}</Badge>
+            <Badge variant="secondary" className="text-xs">{relLabel(relationship.relationship_type)}</Badge>
           )}
         </div>
 
