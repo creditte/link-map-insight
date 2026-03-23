@@ -6,7 +6,6 @@ const corsHeaders = {
 };
 
 const SITE_NAME = "strukcha";
-const SENDER_DOMAIN = "notify.strukcha.app";
 const FROM_DOMAIN = "strukcha.app";
 
 function renderVerificationHtml(code: string): string {
@@ -16,6 +15,29 @@ function renderVerificationHtml(code: string): string {
 <p style="font-size:36px;letter-spacing:10px;font-weight:bold;text-align:center;background:#f4f4f5;padding:16px;border-radius:8px;margin:24px 0;color:#18181b">${code}</p>
 <p style="color:#71717a;font-size:14px">This code expires in 10 minutes. If you didn't sign up for strukcha, ignore this email.</p>
 </div>`;
+}
+
+async function sendViaSmtp2go(to: string, subject: string, html: string, text?: string): Promise<void> {
+  const apiKey = Deno.env.get("SMTP2GO_API_KEY");
+  if (!apiKey) throw new Error("SMTP2GO_API_KEY not configured");
+
+  const response = await fetch("https://api.smtp2go.com/v3/email/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: apiKey,
+      sender: `${SITE_NAME} <no-reply@${FROM_DOMAIN}>`,
+      to: [to],
+      subject,
+      html_body: html,
+      text_body: text || undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`smtp2go error ${response.status}: ${body}`);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -38,7 +60,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // 1. Create the auth user (NOT confirmed — must verify email first)
+    // 1. Create the auth user (NOT confirmed)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -105,7 +127,7 @@ Deno.serve(async (req) => {
     });
     if (roleError) throw roleError;
 
-    // 6. Generate verification code & enqueue email
+    // 6. Generate verification code & send directly via smtp2go
     const verificationCode = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
@@ -116,26 +138,16 @@ Deno.serve(async (req) => {
       expires_at: expiresAt,
     });
 
-    const messageId = crypto.randomUUID();
-    const { error: enqueueError } = await supabaseAdmin.rpc("enqueue_email", {
-      queue_name: "transactional_emails",
-      payload: {
-        message_id: messageId,
-        to: email,
-        from: `${SITE_NAME} <no-reply@${FROM_DOMAIN}>`,
-        sender_domain: SENDER_DOMAIN,
-        subject: `Verify your strukcha account — ${verificationCode}`,
-        html: renderVerificationHtml(verificationCode),
-        text: `Your strukcha verification code is: ${verificationCode}. It expires in 10 minutes.`,
-        purpose: "transactional",
-        label: "signup-verification",
-        idempotency_key: messageId,
-        queued_at: new Date().toISOString(),
-      },
-    });
-
-    if (enqueueError) {
-      console.error("[Signup] Failed to enqueue verification email:", enqueueError);
+    try {
+      await sendViaSmtp2go(
+        email,
+        `Verify your strukcha account — ${verificationCode}`,
+        renderVerificationHtml(verificationCode),
+        `Your strukcha verification code is: ${verificationCode}. It expires in 10 minutes.`
+      );
+      console.log(`[Signup] Verification email sent to ${email}`);
+    } catch (sendErr) {
+      console.error("[Signup] Failed to send verification email:", sendErr);
       console.log(`[Signup] Verification code for ${email}: ${verificationCode}`);
     }
 

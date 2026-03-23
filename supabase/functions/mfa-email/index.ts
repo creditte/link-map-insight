@@ -7,7 +7,6 @@ const corsHeaders = {
 };
 
 const SITE_NAME = "strukcha";
-const SENDER_DOMAIN = "notify.strukcha.app";
 const FROM_DOMAIN = "strukcha.app";
 
 function renderMfaHtml(code: string): string {
@@ -16,6 +15,29 @@ function renderMfaHtml(code: string): string {
 <p style="font-size:36px;letter-spacing:10px;font-weight:bold;text-align:center;background:#f4f4f5;padding:16px;border-radius:8px;margin:24px 0;color:#18181b">${code}</p>
 <p style="color:#71717a;font-size:14px">This code expires in 5 minutes. If you didn't request this, ignore this email.</p>
 </div>`;
+}
+
+async function sendViaSmtp2go(to: string, subject: string, html: string, text?: string): Promise<void> {
+  const apiKey = Deno.env.get("SMTP2GO_API_KEY");
+  if (!apiKey) throw new Error("SMTP2GO_API_KEY not configured");
+
+  const response = await fetch("https://api.smtp2go.com/v3/email/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: apiKey,
+      sender: `${SITE_NAME} <no-reply@${FROM_DOMAIN}>`,
+      to: [to],
+      subject,
+      html_body: html,
+      text_body: text || undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`smtp2go error ${response.status}: ${body}`);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -37,14 +59,10 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Authenticate caller
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
-    const {
-      data: { user },
-      error: userError,
-    } = await userClient.auth.getUser();
+    const { data: { user }, error: userError } = await userClient.auth.getUser();
     if (userError || !user) return json({ error: "Unauthorized" }, 401);
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
@@ -52,49 +70,33 @@ Deno.serve(async (req) => {
 
     // ── SEND ────────────────────────────────────────────────────────
     if (action === "send") {
-      const verificationCode = String(
-        Math.floor(100000 + Math.random() * 900000)
-      );
+      const verificationCode = String(Math.floor(100000 + Math.random() * 900000));
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
-      // Invalidate previous unused codes
       await adminClient
         .from("mfa_email_codes")
         .update({ used: true })
         .eq("user_id", user.id)
         .eq("used", false);
 
-      // Store new code
       await adminClient.from("mfa_email_codes").insert({
         user_id: user.id,
         code: verificationCode,
         expires_at: expiresAt,
       });
 
-      // Enqueue email via Lovable email queue
-      const messageId = crypto.randomUUID();
-      const { error: enqueueError } = await adminClient.rpc("enqueue_email", {
-        queue_name: "transactional_emails",
-        payload: {
-          message_id: messageId,
-          to: user.email,
-          from: `${SITE_NAME} <no-reply@${FROM_DOMAIN}>`,
-          sender_domain: SENDER_DOMAIN,
-          subject: `Your verification code: ${verificationCode}`,
-          html: renderMfaHtml(verificationCode),
-          text: `Your strukcha verification code is: ${verificationCode}. It expires in 5 minutes.`,
-          purpose: "transactional",
-          label: "mfa-email",
-          idempotency_key: messageId,
-          queued_at: new Date().toISOString(),
-        },
-      });
-
-      if (enqueueError) {
-        console.error("[MFA] Failed to enqueue email:", enqueueError);
-        console.log(`[MFA] Verification code for ${user.email}: ${verificationCode}`);
-      } else {
-        console.log(`[MFA] Verification email enqueued for ${user.email}`);
+      // Send directly via smtp2go
+      try {
+        await sendViaSmtp2go(
+          user.email!,
+          `Your verification code: ${verificationCode}`,
+          renderMfaHtml(verificationCode),
+          `Your strukcha verification code is: ${verificationCode}. It expires in 5 minutes.`
+        );
+        console.log(`[MFA] Verification email sent to ${user.email}`);
+      } catch (sendErr) {
+        console.error("[MFA] Failed to send email:", sendErr);
+        console.log(`[MFA] Fallback code for ${user.email}: ${verificationCode}`);
       }
 
       return json({ ok: true });
@@ -117,17 +119,10 @@ Deno.serve(async (req) => {
         .limit(1)
         .maybeSingle();
 
-      if (!codeRow) {
-        return json({ error: "Invalid or expired code" }, 400);
-      }
+      if (!codeRow) return json({ error: "Invalid or expired code" }, 400);
 
-      // Mark code as used
-      await adminClient
-        .from("mfa_email_codes")
-        .update({ used: true })
-        .eq("id", codeRow.id);
+      await adminClient.from("mfa_email_codes").update({ used: true }).eq("id", codeRow.id);
 
-      // Create verification record (24 hour validity)
       await adminClient.from("mfa_verifications").insert({
         user_id: user.id,
         method: "email",
