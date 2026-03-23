@@ -13,6 +13,7 @@ export interface EntityNode {
   acn: string | null;
   is_operating_entity: boolean;
   is_trustee_company: boolean;
+  is_investment_company: boolean;
   created_at: string;
 }
 
