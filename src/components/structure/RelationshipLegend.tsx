@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ChevronDown, ChevronUp, Star, AlertCircle, AlertTriangle, Shield, Coins } from "lucide-react";
+import { ChevronDown, ChevronUp, Star, AlertCircle, AlertTriangle, Shield, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
