@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Pin, Star, Shield, AlertCircle, AlertTriangle, Coins } from "lucide-react";
+import { Pin, Star, Shield, AlertCircle, AlertTriangle, DollarSign } from "lucide-react";
 import { getEntityIcon, getEntityColor, getEntityLabel } from "@/lib/entityTypes";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
