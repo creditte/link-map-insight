@@ -83,7 +83,7 @@ A 2-3 sentence plain English overview of the structure — what it is, how many 
 Explain the ownership chain: who owns what, percentages, unit holdings, and share classes. Identify the ultimate beneficial owners.
 
 ## Control Analysis  
-Explain the control chain: who are the directors, trustees, appointers, and settlors. Identify who has effective control.
+Explain the control chain: who are the directors, trustees, appointors, and settlors. Identify who has effective control.
 
 ## Potential Issues
 List any anomalies, red flags, or items worth reviewing:
