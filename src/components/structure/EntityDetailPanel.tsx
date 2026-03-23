@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Pencil, Plus, Star, Shield, Briefcase } from "lucide-react";
+import { X, Pencil, Plus, Star, Shield, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -225,7 +225,7 @@ export default function EntityDetailPanel({
                 )}
                 {entity.is_investment_company && (
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-1 mt-0.5 bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300">
-                    <Briefcase className="h-2.5 w-2.5" /> Investment Company
+                    <DollarSign className="h-2.5 w-2.5" /> Investment Company
                   </Badge>
                 )}
               </div>

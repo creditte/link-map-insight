@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Pin, Star, Shield, Briefcase, AlertCircle, AlertTriangle } from "lucide-react";
+import { Pin, Star, Shield, DollarSign, AlertCircle, AlertTriangle } from "lucide-react";
 import { getEntityIcon, getEntityColor, getEntityLabel } from "@/lib/entityTypes";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -80,7 +80,7 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-teal-500 text-white shadow-sm">
-                        <Briefcase className="h-3 w-3" />
+                        <DollarSign className="h-3 w-3" />
                       </div>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="text-xs">
@@ -94,7 +94,7 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div className="absolute -top-1.5 right-4 flex h-5 w-5 items-center justify-center rounded-full bg-teal-500 text-white shadow-sm">
-                        <Briefcase className="h-3 w-3" />
+                        <DollarSign className="h-3 w-3" />
                       </div>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="text-xs">
