@@ -209,8 +209,8 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
           <div className="rounded-md border border-primary/50 bg-primary/5 p-3 space-y-2">
             <p className="text-xs font-medium">Reverse direction?</p>
             <p className="text-xs text-muted-foreground">
-              This will change: {fromEntity?.name ?? "?"} —({relationship.relationship_type})→ {toEntity?.name ?? "?"}{" "}
-              to {toEntity?.name ?? "?"} —({relationship.relationship_type})→ {fromEntity?.name ?? "?"}
+              This will change: {fromEntity?.name ?? "?"} —({relLabel(relationship.relationship_type)})→ {toEntity?.name ?? "?"}{" "}
+              to {toEntity?.name ?? "?"} —({relLabel(relationship.relationship_type)})→ {fromEntity?.name ?? "?"}
             </p>
             <div className="flex gap-2">
               <Button size="sm" className="flex-1 h-7 text-xs" onClick={handleReverseConfirm} disabled={reversing}>
