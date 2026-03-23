@@ -3,18 +3,18 @@ import { ChevronDown, ChevronUp, Star, AlertCircle, AlertTriangle, Shield } from
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
-const EDGE_COLORS: Record<string, string> = {
-  director: "#3b82f6",
-  shareholder: "#10b981",
-  beneficiary: "#f59e0b",
-  trustee: "#8b5cf6",
-  appointer: "#ec4899",
-  settlor: "#6366f1",
-  partner: "#14b8a6",
-  member: "#0ea5e9",
-  spouse: "#f43f5e",
-  parent: "#a855f7",
-  child: "#06b6d4",
+const EDGE_COLORS: Record<string, { color: string; label: string }> = {
+  director: { color: "#3b82f6", label: "Director" },
+  shareholder: { color: "#10b981", label: "Shareholder" },
+  beneficiary: { color: "#f59e0b", label: "Beneficiary" },
+  trustee: { color: "#8b5cf6", label: "Trustee" },
+  appointer: { color: "#ec4899", label: "Appointor" },
+  settlor: { color: "#6366f1", label: "Settlor" },
+  partner: { color: "#14b8a6", label: "Partner" },
+  member: { color: "#0ea5e9", label: "Member" },
+  spouse: { color: "#f43f5e", label: "Spouse" },
+  parent: { color: "#a855f7", label: "Parent" },
+  child: { color: "#06b6d4", label: "Child" },
 };
 
 const NODE_COLORS = [
