@@ -1,14 +1,10 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts'
 
 const MAX_RETRIES = 5
 const DEFAULT_BATCH_SIZE = 10
 const DEFAULT_SEND_DELAY_MS = 200
 const DEFAULT_AUTH_TTL_MINUTES = 15
 const DEFAULT_TRANSACTIONAL_TTL_MINUTES = 60
-
-const SMTP_HOST = 'mail-au.smtp2go.com'
-const SMTP_PORT = 587
 
 function parseJwtClaims(token: string): Record<string, unknown> | null {
   const parts = token.split('.')
@@ -49,37 +45,45 @@ async function moveToDlq(
   }
 }
 
-async function sendViaSmtp(payload: Record<string, unknown>): Promise<void> {
-  const smtpUser = Deno.env.get('SMTP_USER')
-  const smtpPass = Deno.env.get('SMTP_PASS')
-
-  if (!smtpUser || !smtpPass) {
-    throw new Error('SMTP credentials not configured (SMTP_USER / SMTP_PASS)')
+async function sendViaSmtp2go(payload: Record<string, unknown>): Promise<void> {
+  const apiKey = Deno.env.get('SMTP2GO_API_KEY')
+  if (!apiKey) {
+    throw new Error('SMTP2GO_API_KEY not configured')
   }
 
-  const client = new SMTPClient({
-    connection: {
-      hostname: SMTP_HOST,
-      port: SMTP_PORT,
-      tls: false,
-      auth: {
-        username: smtpUser,
-        password: smtpPass,
-      },
+  const fromStr = (payload.from as string) || 'strukcha <no-reply@strukcha.app>'
+
+  const response = await fetch('https://api.smtp2go.com/v3/email/send', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Smtp2go-Api-Key': apiKey,
     },
+    body: JSON.stringify({
+      sender: fromStr,
+      to: [payload.to as string],
+      subject: payload.subject as string,
+      html_body: (payload.html as string) || undefined,
+      text_body: (payload.text as string) || undefined,
+    }),
   })
 
-  try {
-    await client.send({
-      from: (payload.from as string) || `strukcha <no-reply@strukcha.app>`,
-      to: payload.to as string,
-      subject: payload.subject as string,
-      content: payload.text as string || '',
-      html: payload.html as string || undefined,
-    })
-  } finally {
-    await client.close()
+  const body = await response.text()
+
+  if (!response.ok) {
+    throw new Error(`smtp2go API error ${response.status}: ${body}`)
   }
+
+  const result = JSON.parse(body)
+  if (result?.data?.succeeded === 0 && result?.data?.failed > 0) {
+    throw new Error(`smtp2go send failed: ${JSON.stringify(result.data.failures)}`)
+  }
+
+  console.log('Email sent via smtp2go', {
+    to: payload.to,
+    subject: payload.subject,
+    request_id: result?.request_id,
+  })
 }
 
 Deno.serve(async (req) => {
@@ -229,7 +233,7 @@ Deno.serve(async (req) => {
       }
 
       try {
-        await sendViaSmtp(payload)
+        await sendViaSmtp2go(payload)
 
         // Log success
         await supabase.from('email_send_log').insert({
