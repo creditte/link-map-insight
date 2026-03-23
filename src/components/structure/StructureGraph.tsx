@@ -107,19 +107,14 @@ function buildEdgeLabel(r: RelationshipEdge): string {
   return label;
 }
 
-// Relationship types where the visual arrow should point from target → source
-// (i.e., flip the DB direction so arrow flows toward the role holder)
-const REVERSE_ARROW_TYPES = new Set(["shareholder", "beneficiary"]);
-
 function buildEdges(relationships: RelationshipEdge[], viewMode: string = "full"): Edge[] {
   return relationships.map((r) => {
     const isControl = CONTROL_EDGE_TYPES.has(r.relationship_type);
     const deEmphasize = viewMode !== "control" && isControl;
-    const flip = REVERSE_ARROW_TYPES.has(r.relationship_type);
     return {
       id: r.id,
-      source: flip ? r.to_entity_id : r.from_entity_id,
-      target: flip ? r.from_entity_id : r.to_entity_id,
+      source: r.from_entity_id,
+      target: r.to_entity_id,
       label: buildEdgeLabel(r),
       type: "default",
       animated: false,
