@@ -96,6 +96,10 @@ export default function RelationshipLegend({ visible, onToggle }: Props) {
                     <span className="text-[11px]">Trustee company</span>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Briefcase className="h-3 w-3 text-teal-500" />
+                    <span className="text-[11px]">Investment company</span>
+                  </div>
+                  <div className="flex items-center gap-2">
                     <div className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-white">
                       <AlertCircle className="h-2 w-2" />
                     </div>
