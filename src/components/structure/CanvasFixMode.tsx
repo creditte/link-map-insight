@@ -33,7 +33,7 @@ function getHumanIssueTitle(issue: ScoringIssue): string {
   switch (issue.code) {
     case "unclassified": return "Missing entity type";
     case "missing_trustee": return "No trustee assigned";
-    case "missing_appointer": return "No appointer recorded";
+    case "missing_appointer": return "No appointor recorded";
     case "missing_member": return "No members assigned";
     case "missing_directors": return "No directors recorded";
     case "missing_shareholders": return "No shareholders recorded";
