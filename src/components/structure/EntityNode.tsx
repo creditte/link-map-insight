@@ -144,6 +144,7 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
             <p className="text-xs text-muted-foreground">
               {getEntityLabel(entityType)}
               {isTrusteeCompany && " · Trustee Company"}
+              {isInvestmentCompany && " · Investment Company"}
             </p>
             {issueTooltip && (
               <p className={`text-xs mt-1 ${issueSeverity === "critical" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>
