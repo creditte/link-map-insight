@@ -12,12 +12,20 @@ import { Shield, Smartphone, Mail, Loader2, ArrowLeft } from "lucide-react";
 async function redirectAfterMfa(navigate: ReturnType<typeof useNavigate>) {
   try {
     const { data, error } = await supabase.functions.invoke("check-subscription");
-    if (!error && data && !data.stripe_customer_id && !data.trial_used_at) {
-      // User hasn't gone through Stripe Checkout yet — redirect to checkout
-      const { data: checkoutData, error: checkoutErr } = await supabase.functions.invoke("create-checkout");
-      if (!checkoutErr && checkoutData?.url) {
-        window.location.href = checkoutData.url;
+    if (!error && data) {
+      // Skip checkout if already active or trialing
+      const status = data.subscription_status;
+      if (status === "active" || status === "trialing") {
+        navigate("/", { replace: true });
         return;
+      }
+      // No subscription yet and never used trial — send to checkout
+      if (!data.stripe_customer_id && !data.trial_used_at) {
+        const { data: checkoutData, error: checkoutErr } = await supabase.functions.invoke("create-checkout");
+        if (!checkoutErr && checkoutData?.url) {
+          window.location.href = checkoutData.url;
+          return;
+        }
       }
     }
   } catch (err) {
