@@ -8,6 +8,42 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Shield, Loader2, Smartphone, Mail } from "lucide-react";
 
+const MFA_VERIFY_STORAGE_KEY = "mfa_verify_state";
+
+type StoredMfaVerifyState = {
+  userId: string;
+  activeMethod: "totp" | "email" | null;
+  emailCodeSentAt?: string;
+};
+
+function readStoredMfaVerifyState(): StoredMfaVerifyState | null {
+  try {
+    const raw = sessionStorage.getItem(MFA_VERIFY_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredMfaVerifyState(state: StoredMfaVerifyState) {
+  try {
+    sessionStorage.setItem(MFA_VERIFY_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // noop
+  }
+}
+
+function clearStoredMfaVerifyState(userId?: string) {
+  try {
+    const stored = readStoredMfaVerifyState();
+    if (!userId || stored?.userId === userId) {
+      sessionStorage.removeItem(MFA_VERIFY_STORAGE_KEY);
+    }
+  } catch {
+    // noop
+  }
+}
+
 export default function MfaVerify() {
   const { user, bootStatus, signOut } = useAuth();
   const navigate = useNavigate();
@@ -19,22 +55,19 @@ export default function MfaVerify() {
   const [activeMethod, setActiveMethod] = useState<"totp" | "email" | null>(null);
   const [hasTotpFactor, setHasTotpFactor] = useState(false);
   const [loading, setLoading] = useState(true);
-  const emailSentForSession = useRef(false);
   const autoSubmitTriggered = useRef(false);
 
   useEffect(() => {
-    if (bootStatus !== "authenticated" || !user) return;
-    if (preferredMethod) return;
-    detectMethod();
-  }, [bootStatus, user?.id]);
+    if (bootStatus !== "authenticated" || !user || preferredMethod) return;
+    void detectMethod();
+  }, [bootStatus, user?.id, preferredMethod]);
 
   const handleVerify = activeMethod === "totp" ? verifyTotp : verifyEmail;
 
-  // Auto-submit when 6 digits entered
   useEffect(() => {
     if (code.length === 6 && !submitting && !autoSubmitTriggered.current && !loading) {
       autoSubmitTriggered.current = true;
-      handleVerify();
+      void handleVerify();
     }
     if (code.length < 6) {
       autoSubmitTriggered.current = false;
@@ -43,25 +76,37 @@ export default function MfaVerify() {
 
   async function detectMethod() {
     try {
-      // Check TOTP factors
       const { data: factors } = await supabase.auth.mfa.listFactors();
       const totpFactor = factors?.totp?.find((f: any) => f.status === "verified");
       setHasTotpFactor(!!totpFactor);
 
-      // Check mfa_settings preference
       const { data: settings } = await (supabase as any)
         .from("mfa_settings")
         .select("method")
         .eq("user_id", user!.id)
         .maybeSingle();
 
-      const pref = settings?.method === "totp" && totpFactor ? "totp" : settings?.method === "email" ? "email" : totpFactor ? "totp" : "email";
-      setPreferredMethod(pref as "totp" | "email");
-      setActiveMethod(pref as "totp" | "email");
+      const pref = settings?.method === "totp" && totpFactor
+        ? "totp"
+        : settings?.method === "email"
+          ? "email"
+          : totpFactor
+            ? "totp"
+            : "email";
 
-      // Auto-send email code if email is the active method
-      if (pref === "email" && !emailSentForSession.current) {
-        emailSentForSession.current = true;
+      const stored = readStoredMfaVerifyState();
+      const shouldRestoreEmailFlow = stored?.userId === user!.id && stored.activeMethod === "email";
+      const nextActiveMethod = shouldRestoreEmailFlow ? "email" : pref;
+
+      setPreferredMethod(pref as "totp" | "email");
+      setActiveMethod(nextActiveMethod as "totp" | "email");
+      writeStoredMfaVerifyState({
+        userId: user!.id,
+        activeMethod: nextActiveMethod as "totp" | "email",
+        emailCodeSentAt: stored?.userId === user!.id ? stored.emailCodeSentAt : undefined,
+      });
+
+      if (nextActiveMethod === "email" && !(stored?.userId === user!.id && stored.emailCodeSentAt)) {
         await sendEmailCode();
       }
     } catch (err) {
@@ -78,6 +123,15 @@ export default function MfaVerify() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+
+      if (user?.id) {
+        writeStoredMfaVerifyState({
+          userId: user.id,
+          activeMethod: "email",
+          emailCodeSentAt: new Date().toISOString(),
+        });
+      }
+
       toast({ title: "Code sent", description: `Verification code sent to ${user?.email}` });
     } catch (err: any) {
       toast({ title: "Failed to send code", description: err.message, variant: "destructive" });
@@ -88,18 +142,32 @@ export default function MfaVerify() {
     setCode("");
     autoSubmitTriggered.current = false;
     setActiveMethod("email");
-    if (!emailSentForSession.current) {
-      emailSentForSession.current = true;
-      sendEmailCode();
-    } else {
-      toast({ title: "Use existing code", description: "Check your email for the code already sent, or click Resend." });
+
+    if (user?.id) {
+      const stored = readStoredMfaVerifyState();
+      writeStoredMfaVerifyState({
+        userId: user.id,
+        activeMethod: "email",
+        emailCodeSentAt: stored?.userId === user.id ? stored.emailCodeSentAt : undefined,
+      });
+
+      if (stored?.userId === user.id && stored.emailCodeSentAt) {
+        toast({ title: "Use existing code", description: "Check your email for the code already sent, or click Resend." });
+        return;
+      }
     }
+
+    void sendEmailCode();
   }
 
   function switchToTotp() {
     setCode("");
     autoSubmitTriggered.current = false;
     setActiveMethod("totp");
+
+    if (user?.id) {
+      writeStoredMfaVerifyState({ userId: user.id, activeMethod: "totp" });
+    }
   }
 
   async function verifyTotp() {
@@ -121,6 +189,7 @@ export default function MfaVerify() {
       });
       if (verifyErr) throw verifyErr;
 
+      clearStoredMfaVerifyState(user?.id);
       navigate("/", { replace: true });
     } catch (err: any) {
       toast({ title: "Invalid code", description: err.message, variant: "destructive" });
@@ -139,6 +208,7 @@ export default function MfaVerify() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+      clearStoredMfaVerifyState(user?.id);
       navigate("/", { replace: true });
     } catch (err: any) {
       toast({ title: "Invalid code", description: err.message, variant: "destructive" });
@@ -147,6 +217,19 @@ export default function MfaVerify() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleSignOut() {
+    clearStoredMfaVerifyState(user?.id);
+    await signOut();
+  }
+
+  if (bootStatus === "unauthenticated") {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!user) {
+    return null;
   }
 
   return (
@@ -176,14 +259,12 @@ export default function MfaVerify() {
             </div>
           )}
 
-          {/* Method-specific actions */}
           {activeMethod === "email" && (
-            <Button variant="ghost" onClick={sendEmailCode} className="w-full text-sm">
+            <Button variant="ghost" onClick={() => void sendEmailCode()} className="w-full text-sm">
               Resend Code
             </Button>
           )}
 
-          {/* Switch method options */}
           <div className="border-t pt-3 space-y-1.5">
             {activeMethod === "totp" && (
               <Button
@@ -209,7 +290,7 @@ export default function MfaVerify() {
 
           <Button
             variant="ghost"
-            onClick={signOut}
+            onClick={() => void handleSignOut()}
             className="w-full text-sm text-muted-foreground"
           >
             Sign out

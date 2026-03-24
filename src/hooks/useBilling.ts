@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -16,41 +16,62 @@ export interface BillingStatus {
 
 export function useBilling() {
   const { user, bootStatus } = useAuth();
+  const userId = user?.id ?? null;
   const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
-  const load = useCallback(async () => {
-    if (bootStatus !== "authenticated" || !user) {
+  const load = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
+    if (bootStatus !== "authenticated" || !userId) {
+      hasLoadedRef.current = false;
+      setBilling(null);
+      setError(null);
       setLoading(false);
       return;
     }
 
+    const shouldShowBlockingLoader = !hasLoadedRef.current && !background;
+
     try {
-      setLoading(true);
+      if (shouldShowBlockingLoader) {
+        setLoading(true);
+      }
+
       const { data, error: fnError } = await supabase.functions.invoke("check-subscription");
       if (fnError) throw fnError;
       if (data?.error) throw new Error(data.error);
+
       setBilling(data);
       setError(null);
+      hasLoadedRef.current = true;
     } catch (err: any) {
       console.error("[useBilling]", err.message);
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (shouldShowBlockingLoader || !hasLoadedRef.current) {
+        setLoading(false);
+      }
     }
-  }, [user, bootStatus]);
+  }, [bootStatus, userId]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (bootStatus !== "authenticated" || !userId) {
+      hasLoadedRef.current = false;
+      setBilling(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
 
-  // Refresh every 60s
+    void load();
+  }, [bootStatus, userId, load]);
+
   useEffect(() => {
-    if (bootStatus !== "authenticated") return;
-    const interval = setInterval(load, 60_000);
+    if (bootStatus !== "authenticated" || !userId) return;
+    const interval = setInterval(() => void load({ background: true }), 60_000);
     return () => clearInterval(interval);
-  }, [load, bootStatus]);
+  }, [bootStatus, userId, load]);
 
   const openPortal = async () => {
     const { data, error } = await supabase.functions.invoke("customer-portal");

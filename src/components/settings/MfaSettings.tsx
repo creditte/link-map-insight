@@ -14,9 +14,45 @@ import { Shield, Smartphone, Mail, Loader2, Check, ArrowRight, Monitor, Globe, X
 
 type ChangeStep = "idle" | "totp-enroll" | "totp-verify" | "email-send" | "email-verify";
 
+const MFA_SETTINGS_STORAGE_KEY = "mfa_settings_change_state";
+
+type StoredMfaSettingsState = {
+  userId: string;
+  step: "email-verify";
+  requestedAt: string;
+};
+
+function readStoredMfaSettingsState(): StoredMfaSettingsState | null {
+  try {
+    const raw = sessionStorage.getItem(MFA_SETTINGS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredMfaSettingsState(state: StoredMfaSettingsState) {
+  try {
+    sessionStorage.setItem(MFA_SETTINGS_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // noop
+  }
+}
+
+function clearStoredMfaSettingsState(userId?: string) {
+  try {
+    const stored = readStoredMfaSettingsState();
+    if (!userId || stored?.userId === userId) {
+      sessionStorage.removeItem(MFA_SETTINGS_STORAGE_KEY);
+    }
+  } catch {
+    // noop
+  }
+}
+
 export default function MfaSettings() {
   const { user } = useAuth();
-  const { method: currentMethod, status: mfaStatus, loading: mfaLoading, refetch } = useMfa();
+  const { method: currentMethod, loading: mfaLoading, refetch } = useMfa();
   const { toast } = useToast();
 
   const [step, setStep] = useState<ChangeStep>("idle");
@@ -27,14 +63,21 @@ export default function MfaSettings() {
   const [totpSecret, setTotpSecret] = useState("");
   const autoSubmitTriggered = useRef(false);
 
-  // Auto-submit when 6 digits entered
+  useEffect(() => {
+    if (!user?.id) return;
+    const stored = readStoredMfaSettingsState();
+    if (stored?.userId === user.id && stored.step === "email-verify") {
+      setStep("email-verify");
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     if (code.length === 6 && !submitting && !autoSubmitTriggered.current) {
       autoSubmitTriggered.current = true;
       if (step === "totp-verify") {
-        confirmTotp();
+        void confirmTotp();
       } else if (step === "email-verify") {
-        confirmEmail();
+        void confirmEmail();
       }
     }
     if (code.length < 6) {
@@ -49,9 +92,9 @@ export default function MfaSettings() {
     setQrCode("");
     setTotpSecret("");
     autoSubmitTriggered.current = false;
+    clearStoredMfaSettingsState(user?.id);
   }
 
-  // ── Switch to TOTP ──────────────────────────────────────────
   async function startSwitchToTotp() {
     setSubmitting(true);
     try {
@@ -68,6 +111,7 @@ export default function MfaSettings() {
       setQrCode(data.totp.qr_code);
       setTotpSecret(data.totp.secret);
       setStep("totp-verify");
+      clearStoredMfaSettingsState(user?.id);
     } catch (err: any) {
       toast({ title: "Setup failed", description: err.message, variant: "destructive" });
     } finally {
@@ -104,7 +148,6 @@ export default function MfaSettings() {
     }
   }
 
-  // ── Switch to Email ─────────────────────────────────────────
   async function startSwitchToEmail() {
     setSubmitting(true);
     try {
@@ -114,6 +157,13 @@ export default function MfaSettings() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setStep("email-verify");
+      if (user?.id) {
+        writeStoredMfaSettingsState({
+          userId: user.id,
+          step: "email-verify",
+          requestedAt: new Date().toISOString(),
+        });
+      }
       toast({ title: "Code sent", description: `Verification code sent to ${user?.email}` });
     } catch (err: any) {
       toast({ title: "Failed to send code", description: err.message, variant: "destructive" });
