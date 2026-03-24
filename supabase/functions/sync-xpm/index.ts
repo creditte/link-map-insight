@@ -266,10 +266,20 @@ Deno.serve(async (req) => {
     // Refresh token if needed (handles decryption internally)
     const accessToken = await refreshAccessToken(supabase, connection);
 
-    // ── Fetch Contacts via Accounting API ────────────────────────────────
-    console.log("[sync-xpm] Fetching contacts via accounting API...");
-    const contacts = await fetchAllContacts(accessToken, xeroTenantId);
-    console.log(`[sync-xpm] Fetched ${contacts.length} contacts`);
+    // ── Try XPM Practice Manager API first, fall back to Accounting API ──
+    let contacts: any[];
+    let dataSource = "accounting";
+    const xpmClients = await fetchXpmClients(accessToken, xeroTenantId);
+
+    if (xpmClients && xpmClients.length > 0) {
+      contacts = xpmClients.map(xpmClientToContact);
+      dataSource = "practicemanager";
+      console.log(`[sync-xpm] Using Practice Manager data: ${contacts.length} clients`);
+    } else {
+      console.log("[sync-xpm] Falling back to Accounting API...");
+      contacts = await fetchAllContacts(accessToken, xeroTenantId);
+      console.log(`[sync-xpm] Fetched ${contacts.length} contacts via Accounting API`);
+    }
 
     const warnings: string[] = [];
     let entitiesCreated = 0;
