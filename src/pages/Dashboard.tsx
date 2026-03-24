@@ -243,19 +243,30 @@ export default function Dashboard() {
                 Create New Structure
               </Button>
               {canManageIntegrations && !xeroConnection && (
-                <Button
-                  variant="ghost"
-                  className="gap-2 rounded-xl px-5 text-sm font-medium text-muted-foreground"
-                  onClick={handleConnectXero}
-                  disabled={xeroLoading}
-                >
-                  {xeroLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Upload className="h-4 w-4" />
-                  )}
-                  Import from Xero
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Select value={xeroConnectionType} onValueChange={(v) => setXeroConnectionType(v as "accounting" | "practice_manager")}>
+                    <SelectTrigger className="h-9 w-[180px] rounded-xl text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="accounting">Accounting API</SelectItem>
+                      <SelectItem value="practice_manager">Practice Manager</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    className="gap-2 rounded-xl px-5 text-sm font-medium text-muted-foreground"
+                    onClick={handleConnectXero}
+                    disabled={xeroLoading}
+                  >
+                    {xeroLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
+                    Import from Xero
+                  </Button>
+                </div>
               )}
             </div>
           </>
