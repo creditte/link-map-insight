@@ -390,6 +390,7 @@ Deno.serve(async (req) => {
 
     const result = {
       success: true,
+      dataSource,
       contactsFetched: contacts.length,
       entitiesCreated,
       entitiesUpdated,
