@@ -142,7 +142,7 @@ export default function Dashboard() {
             Authorization: `Bearer ${session.access_token}`,
             apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           },
-          body: JSON.stringify({ origin: window.location.origin }),
+          body: JSON.stringify({ origin: window.location.origin, connection_type: xeroConnectionType }),
         }
       );
       const responseText = await res.text();
