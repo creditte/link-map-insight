@@ -48,11 +48,15 @@ serve(async (req) => {
     const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/xero-callback`;
     const scopes = "openid profile email offline_access accounting.contacts.read";
 
-    // Parse request body to get the caller's origin for post-OAuth redirect
+    // Parse request body to get the caller's origin and connection type
     let callerOrigin: string | undefined;
+    let connectionType: string = "accounting"; // default
     try {
       const body = await req.json();
       callerOrigin = body.origin;
+      if (body.connection_type === "practice_manager") {
+        connectionType = "practice_manager";
+      }
     } catch { /* no body */ }
 
     // Generate CSRF token and store it server-side
