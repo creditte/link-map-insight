@@ -21,7 +21,7 @@ import {
   RefreshCw,
   Unplug,
   Network,
-  Navigation,
+  ExternalLink,
   Eye,
   AlertTriangle,
   Share2,
