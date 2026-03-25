@@ -455,16 +455,13 @@ export default function Dashboard() {
             </h3>
             <ul className="mt-6 inline-flex flex-col items-start gap-3 text-sm text-muted-foreground">
               <li className="flex items-center gap-2.5">
-                <Eye className="h-4 w-4 text-primary/60" /> Visualise ownership
-                clearly
+                <Eye className="h-4 w-4 shrink-0 text-primary/60" /> Visualise ownership clearly
               </li>
               <li className="flex items-center gap-2.5">
-                <AlertTriangle className="h-4 w-4 text-warning/70" /> Spot risks
-                faster
+                <AlertTriangle className="h-4 w-4 shrink-0 text-warning/70" /> Spot risks faster
               </li>
               <li className="flex items-center gap-2.5">
-                <Share2 className="h-4 w-4 text-primary/60" /> Share with clients
-                easily
+                <Share2 className="h-4 w-4 shrink-0 text-primary/60" /> Share with clients easily
               </li>
             </ul>
             <Button
