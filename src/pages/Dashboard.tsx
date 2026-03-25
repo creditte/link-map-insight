@@ -40,6 +40,7 @@ export default function Dashboard() {
     { id: string; name: string; updated_at: string }[]
   >([]);
   const [structureCount, setStructureCount] = useState(0);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
   const [xeroConnection, setXeroConnection] = useState<{
     id: string;
     connected_at: string | null;
