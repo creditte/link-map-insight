@@ -392,7 +392,23 @@ export default function Dashboard() {
           )}
         </div>
 
-        {hasStructures ? (
+        {dashboardLoading ? (
+          <div className="space-y-1.5">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4">
+                <div className="flex items-center gap-3.5">
+                  <Skeleton className="h-2.5 w-2.5 rounded-full" />
+                  <Skeleton className="h-9 w-9 rounded-lg" />
+                  <div className="space-y-1.5">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                </div>
+                <Skeleton className="h-3 w-16" />
+              </div>
+            ))}
+          </div>
+        ) : hasStructures ? (
           <div className="space-y-1.5">
             {recentStructures.map((s) => {
               const stale = isStale(s.updated_at);
