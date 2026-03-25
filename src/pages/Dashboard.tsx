@@ -4,13 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Plus,
   ArrowRight,
@@ -37,9 +31,7 @@ import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
 
 export default function Dashboard() {
-  const [recentStructures, setRecentStructures] = useState<
-    { id: string; name: string; updated_at: string }[]
-  >([]);
+  const [recentStructures, setRecentStructures] = useState<{ id: string; name: string; updated_at: string }[]>([]);
   const [structureCount, setStructureCount] = useState(0);
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [xeroConnection, setXeroConnection] = useState<{
@@ -76,9 +68,7 @@ export default function Dashboard() {
   const userRole = currentUser?.role ?? null;
   const canManageIntegrations =
     permissionsLoaded &&
-    (userRole === "owner" ||
-      (userRole === "admin" &&
-        currentUser?.can_manage_integrations === true));
+    (userRole === "owner" || (userRole === "admin" && currentUser?.can_manage_integrations === true));
 
   useEffect(() => {
     const xeroStatus = searchParams.get("xero");
@@ -103,10 +93,7 @@ export default function Dashboard() {
     async function load() {
       setDashboardLoading(true);
       const [sCount, recent, xeroData] = await Promise.all([
-        supabase
-          .from("structures")
-          .select("id", { count: "exact", head: true })
-          .is("deleted_at", null),
+        supabase.from("structures").select("id", { count: "exact", head: true }).is("deleted_at", null),
         supabase
           .from("structures")
           .select("id, name, updated_at")
@@ -118,11 +105,7 @@ export default function Dashboard() {
       ]);
       setStructureCount(sCount.count ?? 0);
       setRecentStructures((recent.data as any) ?? []);
-      setXeroConnection(
-        xeroData.data && xeroData.data !== "null"
-          ? (xeroData.data as any)
-          : null
-      );
+      setXeroConnection(xeroData.data && xeroData.data !== "null" ? (xeroData.data as any) : null);
       setDashboardLoading(false);
     }
     load();
@@ -138,32 +121,24 @@ export default function Dashboard() {
         toast({ title: "Not authenticated", variant: "destructive" });
         return;
       }
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/xero-auth`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          },
-          body: JSON.stringify({ origin: window.location.origin, connection_type: xeroConnectionType }),
-        }
-      );
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/xero-auth`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({ origin: window.location.origin, connection_type: xeroConnectionType }),
+      });
       const responseText = await res.text();
       let data;
       try {
         data = JSON.parse(responseText);
       } catch {
-        throw new Error(
-          `Non-JSON response (${res.status}): ${responseText.substring(0, 200)}`
-        );
+        throw new Error(`Non-JSON response (${res.status}): ${responseText.substring(0, 200)}`);
       }
       const oauthUrl = data.auth_url || data.url;
-      if (!res.ok || !oauthUrl)
-        throw new Error(
-          data.error || `Failed to start Xero auth (status ${res.status})`
-        );
+      if (!res.ok || !oauthUrl) throw new Error(data.error || `Failed to start Xero auth (status ${res.status})`);
       window.location.href = oauthUrl;
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -208,9 +183,10 @@ export default function Dashboard() {
   const hasStructures = structureCount > 0;
 
   // Compute last updated for hero summary
-  const lastUpdated = recentStructures.length > 0
-    ? formatDistanceToNow(new Date(recentStructures[0].updated_at), { addSuffix: true })
-    : null;
+  const lastUpdated =
+    recentStructures.length > 0
+      ? formatDistanceToNow(new Date(recentStructures[0].updated_at), { addSuffix: true })
+      : null;
 
   // Simple health dot — random for now (would come from real scoring data)
   const getHealthColor = (updatedAt: string) => {
@@ -240,17 +216,16 @@ export default function Dashboard() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                className="gap-2 rounded-xl px-5 text-sm font-medium"
-                onClick={handleCreateNew}
-              >
+              <Button variant="outline" className="gap-2 rounded-xl px-5 text-sm font-medium" onClick={handleCreateNew}>
                 <Plus className="h-4 w-4" />
                 Create New Structure
               </Button>
               {canManageIntegrations && !xeroConnection && (
                 <div className="flex items-center gap-2">
-                  <Select value={xeroConnectionType} onValueChange={(v) => setXeroConnectionType(v as "accounting" | "practice_manager")}>
+                  <Select
+                    value={xeroConnectionType}
+                    onValueChange={(v) => setXeroConnectionType(v as "accounting" | "practice_manager")}
+                  >
                     <SelectTrigger className="h-9 w-[180px] rounded-xl text-xs">
                       <SelectValue />
                     </SelectTrigger>
@@ -278,9 +253,7 @@ export default function Dashboard() {
         ) : (
           <>
             <div className="space-y-2">
-              <h1 className="text-4xl font-semibold tracking-tight text-foreground">
-                Build a structure
-              </h1>
+              <h1 className="text-4xl font-semibold tracking-tight text-foreground">Build a structure</h1>
               <p className="text-base text-muted-foreground max-w-md">
                 Create a clean, visual structure for your client in minutes.
               </p>
@@ -297,7 +270,10 @@ export default function Dashboard() {
               </Button>
               {canManageIntegrations && !xeroConnection && (
                 <div className="flex items-center gap-2">
-                  <Select value={xeroConnectionType} onValueChange={(v) => setXeroConnectionType(v as "accounting" | "practice_manager")}>
+                  <Select
+                    value={xeroConnectionType}
+                    onValueChange={(v) => setXeroConnectionType(v as "accounting" | "practice_manager")}
+                  >
                     <SelectTrigger className="h-10 w-[180px] rounded-xl text-xs">
                       <SelectValue />
                     </SelectTrigger>
@@ -335,7 +311,9 @@ export default function Dashboard() {
                 <HeartPulse className="h-5 w-5 text-success" />
               </div>
               <h3 className="text-[15px] font-semibold text-foreground">Health Check</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">Assess the health of client structures and identify issues quickly.</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                Assess the health of client structures and identify issues quickly.
+              </p>
               <Button variant="secondary" size="sm" className="mt-4 gap-1.5 text-xs" disabled>
                 Run Health Check <ArrowRight className="h-3 w-3" />
               </Button>
@@ -345,7 +323,9 @@ export default function Dashboard() {
                 <Sparkles className="h-5 w-5 text-primary" />
               </div>
               <h3 className="text-[15px] font-semibold text-foreground">Review &amp; Improve</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">Review flagged issues and improve structure quality.</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                Review flagged issues and improve structure quality.
+              </p>
               <Button variant="secondary" size="sm" className="mt-4 gap-1.5 text-xs" disabled>
                 Review Issues <ArrowRight className="h-3 w-3" />
               </Button>
@@ -353,24 +333,38 @@ export default function Dashboard() {
           </>
         ) : (
           <>
-            <Link to="/governance" className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm">
+            <Link
+              to="/governance"
+              className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
+            >
               <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-success/10">
                 <HeartPulse className="h-5 w-5 text-success" />
               </div>
               <h3 className="text-[15px] font-semibold text-foreground">Health Check</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">Assess the health of client structures and identify issues quickly.</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                Assess the health of client structures and identify issues quickly.
+              </p>
               <Button size="sm" className="mt-4 gap-1.5 text-xs" asChild>
-                <span>Run Health Check <ArrowRight className="h-3 w-3" /></span>
+                <span>
+                  Run Health Check <ArrowRight className="h-3 w-3" />
+                </span>
               </Button>
             </Link>
-            <Link to="/review" className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm">
+            <Link
+              to="/review"
+              className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
+            >
               <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
                 <Sparkles className="h-5 w-5 text-primary" />
               </div>
               <h3 className="text-[15px] font-semibold text-foreground">Review &amp; Improve</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">Review flagged issues and improve structure quality.</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                Review flagged issues and improve structure quality.
+              </p>
               <Button size="sm" className="mt-4 gap-1.5 text-xs" asChild>
-                <span>Review Issues <ArrowRight className="h-3 w-3" /></span>
+                <span>
+                  Review Issues <ArrowRight className="h-3 w-3" />
+                </span>
               </Button>
             </Link>
           </>
@@ -380,9 +374,7 @@ export default function Dashboard() {
       {/* ── Recent Structures ── */}
       <section className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-            Recent Structures
-          </h2>
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Recent Structures</h2>
           {hasStructures && (
             <Button variant="outline" size="sm" className="text-xs gap-1.5" asChild>
               <Link to="/structures">
@@ -395,7 +387,10 @@ export default function Dashboard() {
         {dashboardLoading ? (
           <div className="space-y-1.5">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4">
+              <div
+                key={i}
+                className="flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4"
+              >
                 <div className="flex items-center gap-3.5">
                   <Skeleton className="h-2.5 w-2.5 rounded-full" />
                   <Skeleton className="h-9 w-9 rounded-lg" />
@@ -428,9 +423,7 @@ export default function Dashboard() {
                       <span className={`text-sm font-medium ${stale ? "text-muted-foreground" : "text-foreground"}`}>
                         {s.name}
                       </span>
-                      {stale && (
-                        <p className="text-[11px] text-muted-foreground/60 mt-0.5">Not recently updated</p>
-                      )}
+                      {stale && <p className="text-[11px] text-muted-foreground/60 mt-0.5">Not recently updated</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -450,24 +443,19 @@ export default function Dashboard() {
             <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/8">
               <Network className="h-7 w-7 text-primary" />
             </div>
-            <h3 className="text-lg font-semibold text-foreground">
-              Create your first structure
-            </h3>
+            <h3 className="text-lg font-semibold text-foreground">Create your first structure</h3>
             <ul className="mt-6 inline-flex flex-col items-start gap-3 text-sm text-muted-foreground">
               <li className="flex items-center gap-2.5">
-                <Eye className="h-4 w-4 shrink-0 text-primary/60" /> Visualise ownership clearly
+                <Eye className="h-4 w-4 text-primary/60" /> Visualise ownership clearly
               </li>
               <li className="flex items-center gap-2.5">
-                <AlertTriangle className="h-4 w-4 shrink-0 text-warning/70" /> Spot risks faster
+                <AlertTriangle className="h-4 w-4 text-warning/70" /> Spot risks faster
               </li>
               <li className="flex items-center gap-2.5">
-                <Share2 className="h-4 w-4 shrink-0 text-primary/60" /> Share with clients easily
+                <Share2 className="h-4 w-4 text-primary/60" /> Share with clients easily
               </li>
             </ul>
-            <Button
-              className="mt-10 gap-2 rounded-xl px-6"
-              onClick={handleCreateNew}
-            >
+            <Button className="mt-10 gap-2 rounded-xl px-6 ml-2" onClick={handleCreateNew}>
               <Plus className="h-4 w-4" />
               Create New Structure
             </Button>
@@ -488,9 +476,7 @@ export default function Dashboard() {
                 Connected
               </Badge>
               {xeroConnection.xero_org_name && (
-                <span className="text-sm text-muted-foreground">
-                  {xeroConnection.xero_org_name}
-                </span>
+                <span className="text-sm text-muted-foreground">{xeroConnection.xero_org_name}</span>
               )}
             </div>
             <div className="flex items-center gap-1.5">
@@ -501,11 +487,7 @@ export default function Dashboard() {
                 onClick={handleSyncXpm}
                 disabled={syncing}
               >
-                {syncing ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
+                {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                 {syncing ? "Syncing…" : "Sync"}
               </Button>
               <button
