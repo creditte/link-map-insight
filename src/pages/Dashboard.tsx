@@ -303,9 +303,8 @@ export default function Dashboard() {
                     </SelectContent>
                   </Select>
                   <Button
-                    variant="outline"
                     size="lg"
-                    className="gap-2 rounded-xl px-6 text-sm font-medium"
+                    className="gap-2 rounded-xl px-6 text-sm font-medium shadow-sm"
                     onClick={handleConnectXero}
                     disabled={xeroLoading}
                   >
