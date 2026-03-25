@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTenantUsers, type TenantUser } from "@/hooks/useTenantUsers";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
