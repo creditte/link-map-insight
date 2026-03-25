@@ -283,7 +283,7 @@ export default function Structures() {
           ))}
         </div>
       ) : sorted.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center">No structures found.</p>
+        <p className="text-sm text-muted-foreground">No structures found.</p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {sorted.map((s) => {
