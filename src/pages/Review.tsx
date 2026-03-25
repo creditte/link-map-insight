@@ -92,7 +92,9 @@ export default function Review() {
           Review &amp; Improve
         </h1>
         {loading ? (
-          <p className="text-base text-muted-foreground">Loading issues…</p>
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-48" />
+          </div>
         ) : allResolved ? (
           <p className="text-base text-muted-foreground">
             All issues resolved. Your structures are ready.
