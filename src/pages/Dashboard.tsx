@@ -455,7 +455,7 @@ export default function Dashboard() {
                 <Share2 className="h-4 w-4 text-primary/60" /> Share with clients easily
               </li>
             </ul>
-            <Button className="mt-10 gap-2 rounded-xl px-6 ml-2" onClick={handleCreateNew}>
+            <Button variant="outline" className="mt-10 gap-2 rounded-xl px-6 ml-2" onClick={handleCreateNew}>
               <Plus className="h-4 w-4" />
               Create New Structure
             </Button>
