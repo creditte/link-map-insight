@@ -311,7 +311,7 @@ export default function Dashboard() {
                     {xeroLoading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <ExternalLink className="h-4 w-4" />
+                      <SquareArrowOutUpRight className="h-4 w-4" />
                     )}
                     Connect to Xero
                   </Button>
