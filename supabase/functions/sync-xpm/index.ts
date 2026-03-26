@@ -88,6 +88,40 @@ function extractTrustName(name: string): string | null {
   return atfMatch ? atfMatch[1].trim() : null;
 }
 
+// ── Fetch XPM staff via Practice Manager API ──────────────────────
+async function fetchXpmStaff(accessToken: string, xeroTenantId: string): Promise<any[] | null> {
+  try {
+    console.log("[sync-xpm] Fetching staff from Practice Manager API...");
+    const res = await fetch("https://api.xero.com/practicemanager/3.0/staff.api/list", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "xero-tenant-id": xeroTenantId,
+        Accept: "application/json",
+      },
+    });
+
+    if (res.status === 403 || res.status === 401) {
+      console.log("[sync-xpm] Staff API not authorized");
+      return null;
+    }
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.warn(`[sync-xpm] Staff API returned ${res.status}: ${errText}`);
+      return null;
+    }
+
+    const data = await res.json();
+    const staff = data?.StaffList?.Staff || data?.Staff || data?.StaffList || [];
+    const staffArray = Array.isArray(staff) ? staff : [staff].filter(Boolean);
+    console.log(`[sync-xpm] Staff API returned ${staffArray.length} staff members`);
+    return staffArray.length > 0 ? staffArray : null;
+  } catch (err) {
+    console.warn("[sync-xpm] Staff API call failed:", err);
+    return null;
+  }
+}
+
 // ── Fetch XPM clients via Practice Manager API ─────────────────────
 async function fetchXpmClients(accessToken: string, xeroTenantId: string): Promise<any[] | null> {
   try {
