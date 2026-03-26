@@ -467,6 +467,58 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── Fetch and store staff data ───────────────────────────────────
+    const xpmStaff = await fetchXpmStaff(accessToken, xeroTenantId);
+    const staffList: { id: string; name: string; email: string | null; role: string | null }[] = [];
+
+    if (xpmStaff) {
+      staffFetched = xpmStaff.length;
+      for (const staff of xpmStaff) {
+        const staffName = staff.Name || `${staff.FirstName || ""} ${staff.LastName || ""}`.trim();
+        const staffEmail = staff.Email || staff.EmailAddress || null;
+        if (!staffName) continue;
+
+        staffList.push({
+          id: staff.StaffID || staff.ID || staff.UUID || crypto.randomUUID(),
+          name: staffName,
+          email: staffEmail,
+          role: staff.Role || staff.Position || null,
+        });
+
+        // Create staff as Individual entities if they don't exist
+        const { data: existingStaff } = await supabase
+          .from("entities")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("name", staffName)
+          .eq("entity_type", "Individual")
+          .is("deleted_at", null)
+          .maybeSingle();
+
+        if (!existingStaff) {
+          const { data: newStaffEntity, error: staffErr } = await supabase
+            .from("entities")
+            .insert({
+              tenant_id: tenantId,
+              name: staffName,
+              entity_type: "Individual",
+              source: "imported",
+            })
+            .select("id")
+            .single();
+
+          if (staffErr) {
+            warnings.push(`Failed to create staff entity "${staffName}": ${staffErr.message}`);
+          } else if (newStaffEntity) {
+            xeroIdToEntityId.set(`staff_${staffName}`, newStaffEntity.id);
+            entitiesCreated++;
+          }
+        } else {
+          xeroIdToEntityId.set(`staff_${staffName}`, existingStaff.id);
+        }
+      }
+    }
+
     // ── Auto-create a structure if none exists ────────────────────────
     let structureId: string | null = null;
     const { data: existingStruct } = await supabase
@@ -531,6 +583,8 @@ Deno.serve(async (req) => {
       entitiesUpdated,
       trusteesDetected,
       relationshipsCreated,
+      staffFetched,
+      staffList,
       structureId,
       typeCounts,
       warnings,
