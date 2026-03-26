@@ -20,6 +20,10 @@ import {
   Eye,
   AlertTriangle,
   Share2,
+  Building2,
+  Users,
+  Briefcase,
+  Shield,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
