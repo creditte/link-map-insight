@@ -20,6 +20,10 @@ import {
   Eye,
   AlertTriangle,
   Share2,
+  Building2,
+  Users,
+  Briefcase,
+  Shield,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
@@ -34,6 +38,9 @@ export default function Dashboard() {
   const [recentStructures, setRecentStructures] = useState<{ id: string; name: string; updated_at: string }[]>([]);
   const [structureCount, setStructureCount] = useState(0);
   const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [entityStats, setEntityStats] = useState<{ type: string; count: number }[]>([]);
+  const [totalEntities, setTotalEntities] = useState(0);
+  const [recentEntities, setRecentEntities] = useState<{ id: string; name: string; entity_type: string; created_at: string }[]>([]);
   const [xeroConnection, setXeroConnection] = useState<{
     id: string;
     connected_at: string | null;
@@ -92,7 +99,7 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       setDashboardLoading(true);
-      const [sCount, recent, xeroData] = await Promise.all([
+      const [sCount, recent, xeroData, entitiesData, recentEnts] = await Promise.all([
         supabase.from("structures").select("id", { count: "exact", head: true }).is("deleted_at", null),
         supabase
           .from("structures")
@@ -102,10 +109,35 @@ export default function Dashboard() {
           .order("updated_at", { ascending: false })
           .limit(5),
         supabase.rpc("get_xero_connection_info"),
+        supabase
+          .from("entities")
+          .select("entity_type")
+          .is("deleted_at", null),
+        supabase
+          .from("entities")
+          .select("id, name, entity_type, created_at")
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .limit(8),
       ]);
       setStructureCount(sCount.count ?? 0);
       setRecentStructures((recent.data as any) ?? []);
       setXeroConnection(xeroData.data && xeroData.data !== "null" ? (xeroData.data as any) : null);
+
+      // Process entity stats
+      const entities = entitiesData.data ?? [];
+      setTotalEntities(entities.length);
+      const typeCounts: Record<string, number> = {};
+      entities.forEach((e: any) => {
+        const t = e.entity_type || "Unclassified";
+        typeCounts[t] = (typeCounts[t] || 0) + 1;
+      });
+      const stats = Object.entries(typeCounts)
+        .map(([type, count]) => ({ type, count }))
+        .sort((a, b) => b.count - a.count);
+      setEntityStats(stats);
+      setRecentEntities((recentEnts.data as any) ?? []);
+
       setDashboardLoading(false);
     }
     load();
@@ -156,6 +188,20 @@ export default function Dashboard() {
         title: "XPM Sync Complete",
         description: `${data.contactsFetched ?? 0} contacts fetched, ${data.entitiesCreated ?? 0} created, ${data.entitiesUpdated ?? 0} updated.`,
       });
+      // Refresh entity data
+      const [entitiesData, recentEnts] = await Promise.all([
+        supabase.from("entities").select("entity_type").is("deleted_at", null),
+        supabase.from("entities").select("id, name, entity_type, created_at").is("deleted_at", null).order("created_at", { ascending: false }).limit(8),
+      ]);
+      const entities = entitiesData.data ?? [];
+      setTotalEntities(entities.length);
+      const typeCounts: Record<string, number> = {};
+      entities.forEach((e: any) => {
+        const t = e.entity_type || "Unclassified";
+        typeCounts[t] = (typeCounts[t] || 0) + 1;
+      });
+      setEntityStats(Object.entries(typeCounts).map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count));
+      setRecentEntities((recentEnts.data as any) ?? []);
     } catch (err: any) {
       toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
     } finally {
@@ -181,6 +227,47 @@ export default function Dashboard() {
   };
 
   const hasStructures = structureCount > 0;
+
+  const getEntityIcon = (type: string) => {
+    switch (type) {
+      case "Company":
+        return <Building2 className="h-4 w-4 text-primary/70" />;
+      case "Individual":
+        return <Users className="h-4 w-4 text-blue-500/70" />;
+      case "Trust":
+      case "trust_discretionary":
+      case "trust_unit":
+      case "trust_hybrid":
+      case "trust_bare":
+      case "trust_testamentary":
+      case "trust_deceased_estate":
+      case "trust_family":
+        return <Shield className="h-4 w-4 text-amber-500/70" />;
+      case "smsf":
+        return <Shield className="h-4 w-4 text-emerald-500/70" />;
+      case "Partnership":
+      case "Sole Trader":
+        return <Briefcase className="h-4 w-4 text-violet-500/70" />;
+      default:
+        return <Building2 className="h-4 w-4 text-muted-foreground/50" />;
+    }
+  };
+
+  const formatEntityType = (type: string) => {
+    const map: Record<string, string> = {
+      trust_discretionary: "Discretionary Trust",
+      trust_unit: "Unit Trust",
+      trust_hybrid: "Hybrid Trust",
+      trust_bare: "Bare Trust",
+      trust_testamentary: "Testamentary Trust",
+      trust_deceased_estate: "Deceased Estate",
+      trust_family: "Family Trust",
+      smsf: "SMSF",
+      "Sole Trader": "Sole Trader",
+      "Incorporated Association/Club": "Association/Club",
+    };
+    return map[type] || type;
+  };
 
   // Compute last updated for hero summary
   const lastUpdated =
@@ -463,6 +550,59 @@ export default function Dashboard() {
         )}
       </section>
 
+      {/* ── Entities Overview ── */}
+      {totalEntities > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+              Entities ({totalEntities})
+            </h2>
+          </div>
+
+          {/* Entity type breakdown */}
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+            {entityStats.slice(0, 8).map((stat) => {
+              const icon = getEntityIcon(stat.type);
+              return (
+                <div
+                  key={stat.type}
+                  className="rounded-xl border border-border/60 bg-card px-4 py-3 space-y-1"
+                >
+                  <div className="flex items-center gap-2">
+                    {icon}
+                    <span className="text-xs text-muted-foreground truncate">{formatEntityType(stat.type)}</span>
+                  </div>
+                  <p className="text-lg font-semibold text-foreground">{stat.count}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Recent entities list */}
+          {recentEntities.length > 0 && (
+            <div className="space-y-1.5">
+              <h3 className="text-xs font-medium text-muted-foreground">Recently Added</h3>
+              {recentEntities.map((e) => (
+                <div
+                  key={e.id}
+                  className="flex items-center justify-between rounded-lg border border-border/40 bg-card px-4 py-2.5"
+                >
+                  <div className="flex items-center gap-3">
+                    {getEntityIcon(e.entity_type)}
+                    <div>
+                      <span className="text-sm font-medium text-foreground">{e.name}</span>
+                      <p className="text-[11px] text-muted-foreground">{formatEntityType(e.entity_type)}</p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDistanceToNow(new Date(e.created_at), { addSuffix: true })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
       {/* ── Xero Status ── */}
       {canManageIntegrations && xeroConnection && (
         <section className="rounded-xl border-t border-border/60 bg-muted/30 px-5 py-3.5">
