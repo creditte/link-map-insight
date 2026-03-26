@@ -647,6 +647,67 @@ export default function Dashboard() {
           )}
         </section>
       )}
+
+      {/* ── Relationships & Staff Overview ── */}
+      {(relationshipCount > 0 || staffMembers.length > 0) && (
+        <section className="space-y-4">
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+            Relationships & Staff
+          </h2>
+
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3">
+            {relationshipCount > 0 && (
+              <div className="rounded-xl border border-border/60 bg-card px-4 py-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Network className="h-4 w-4 text-primary/70" />
+                  <span className="text-xs text-muted-foreground">Ownership Relationships</span>
+                </div>
+                <p className="text-lg font-semibold text-foreground">{relationshipCount}</p>
+              </div>
+            )}
+            {staffMembers.length > 0 && (
+              <div className="rounded-xl border border-border/60 bg-card px-4 py-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary/70" />
+                  <span className="text-xs text-muted-foreground">Staff Members</span>
+                </div>
+                <p className="text-lg font-semibold text-foreground">{staffMembers.length}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Staff list */}
+          {staffMembers.length > 0 && (
+            <div className="space-y-1.5">
+              <h3 className="text-xs font-medium text-muted-foreground">XPM Staff</h3>
+              {staffMembers.slice(0, 10).map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between rounded-lg border border-border/40 bg-card px-4 py-2.5"
+                >
+                  <div className="flex items-center gap-3">
+                    <Users className="h-4 w-4 text-primary/60" />
+                    <div>
+                      <span className="text-sm font-medium text-foreground">{s.name}</span>
+                      {s.role && (
+                        <span className="ml-2 text-[11px] text-muted-foreground">{s.role}</span>
+                      )}
+                    </div>
+                  </div>
+                  {s.email && (
+                    <span className="text-xs text-muted-foreground">{s.email}</span>
+                  )}
+                </div>
+              ))}
+              {staffMembers.length > 10 && (
+                <p className="text-xs text-muted-foreground pl-1">
+                  +{staffMembers.length - 10} more staff members
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+      )}
       {/* ── Xero Status ── */}
       {canManageIntegrations && xeroConnection && (
         <section className="rounded-xl border-t border-border/60 bg-muted/30 px-5 py-3.5">
