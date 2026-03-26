@@ -509,6 +509,59 @@ export default function Dashboard() {
         )}
       </section>
 
+      {/* ── Entities Overview ── */}
+      {totalEntities > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+              Entities ({totalEntities})
+            </h2>
+          </div>
+
+          {/* Entity type breakdown */}
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+            {entityStats.slice(0, 8).map((stat) => {
+              const icon = getEntityIcon(stat.type);
+              return (
+                <div
+                  key={stat.type}
+                  className="rounded-xl border border-border/60 bg-card px-4 py-3 space-y-1"
+                >
+                  <div className="flex items-center gap-2">
+                    {icon}
+                    <span className="text-xs text-muted-foreground truncate">{formatEntityType(stat.type)}</span>
+                  </div>
+                  <p className="text-lg font-semibold text-foreground">{stat.count}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Recent entities list */}
+          {recentEntities.length > 0 && (
+            <div className="space-y-1.5">
+              <h3 className="text-xs font-medium text-muted-foreground">Recently Added</h3>
+              {recentEntities.map((e) => (
+                <div
+                  key={e.id}
+                  className="flex items-center justify-between rounded-lg border border-border/40 bg-card px-4 py-2.5"
+                >
+                  <div className="flex items-center gap-3">
+                    {getEntityIcon(e.entity_type)}
+                    <div>
+                      <span className="text-sm font-medium text-foreground">{e.name}</span>
+                      <p className="text-[11px] text-muted-foreground">{formatEntityType(e.entity_type)}</p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDistanceToNow(new Date(e.created_at), { addSuffix: true })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
       {/* ── Xero Status ── */}
       {canManageIntegrations && xeroConnection && (
         <section className="rounded-xl border-t border-border/60 bg-muted/30 px-5 py-3.5">
