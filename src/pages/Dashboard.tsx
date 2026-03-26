@@ -112,11 +112,11 @@ export default function Dashboard() {
         supabase.rpc("get_xero_connection_info"),
         supabase
           .from("entities")
-          .select("entity_type")
+          .select("entity_type, is_trustee_company")
           .is("deleted_at", null),
         supabase
           .from("entities")
-          .select("id, name, entity_type, created_at")
+          .select("id, name, entity_type, is_trustee_company, abn, created_at")
           .is("deleted_at", null)
           .order("created_at", { ascending: false })
           .limit(8),
