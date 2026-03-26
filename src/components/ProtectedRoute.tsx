@@ -9,13 +9,41 @@ import { Shield } from "lucide-react";
 import RecoveryScreen from "@/components/RecoveryScreen";
 import { trace, getTrace, TraceEntry } from "@/lib/bootTrace";
 
-function ElapsedTimer() {
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(t);
-  }, []);
-  return <span className="text-xs text-muted-foreground">({elapsed}s)</span>;
+type BootStep = "auth" | "firm" | "account" | "security" | "subscription";
+
+const STEP_LABELS: Record<BootStep, string> = {
+  auth: "Signing in",
+  firm: "Loading workspace",
+  account: "Setting up account",
+  security: "Verifying security",
+  subscription: "Checking plan",
+};
+
+function BootLoadingScreen({ currentStep }: { currentStep: BootStep }) {
+  const steps: BootStep[] = ["auth", "firm", "account", "security", "subscription"];
+  const currentIdx = steps.indexOf(currentStep);
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-6 max-w-xs">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <div className="space-y-2 w-full">
+          {steps.map((step, idx) => {
+            const isDone = idx < currentIdx;
+            const isActive = idx === currentIdx;
+            return (
+              <div key={step} className="flex items-center gap-2 text-sm">
+                <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${isDone ? "bg-primary" : isActive ? "bg-primary animate-pulse" : "bg-muted-foreground/30"}`} />
+                <span className={isDone ? "text-muted-foreground" : isActive ? "text-foreground font-medium" : "text-muted-foreground/40"}>
+                  {STEP_LABELS[step]}{isActive ? "…" : isDone ? " ✓" : ""}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ── Full Boot Debug Panel ──────────────────────────────────────────── */
@@ -225,11 +253,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   // ── Still booting auth ────────────────────────────────────────
   if (bootStatus === "booting") {
     trace("ProtectedRoute", "decision: auth booting → loading spinner");
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-muted-foreground">Authenticating… <ElapsedTimer /></p>
-      </div>
-    );
+    return <BootLoadingScreen currentStep="auth" />;
   }
 
   // ── Unauthenticated ───────────────────────────────────────────
@@ -253,11 +277,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   // ── Tenant still loading ──────────────────────────────────────
   if (tenantLoading) {
     trace("ProtectedRoute", "decision: tenant loading → spinner");
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading firm settings… <ElapsedTimer /></p>
-      </div>
-    );
+    return <BootLoadingScreen currentStep="firm" />;
   }
 
   // ── No profile or no tenant row → TERMINAL, not loading ───────
@@ -281,11 +301,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   // ── Wait for onboarding check before allowing app access ──────
   if (bootStatus === "authenticated" && !onboardingChecked) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-muted-foreground">Checking account setup… <ElapsedTimer /></p>
-      </div>
-    );
+    return <BootLoadingScreen currentStep="account" />;
   }
 
   // ── Password setup required ────────────────────────────────────
@@ -302,11 +318,7 @@ function MfaGate({ children }: { children: React.ReactNode }) {
   const { status: mfaStatus, loading: mfaLoading } = useMfa();
 
   if (mfaLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-muted-foreground">Checking security settings… <ElapsedTimer /></p>
-      </div>
-    );
+    return <BootLoadingScreen currentStep="security" />;
   }
 
   if (mfaStatus === "not-enrolled") {
@@ -325,11 +337,7 @@ function BillingGate({ children }: { children: React.ReactNode }) {
   const { billing, loading } = useBilling();
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-muted-foreground">Checking subscription… <ElapsedTimer /></p>
-      </div>
-    );
+    return <BootLoadingScreen currentStep="subscription" />;
   }
 
   // If billing data loaded and access is disabled, redirect
