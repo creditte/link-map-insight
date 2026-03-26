@@ -228,6 +228,47 @@ export default function Dashboard() {
 
   const hasStructures = structureCount > 0;
 
+  const getEntityIcon = (type: string) => {
+    switch (type) {
+      case "Company":
+        return <Building2 className="h-4 w-4 text-primary/70" />;
+      case "Individual":
+        return <Users className="h-4 w-4 text-blue-500/70" />;
+      case "Trust":
+      case "trust_discretionary":
+      case "trust_unit":
+      case "trust_hybrid":
+      case "trust_bare":
+      case "trust_testamentary":
+      case "trust_deceased_estate":
+      case "trust_family":
+        return <Shield className="h-4 w-4 text-amber-500/70" />;
+      case "smsf":
+        return <Shield className="h-4 w-4 text-emerald-500/70" />;
+      case "Partnership":
+      case "Sole Trader":
+        return <Briefcase className="h-4 w-4 text-violet-500/70" />;
+      default:
+        return <Building2 className="h-4 w-4 text-muted-foreground/50" />;
+    }
+  };
+
+  const formatEntityType = (type: string) => {
+    const map: Record<string, string> = {
+      trust_discretionary: "Discretionary Trust",
+      trust_unit: "Unit Trust",
+      trust_hybrid: "Hybrid Trust",
+      trust_bare: "Bare Trust",
+      trust_testamentary: "Testamentary Trust",
+      trust_deceased_estate: "Deceased Estate",
+      trust_family: "Family Trust",
+      smsf: "SMSF",
+      "Sole Trader": "Sole Trader",
+      "Incorporated Association/Club": "Association/Club",
+    };
+    return map[type] || type;
+  };
+
   // Compute last updated for hero summary
   const lastUpdated =
     recentStructures.length > 0
