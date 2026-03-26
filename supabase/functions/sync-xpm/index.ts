@@ -7,25 +7,10 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ── Entity type mapping ─────────────────────────────────────────────────
-const ENTITY_TYPE_MAP: Record<string, string> = {
-  individual: "Individual",
-  company: "Company",
-  partnership: "Partnership",
-  "sole trader": "Sole Trader",
-  trust: "Trust",
-  smsf: "smsf",
-};
-
-// ── Token refresh ───────────────────────────────────────────────────────
-async function refreshAccessToken(
-  supabase: any,
-  connection: any,
-): Promise<string> {
+// ── Token refresh ───────────────────────────────────────────────────
+async function refreshAccessToken(supabase: any, connection: any): Promise<string> {
   const now = new Date();
   const expiresAt = new Date(connection.expires_at);
-
-  // Decrypt the stored access token
   const currentAccessToken = await decryptToken(connection.access_token);
 
   if (expiresAt.getTime() - now.getTime() > 120_000) {
@@ -35,8 +20,6 @@ async function refreshAccessToken(
   console.log("[sync-xpm] Token expired, refreshing...");
   const clientId = Deno.env.get("XERO_CLIENT_ID")!;
   const clientSecret = Deno.env.get("XERO_CLIENT_SECRET")!;
-
-  // Decrypt refresh token for the refresh request
   const currentRefreshToken = await decryptToken(connection.refresh_token);
 
   const res = await fetch("https://identity.xero.com/connect/token", {
@@ -58,8 +41,6 @@ async function refreshAccessToken(
 
   const tokens = await res.json();
   const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-
-  // Encrypt new tokens before storing
   const encryptedAccessToken = await encryptToken(tokens.access_token);
   const encryptedRefreshToken = await encryptToken(tokens.refresh_token);
 
@@ -76,19 +57,38 @@ async function refreshAccessToken(
   return tokens.access_token;
 }
 
-// ── XPM client type mapping ─────────────────────────────────────────────
+// ── XPM client type mapping ─────────────────────────────────────────
 const XPM_CLIENT_TYPE_MAP: Record<string, string> = {
-  "Company": "Company",
-  "Individual": "Individual",
-  "Partnership": "Partnership",
+  Company: "Company",
+  Individual: "Individual",
+  Partnership: "Partnership",
   "Sole Trader": "Sole Trader",
-  "Trust": "Trust",
-  "SuperFund": "smsf",
+  Trust: "Trust",
+  SuperFund: "smsf",
   "Super Fund": "smsf",
-  "SMSF": "smsf",
+  SMSF: "smsf",
 };
 
-// ── Fetch XPM clients via Practice Manager API ─────────────────────────
+// ── Detect corporate trustee from name ──────────────────────────────
+function isCorporateTrustee(name: string, entityType: string): boolean {
+  if (entityType !== "Company") return false;
+  const lower = name.toLowerCase();
+  return (
+    lower.includes("as trustee for") ||
+    lower.includes("atf ") ||
+    lower.includes(" atf") ||
+    /\btrustee\b/.test(lower)
+  );
+}
+
+// ── Extract trust name from trustee pattern ─────────────────────────
+function extractTrustName(name: string): string | null {
+  // "ABC Pty Ltd as Trustee for XYZ Trust" → "XYZ Trust"
+  const atfMatch = name.match(/(?:as\s+trustee\s+for|atf)\s+(.+)/i);
+  return atfMatch ? atfMatch[1].trim() : null;
+}
+
+// ── Fetch XPM clients via Practice Manager API ─────────────────────
 async function fetchXpmClients(accessToken: string, xeroTenantId: string): Promise<any[] | null> {
   try {
     console.log("[sync-xpm] Attempting Practice Manager API...");
@@ -101,7 +101,7 @@ async function fetchXpmClients(accessToken: string, xeroTenantId: string): Promi
     });
 
     if (res.status === 403 || res.status === 401) {
-      console.log("[sync-xpm] XPM API not authorized (App Partner scope may not be active), falling back to Accounting API");
+      console.log("[sync-xpm] XPM API not authorized, falling back to Accounting API");
       return null;
     }
 
@@ -112,7 +112,6 @@ async function fetchXpmClients(accessToken: string, xeroTenantId: string): Promi
     }
 
     const data = await res.json();
-    // XPM returns clients in data.Clients or data.ClientList
     const clients = data?.Clients || data?.ClientList || [];
     console.log(`[sync-xpm] XPM returned ${clients.length} clients`);
     return Array.isArray(clients) ? clients : null;
@@ -122,7 +121,7 @@ async function fetchXpmClients(accessToken: string, xeroTenantId: string): Promi
   }
 }
 
-// ── Normalize XPM client to a common contact shape ─────────────────────
+// ── Normalize XPM client to a common contact shape ─────────────────
 function xpmClientToContact(client: any): any {
   return {
     ContactID: client.ClientID || client.ID || client.ClientUUID || crypto.randomUUID(),
@@ -130,6 +129,7 @@ function xpmClientToContact(client: any): any {
     FirstName: client.FirstName || null,
     LastName: client.LastName || null,
     EmailAddress: client.Email || client.EmailAddress || null,
+    TaxNumber: client.TaxNumber || client.ABN || null,
     ContactStatus: "ACTIVE",
     IsCustomer: true,
     IsSupplier: false,
@@ -138,7 +138,7 @@ function xpmClientToContact(client: any): any {
   };
 }
 
-// ── Fetch all contacts with pagination (Accounting API fallback) ───────
+// ── Fetch all contacts with pagination (Accounting API fallback) ───
 async function fetchAllContacts(accessToken: string, xeroTenantId: string): Promise<any[]> {
   const allContacts: any[] = [];
   let page = 1;
@@ -170,9 +170,8 @@ async function fetchAllContacts(accessToken: string, xeroTenantId: string): Prom
   return allContacts;
 }
 
-// ── Guess entity type from contact data ─────────────────────────────────
+// ── Guess entity type from contact data ─────────────────────────────
 function guessEntityType(contact: any): string {
-  // If from XPM, use the client type mapping first
   if (contact._fromXpm && contact._xpmClientType) {
     const mapped = XPM_CLIENT_TYPE_MAP[contact._xpmClientType];
     if (mapped) return mapped;
@@ -193,7 +192,7 @@ function guessEntityType(contact: any): string {
     return "Company";
   }
 
-  if (name.includes("partnership") || name.includes(" & ") && !name.includes("pty")) {
+  if (name.includes("partnership") || (name.includes(" & ") && !name.includes("pty"))) {
     return "Partnership";
   }
 
@@ -204,7 +203,7 @@ function guessEntityType(contact: any): string {
   return "Unclassified";
 }
 
-// ── Main ────────────────────────────────────────────────────────────────
+// ── Main ────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -263,10 +262,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Refresh token if needed (handles decryption internally)
     const accessToken = await refreshAccessToken(supabase, connection);
 
-    // ── Try XPM Practice Manager API first, fall back to Accounting API ──
+    // ── Try XPM first, fall back to Accounting API ──
     let contacts: any[];
     let dataSource = "accounting";
     const xpmClients = await fetchXpmClients(accessToken, xeroTenantId);
@@ -284,8 +282,15 @@ Deno.serve(async (req) => {
     const warnings: string[] = [];
     let entitiesCreated = 0;
     let entitiesUpdated = 0;
+    let trusteesDetected = 0;
+    let relationshipsCreated = 0;
 
     const xeroIdToEntityId = new Map<string, string>();
+    // Track trustee→trust pairings for relationship creation
+    const trusteePairs: { trusteeEntityId: string; trustName: string }[] = [];
+
+    // ── Stats counters ──
+    const typeCounts: Record<string, number> = {};
 
     for (const contact of contacts) {
       const contactId = contact.ContactID;
@@ -293,13 +298,18 @@ Deno.serve(async (req) => {
       if (!name) continue;
 
       const entityType = guessEntityType(contact);
+      const abn = contact.TaxNumber || null;
+      const trusteeCompany = isCorporateTrustee(name, entityType);
 
-      let existingEntity: { id: string; entity_type: string; xpm_uuid: string | null } | null = null;
+      typeCounts[entityType] = (typeCounts[entityType] || 0) + 1;
+      if (trusteeCompany) trusteesDetected++;
+
+      let existingEntity: { id: string; entity_type: string; xpm_uuid: string | null; abn: string | null; is_trustee_company: boolean } | null = null;
 
       if (contactId) {
         const { data } = await supabase
           .from("entities")
-          .select("id, entity_type, xpm_uuid")
+          .select("id, entity_type, xpm_uuid, abn, is_trustee_company")
           .eq("tenant_id", tenantId)
           .eq("xpm_uuid", contactId)
           .is("deleted_at", null)
@@ -310,7 +320,7 @@ Deno.serve(async (req) => {
       if (!existingEntity) {
         const { data } = await supabase
           .from("entities")
-          .select("id, entity_type, xpm_uuid")
+          .select("id, entity_type, xpm_uuid, abn, is_trustee_company")
           .eq("tenant_id", tenantId)
           .eq("name", name)
           .is("deleted_at", null)
@@ -319,12 +329,18 @@ Deno.serve(async (req) => {
       }
 
       if (existingEntity) {
-        const updates: Record<string, string> = {};
+        const updates: Record<string, any> = {};
         if (entityType !== "Unclassified" && existingEntity.entity_type === "Unclassified") {
           updates.entity_type = entityType;
         }
         if (!existingEntity.xpm_uuid && contactId) {
           updates.xpm_uuid = contactId;
+        }
+        if (abn && !existingEntity.abn) {
+          updates.abn = abn;
+        }
+        if (trusteeCompany && !existingEntity.is_trustee_company) {
+          updates.is_trustee_company = true;
         }
         if (Object.keys(updates).length > 0) {
           updates.source = "imported";
@@ -332,6 +348,14 @@ Deno.serve(async (req) => {
           entitiesUpdated++;
         }
         xeroIdToEntityId.set(contactId, existingEntity.id);
+
+        // Track trustee pair
+        if (trusteeCompany) {
+          const trustName = extractTrustName(name);
+          if (trustName) {
+            trusteePairs.push({ trusteeEntityId: existingEntity.id, trustName });
+          }
+        }
       } else {
         const { data, error } = await supabase
           .from("entities")
@@ -340,6 +364,8 @@ Deno.serve(async (req) => {
             name,
             xpm_uuid: contactId || null,
             entity_type: entityType,
+            abn: abn,
+            is_trustee_company: trusteeCompany,
             source: "imported",
           })
           .select("id")
@@ -351,6 +377,58 @@ Deno.serve(async (req) => {
         }
         xeroIdToEntityId.set(contactId, data.id);
         entitiesCreated++;
+
+        // Track trustee pair
+        if (trusteeCompany) {
+          const trustName = extractTrustName(name);
+          if (trustName) {
+            trusteePairs.push({ trusteeEntityId: data.id, trustName });
+          }
+        }
+      }
+    }
+
+    // ── Auto-create trustee relationships ────────────────────────────
+    for (const pair of trusteePairs) {
+      // Find the trust entity by name
+      const { data: trustEntity } = await supabase
+        .from("entities")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .ilike("name", `%${pair.trustName}%`)
+        .is("deleted_at", null)
+        .maybeSingle();
+
+      if (trustEntity) {
+        // Check if relationship already exists
+        const { data: existingRel } = await supabase
+          .from("relationships")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("from_entity_id", pair.trusteeEntityId)
+          .eq("to_entity_id", trustEntity.id)
+          .eq("relationship_type", "trustee")
+          .is("deleted_at", null)
+          .maybeSingle();
+
+        if (!existingRel) {
+          const { error: relErr } = await supabase
+            .from("relationships")
+            .insert({
+              tenant_id: tenantId,
+              from_entity_id: pair.trusteeEntityId,
+              to_entity_id: trustEntity.id,
+              relationship_type: "trustee",
+              source: "imported",
+              confidence: "imported",
+            });
+
+          if (!relErr) {
+            relationshipsCreated++;
+          } else {
+            warnings.push(`Failed to create trustee relationship for "${pair.trustName}": ${relErr.message}`);
+          }
+        }
       }
     }
 
@@ -386,6 +464,28 @@ Deno.serve(async (req) => {
             { onConflict: "structure_id,entity_id", ignoreDuplicates: true },
           );
       }
+
+      // Link trustee relationships to structure
+      if (relationshipsCreated > 0) {
+        const { data: relIds } = await supabase
+          .from("relationships")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("source", "imported")
+          .eq("relationship_type", "trustee")
+          .is("deleted_at", null);
+
+        if (relIds) {
+          for (const rel of relIds) {
+            await supabase
+              .from("structure_relationships")
+              .upsert(
+                { structure_id: structureId, relationship_id: rel.id },
+                { onConflict: "structure_id,relationship_id", ignoreDuplicates: true },
+              );
+          }
+        }
+      }
     }
 
     const result = {
@@ -394,7 +494,10 @@ Deno.serve(async (req) => {
       contactsFetched: contacts.length,
       entitiesCreated,
       entitiesUpdated,
+      trusteesDetected,
+      relationshipsCreated,
       structureId,
+      typeCounts,
       warnings,
     };
 

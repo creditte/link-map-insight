@@ -40,7 +40,8 @@ export default function Dashboard() {
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [entityStats, setEntityStats] = useState<{ type: string; count: number }[]>([]);
   const [totalEntities, setTotalEntities] = useState(0);
-  const [recentEntities, setRecentEntities] = useState<{ id: string; name: string; entity_type: string; created_at: string }[]>([]);
+  const [trusteeCount, setTrusteeCount] = useState(0);
+  const [recentEntities, setRecentEntities] = useState<{ id: string; name: string; entity_type: string; is_trustee_company: boolean; abn: string | null; created_at: string }[]>([]);
   const [xeroConnection, setXeroConnection] = useState<{
     id: string;
     connected_at: string | null;
@@ -111,11 +112,11 @@ export default function Dashboard() {
         supabase.rpc("get_xero_connection_info"),
         supabase
           .from("entities")
-          .select("entity_type")
+          .select("entity_type, is_trustee_company")
           .is("deleted_at", null),
         supabase
           .from("entities")
-          .select("id, name, entity_type, created_at")
+          .select("id, name, entity_type, is_trustee_company, abn, created_at")
           .is("deleted_at", null)
           .order("created_at", { ascending: false })
           .limit(8),
@@ -127,6 +128,7 @@ export default function Dashboard() {
       // Process entity stats
       const entities = entitiesData.data ?? [];
       setTotalEntities(entities.length);
+      setTrusteeCount(entities.filter((e: any) => e.is_trustee_company).length);
       const typeCounts: Record<string, number> = {};
       entities.forEach((e: any) => {
         const t = e.entity_type || "Unclassified";
@@ -184,17 +186,22 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase.functions.invoke("sync-xpm");
       if (error) throw error;
-      toast({
-        title: "XPM Sync Complete",
-        description: `${data.contactsFetched ?? 0} contacts fetched, ${data.entitiesCreated ?? 0} created, ${data.entitiesUpdated ?? 0} updated.`,
-      });
+      const parts = [
+        `${data.contactsFetched ?? 0} contacts fetched`,
+        `${data.entitiesCreated ?? 0} created`,
+        `${data.entitiesUpdated ?? 0} updated`,
+      ];
+      if (data.trusteesDetected > 0) parts.push(`${data.trusteesDetected} corporate trustees detected`);
+      if (data.relationshipsCreated > 0) parts.push(`${data.relationshipsCreated} relationships created`);
+      toast({ title: "XPM Sync Complete", description: parts.join(", ") + "." });
       // Refresh entity data
       const [entitiesData, recentEnts] = await Promise.all([
-        supabase.from("entities").select("entity_type").is("deleted_at", null),
-        supabase.from("entities").select("id, name, entity_type, created_at").is("deleted_at", null).order("created_at", { ascending: false }).limit(8),
+        supabase.from("entities").select("entity_type, is_trustee_company").is("deleted_at", null),
+        supabase.from("entities").select("id, name, entity_type, is_trustee_company, abn, created_at").is("deleted_at", null).order("created_at", { ascending: false }).limit(8),
       ]);
       const entities = entitiesData.data ?? [];
       setTotalEntities(entities.length);
+      setTrusteeCount(entities.filter((e: any) => e.is_trustee_company).length);
       const typeCounts: Record<string, number> = {};
       entities.forEach((e: any) => {
         const t = e.entity_type || "Unclassified";
@@ -555,8 +562,14 @@ export default function Dashboard() {
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              Entities ({totalEntities})
+              Synced Entities ({totalEntities})
             </h2>
+            {xeroConnection && (
+              <Badge variant="outline" className="text-[11px] gap-1">
+                <RefreshCw className="h-3 w-3" />
+                From Xero
+              </Badge>
+            )}
           </div>
 
           {/* Entity type breakdown */}
@@ -576,6 +589,16 @@ export default function Dashboard() {
                 </div>
               );
             })}
+            {/* Corporate Trustees card — always shown if any exist */}
+            {trusteeCount > 0 && (
+              <div className="rounded-xl border border-border/60 bg-card px-4 py-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-accent-foreground/60" />
+                  <span className="text-xs text-muted-foreground truncate">Corporate Trustees</span>
+                </div>
+                <p className="text-lg font-semibold text-foreground">{trusteeCount}</p>
+              </div>
+            )}
           </div>
 
           {/* Recent entities list */}
@@ -590,8 +613,18 @@ export default function Dashboard() {
                   <div className="flex items-center gap-3">
                     {getEntityIcon(e.entity_type)}
                     <div>
-                      <span className="text-sm font-medium text-foreground">{e.name}</span>
-                      <p className="text-[11px] text-muted-foreground">{formatEntityType(e.entity_type)}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-foreground">{e.name}</span>
+                        {e.is_trustee_company && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">Trustee</Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-muted-foreground">{formatEntityType(e.entity_type)}</span>
+                        {e.abn && (
+                          <span className="text-[10px] text-muted-foreground/60">ABN {e.abn}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <span className="text-xs text-muted-foreground">
