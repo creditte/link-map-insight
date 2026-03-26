@@ -38,6 +38,9 @@ export default function Dashboard() {
   const [recentStructures, setRecentStructures] = useState<{ id: string; name: string; updated_at: string }[]>([]);
   const [structureCount, setStructureCount] = useState(0);
   const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [entityStats, setEntityStats] = useState<{ type: string; count: number }[]>([]);
+  const [totalEntities, setTotalEntities] = useState(0);
+  const [recentEntities, setRecentEntities] = useState<{ id: string; name: string; entity_type: string; created_at: string }[]>([]);
   const [xeroConnection, setXeroConnection] = useState<{
     id: string;
     connected_at: string | null;
