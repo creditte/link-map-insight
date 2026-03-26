@@ -562,8 +562,14 @@ export default function Dashboard() {
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              Entities ({totalEntities})
+              Synced Entities ({totalEntities})
             </h2>
+            {xeroConnection && (
+              <Badge variant="outline" className="text-[11px] gap-1">
+                <RefreshCw className="h-3 w-3" />
+                From Xero
+              </Badge>
+            )}
           </div>
 
           {/* Entity type breakdown */}
@@ -583,6 +589,16 @@ export default function Dashboard() {
                 </div>
               );
             })}
+            {/* Corporate Trustees card — always shown if any exist */}
+            {trusteeCount > 0 && (
+              <div className="rounded-xl border border-border/60 bg-card px-4 py-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-accent-foreground/60" />
+                  <span className="text-xs text-muted-foreground truncate">Corporate Trustees</span>
+                </div>
+                <p className="text-lg font-semibold text-foreground">{trusteeCount}</p>
+              </div>
+            )}
           </div>
 
           {/* Recent entities list */}
@@ -597,8 +613,18 @@ export default function Dashboard() {
                   <div className="flex items-center gap-3">
                     {getEntityIcon(e.entity_type)}
                     <div>
-                      <span className="text-sm font-medium text-foreground">{e.name}</span>
-                      <p className="text-[11px] text-muted-foreground">{formatEntityType(e.entity_type)}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-foreground">{e.name}</span>
+                        {e.is_trustee_company && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">Trustee</Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-muted-foreground">{formatEntityType(e.entity_type)}</span>
+                        {e.abn && (
+                          <span className="text-[10px] text-muted-foreground/60">ABN {e.abn}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <span className="text-xs text-muted-foreground">
