@@ -337,11 +337,7 @@ function BillingGate({ children }: { children: React.ReactNode }) {
   const { billing, loading } = useBilling();
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-muted-foreground">Checking subscription… <ElapsedTimer /></p>
-      </div>
-    );
+    return <BootLoadingScreen currentStep="subscription" />;
   }
 
   // If billing data loaded and access is disabled, redirect
