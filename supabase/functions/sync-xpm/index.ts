@@ -602,15 +602,23 @@ Deno.serve(async (req) => {
       const groupName = xmlText(group, "Name");
       if (!groupName) continue;
 
-      // Fetch group details to get members
       const groupUuid = xmlText(group, "UUID");
+      if (!groupUuid) continue;
+
+      // Save/update group in xpm_groups table
+      await supabase
+        .from("xpm_groups")
+        .upsert(
+          { tenant_id: tenantId, xpm_uuid: groupUuid, name: groupName, updated_at: new Date().toISOString() },
+          { onConflict: "tenant_id,xpm_uuid" },
+        );
+
+      // Fetch group details to get members
       let members: any[] = [];
-      if (groupUuid) {
-        const groupDetailXml = await xpmGetXml(`/clientgroup.api/${groupUuid}`, accessToken, xeroTenantId);
-        const groupDetail = groupDetailXml?.Response?.Group;
-        const clientsInGroup = groupDetail?.Clients;
-        members = xmlArray(clientsInGroup, "Client");
-      }
+      const groupDetailXml = await xpmGetXml(`/clientgroup.api/get/${groupUuid}`, accessToken, xeroTenantId);
+      const groupDetail = groupDetailXml?.Response?.Group;
+      const clientsInGroup = groupDetail?.Clients;
+      members = xmlArray(clientsInGroup, "Client");
 
       // Create or find structure for this group
       const { data: existingStruct } = await supabase
