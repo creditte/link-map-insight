@@ -238,7 +238,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const accessToken = await refreshAccessToken(supabase, connection);
+    // accessToken already obtained above
 
     // Check last sync timestamp for If-Modified-Since
     const { data: lastImport } = await supabase
