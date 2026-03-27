@@ -204,6 +204,37 @@ Deno.serve(async (req) => {
       for (const r of results) if (r) clients.push(r);
     }
 
+    // ── Clean up existing structures for this tenant before importing ──
+    // 1. Remove join-table rows
+    const { data: existingStructures } = await supabase.from("structures").select("id").eq("tenant_id", tenantId);
+    const existingStructureIds = (existingStructures ?? []).map((s: any) => s.id);
+
+    if (existingStructureIds.length > 0) {
+      await supabase.from("structure_relationships").delete().in("structure_id", existingStructureIds);
+      await supabase.from("structure_entities").delete().in("structure_id", existingStructureIds);
+
+      // Clear snapshot data
+      const { data: snapshots } = await supabase.from("structure_snapshots").select("id").in("structure_id", existingStructureIds);
+      const snapIds = (snapshots ?? []).map((s: any) => s.id);
+      if (snapIds.length > 0) {
+        await supabase.from("snapshot_relationships").delete().in("snapshot_id", snapIds);
+        await supabase.from("snapshot_entities").delete().in("snapshot_id", snapIds);
+      }
+      await supabase.from("structure_snapshots").delete().in("structure_id", existingStructureIds);
+
+      // Nullify feedback references
+      await supabase.from("feedback").update({ structure_id: null }).in("structure_id", existingStructureIds);
+
+      // Delete structures themselves
+      await supabase.from("structures").delete().in("id", existingStructureIds);
+    }
+
+    // 2. Delete all tenant entities & relationships (they'll be re-created fresh)
+    await supabase.from("relationships").delete().eq("tenant_id", tenantId);
+    await supabase.from("entities").delete().eq("tenant_id", tenantId);
+
+    console.log(`[import-xpm-group] Cleaned up ${existingStructureIds.length} existing structures for tenant ${tenantId}`);
+
     // Create structure
     const { data: structure, error: structErr } = await supabase.from("structures").insert({
       name: groupName,
