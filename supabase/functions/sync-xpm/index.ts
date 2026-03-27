@@ -16,7 +16,7 @@ async function refreshAccessToken(supabase: any, connection: any): Promise<strin
   const expiresAt = new Date(connection.expires_at);
   const currentAccessToken = await decryptToken(connection.access_token);
 
-  if (expiresAt.getTime() - now.getTime() > 120_000) {
+  if (expiresAt.getTime() - now.getTime() > 300_000) {
     return currentAccessToken;
   }
 
