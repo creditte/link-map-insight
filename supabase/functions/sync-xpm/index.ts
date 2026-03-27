@@ -110,19 +110,15 @@ function xmlText(node: any, key: string): string {
   return String(val);
 }
 
-// ── Entity type mapping from XPM Type/Structure fields ──────────────
-const XPM_TYPE_MAP: Record<string, string> = {
-  Company: "Company",
+// ── Entity type mapping from XPM BusinessStructure field ────────────
+// NOTE: XPM's "Type" field is billing/payment info (PaymentTerm, CostMarkup).
+// The actual entity classification comes from "BusinessStructure".
+const BUSINESS_STRUCTURE_MAP: Record<string, string> = {
   Individual: "Individual",
+  Company: "Company",
+  Trust: "Trust",
   Partnership: "Partnership",
   "Sole Trader": "Sole Trader",
-  Trust: "Trust",
-  SuperFund: "smsf",
-  "Super Fund": "smsf",
-  SMSF: "smsf",
-};
-
-const XPM_STRUCTURE_MAP: Record<string, string> = {
   "Trustee Company": "Company",
   "Discretionary Trust": "trust_discretionary",
   "Unit Trust": "trust_unit",
@@ -133,20 +129,19 @@ const XPM_STRUCTURE_MAP: Record<string, string> = {
   "Family Trust": "trust_family",
   "Self Managed Superannuation Fund": "smsf",
   SMSF: "smsf",
+  "Super Fund": "smsf",
+  SuperFund: "smsf",
 };
 
-function resolveEntityType(type?: string, structure?: string, businessStructure?: string): string {
-  if (structure) {
-    const mapped = XPM_STRUCTURE_MAP[structure];
-    if (mapped) return mapped;
-  }
+function resolveEntityType(businessStructure?: string): string {
   if (businessStructure) {
-    const mapped = XPM_STRUCTURE_MAP[businessStructure];
+    const mapped = BUSINESS_STRUCTURE_MAP[businessStructure];
     if (mapped) return mapped;
-  }
-  if (type) {
-    const mapped = XPM_TYPE_MAP[type];
-    if (mapped) return mapped;
+    // Try case-insensitive match
+    const lower = businessStructure.toLowerCase();
+    for (const [key, val] of Object.entries(BUSINESS_STRUCTURE_MAP)) {
+      if (key.toLowerCase() === lower) return val;
+    }
   }
   return "Unclassified";
 }
