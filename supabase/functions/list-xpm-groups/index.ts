@@ -181,29 +181,22 @@ Deno.serve(async (req) => {
     const groupsArray = xmlArray(groupsContainer, "Group");
     console.log(`[list-xpm-groups] Found ${groupsArray.length} groups`);
 
-    const allGroups = groupsArray.map((g: any) => ({
+    const groups = groupsArray.map((g: any) => ({
       xpm_uuid: xmlText(g, "UUID"),
       name: xmlText(g, "Name"),
     })).filter((g: any) => g.xpm_uuid && g.name);
 
-    // TODO: remove limit once testing is done — limit to 1 group for testing
-    const groups = allGroups.slice(0, 1);
-    console.log(`[list-xpm-groups] Returning ${groups.length} of ${allGroups.length} groups (test mode)`);
-
-    // Batch upsert cached groups
-    if (groups.length > 0) {
-      const rows = groups.map((g: any) => ({
-        tenant_id: tenantId,
-        xpm_uuid: g.xpm_uuid,
-        name: g.name,
-        updated_at: new Date().toISOString(),
-      }));
+    // Cache groups to xpm_groups table
+    for (const g of groups) {
       await supabase
         .from("xpm_groups")
-        .upsert(rows, { onConflict: "tenant_id,xpm_uuid" });
+        .upsert(
+          { tenant_id: tenantId, xpm_uuid: g.xpm_uuid, name: g.name, updated_at: new Date().toISOString() },
+          { onConflict: "tenant_id,xpm_uuid" },
+        );
     }
 
-    return new Response(JSON.stringify({ groups, count: groups.length, total: allGroups.length }), {
+    return new Response(JSON.stringify({ groups, count: groups.length }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
