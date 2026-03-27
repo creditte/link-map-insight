@@ -209,7 +209,28 @@ Deno.serve(async (req) => {
     }
 
     const connection = connections[0];
-    const xeroTenantId = connection.xero_tenant_id;
+    const accessToken = await refreshAccessToken(supabase, connection);
+
+    // Discover the PRACTICEMANAGER tenant ID from Xero /connections
+    let xeroTenantId = connection.xero_tenant_id;
+    try {
+      const connectionsRes = await fetch("https://api.xero.com/connections", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (connectionsRes.ok) {
+        const conns = await connectionsRes.json();
+        const pmConn = conns.find((c: any) => c.tenantType === "PRACTICEMANAGER");
+        if (pmConn) {
+          console.log(`[sync-xpm] Using PRACTICEMANAGER tenant: ${pmConn.tenantName} (${pmConn.tenantId})`);
+          xeroTenantId = pmConn.tenantId;
+        } else {
+          console.log("[sync-xpm] No PRACTICEMANAGER connection found, using stored tenant ID");
+        }
+      }
+    } catch (e) {
+      console.warn("[sync-xpm] Failed to fetch /connections, using stored tenant ID:", e);
+    }
+
     if (!xeroTenantId) {
       return new Response(JSON.stringify({ error: "Xero tenant ID not set on connection" }), {
         status: 400,
