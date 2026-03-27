@@ -24,6 +24,8 @@ import { HealthBadgeV2 } from "@/components/structure/StructureHealthPanel";
 import { computeHealthScoreV2Light } from "@/lib/structureScoring";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 import { getSnapshotCount } from "@/hooks/useSnapshots";
+import XpmGroupCards from "@/components/structure/XpmGroupCards";
+import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
 
 interface Structure {
   id: string;
@@ -50,6 +52,9 @@ export default function Structures() {
   const [deleting, setDeleting] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>("updated");
   const [filterMode, setFilterMode] = useState<FilterOption>("all");
+
+  // XPM Group viewer state
+  const [selectedGroup, setSelectedGroup] = useState<{ xpm_uuid: string; name: string } | null>(null);
 
   const [healthMap, setHealthMap] = useState<
     Map<string, { score: number; displayScore: number; label: string; status: "good" | "warning" | "critical" }>
@@ -202,7 +207,6 @@ export default function Structures() {
 
   const sorted = useMemo(() => {
     let filtered = structures.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()));
-    // Apply scenario filter
     if (filterMode === "live") {
       filtered = filtered.filter((s) => !s.is_scenario);
     } else if (filterMode === "scenarios") {
@@ -220,8 +224,37 @@ export default function Structures() {
     }
   }, [structures, search, sortBy, healthMap, filterMode]);
 
+  // If a group is selected, show split view
+  if (selectedGroup) {
+    return (
+      <div className="flex h-[calc(100vh-4rem)] -m-6">
+        {/* Left: group cards */}
+        <div className="w-[300px] border-r overflow-y-auto p-4 space-y-3 bg-card">
+          <XpmGroupCards
+            onSelectGroup={(g) => setSelectedGroup({ xpm_uuid: g.xpm_uuid, name: g.name })}
+            selectedGroupId={selectedGroup.xpm_uuid}
+          />
+        </div>
+        {/* Right: structure viewer */}
+        <div className="flex-1">
+          <GroupStructureViewer
+            groupUuid={selectedGroup.xpm_uuid}
+            groupName={selectedGroup.name}
+            onClose={() => setSelectedGroup(null)}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
+      {/* XPM Groups section */}
+      <XpmGroupCards
+        onSelectGroup={(g) => setSelectedGroup({ xpm_uuid: g.xpm_uuid, name: g.name })}
+        selectedGroupId={null}
+      />
+
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Structures</h1>
         <div className="flex items-center gap-2">
