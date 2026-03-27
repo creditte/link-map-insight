@@ -28,6 +28,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
+import XpmDiagnosticPanel from "@/components/dashboard/XpmDiagnosticPanel";
 import { useBilling } from "@/hooks/useBilling";
 import { formatDistanceToNow, differenceInDays } from "date-fns";
 import BillingBanner from "@/components/BillingBanner";
@@ -747,6 +748,9 @@ export default function Dashboard() {
           </div>
         </section>
       )}
+      {/* XPM Diagnostic Panel - for debugging API endpoints */}
+      {xeroConnection && <XpmDiagnosticPanel />}
+
       <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
       <CreateStructureModal
         open={showCreateModal}
