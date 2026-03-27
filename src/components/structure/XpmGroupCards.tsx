@@ -1,11 +1,13 @@
 import { useEffect, useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Search, Users, RefreshCw, AlertCircle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Search, Users, RefreshCw, AlertCircle, PenLine, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface XpmGroup {
@@ -19,11 +21,13 @@ interface XpmGroupCardsProps {
 }
 
 export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGroupCardsProps) {
+  const navigate = useNavigate();
   const [groups, setGroups] = useState<XpmGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [importingId, setImportingId] = useState<string | null>(null);
 
   async function loadFromDb() {
     const { data } = await supabase
@@ -56,17 +60,34 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
     }
   }
 
+  async function handleImportToEditor(e: React.MouseEvent, group: XpmGroup) {
+    e.stopPropagation();
+    setImportingId(group.xpm_uuid);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("import-xpm-group", {
+        body: { group_uuid: group.xpm_uuid, group_name: group.name },
+      });
+      if (fnError) throw fnError;
+      if (data?.error) throw new Error(data.error);
+      
+      toast.success(`Imported ${data.entities_count} entities and ${data.relationships_count} relationships`);
+      navigate(`/structures/${data.structure_id}`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to import group");
+    } finally {
+      setImportingId(null);
+    }
+  }
+
   useEffect(() => {
     async function init() {
       setLoading(true);
-      // First try loading from DB cache
       const cached = await loadFromDb();
       if (cached.length > 0) {
         setGroups(cached);
         setLoading(false);
         return;
       }
-      // No cached groups — fetch live from XPM
       setLoading(false);
       await fetchFromXpm();
     }
@@ -170,7 +191,27 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 shrink-0">
                   <Users className="h-4 w-4 text-primary" />
                 </div>
-                <p className="text-sm font-medium truncate">{g.name}</p>
+                <p className="text-sm font-medium truncate flex-1">{g.name}</p>
+                <Tooltip delayDuration={0}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-primary"
+                      onClick={(e) => handleImportToEditor(e, g)}
+                      disabled={importingId === g.xpm_uuid}
+                    >
+                      {importingId === g.xpm_uuid ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <PenLine className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    Open in Editor
+                  </TooltipContent>
+                </Tooltip>
               </CardContent>
             </Card>
           ))}
