@@ -274,10 +274,12 @@ Deno.serve(async (req) => {
     const trusteePairs: { trusteeEntityId: string; trustName: string }[] = [];
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 1: Fetch /client.api/list — all clients (XML)
+    // STEP 1: Fetch /client.api/list?detailed=true — all clients with full details (XML)
+    // This avoids needing individual GET /client.api/get/{uuid} calls
+    // and includes BusinessStructure for entity type classification.
     // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 1: Fetching client list...");
-    const clientListXml = await xpmGetXml("/client.api/list", accessToken, xeroTenantId);
+    console.log("[sync-xpm] Step 1: Fetching detailed client list...");
+    const clientListXml = await xpmGetXml("/client.api/list?detailed=true", accessToken, xeroTenantId);
 
     if (!clientListXml) {
       return new Response(JSON.stringify({
@@ -296,15 +298,13 @@ Deno.serve(async (req) => {
     console.log(`[sync-xpm] Found ${clients.length} clients`);
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 2: Fetch /client.api/get/{uuid} — detail for each client
+    // STEP 2: Extract client details from the detailed list response
     // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 2: Fetching client details...");
+    console.log("[sync-xpm] Step 2: Extracting client details from list...");
 
     interface ClientDetail {
       uuid: string;
       name: string;
-      type: string;
-      structure: string;
       businessStructure: string;
       companyNumber: string | null;
       taxNumber: string | null;
@@ -312,45 +312,35 @@ Deno.serve(async (req) => {
 
     const clientDetails: ClientDetail[] = [];
 
-    // Fetch details in concurrent batches of 10 to avoid timeout
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < clients.length; i += BATCH_SIZE) {
-      const batch = clients.slice(i, i + BATCH_SIZE);
-      const batchPromises = batch.map(async (client: any) => {
-        const uuid = xmlText(client, "UUID");
-        if (!uuid) return null;
+    for (let i = 0; i < clients.length; i++) {
+      const c = clients[i];
+      const uuid = xmlText(c, "UUID");
+      if (!uuid) continue;
 
-        // XPM detail endpoint is /client.api/get/{uuid}
-        const detailXml = await xpmGetXml(`/client.api/get/${uuid}`, accessToken, xeroTenantId);
-        const c = detailXml?.Response?.Client || client;
-
-        // Log first client's keys for diagnostics
-        if (i === 0 && clientDetails.length === 0) {
-          console.log(`[sync-xpm] Sample client keys: ${Object.keys(c || {}).join(", ")}`);
-          console.log(`[sync-xpm] Sample Type=${xmlText(c, "Type")} Structure=${xmlText(c, "Structure")} BusinessStructure=${xmlText(c, "BusinessStructure")}`);
-        }
-
-        const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
-        if (!name) return null;
-
-        return {
-          uuid,
-          name,
-          type: xmlText(c, "Type") || xmlText(client, "Type"),
-          structure: xmlText(c, "Structure") || xmlText(client, "Structure"),
-          businessStructure: xmlText(c, "BusinessStructure") || xmlText(client, "BusinessStructure"),
-          companyNumber: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null,
-          taxNumber: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null,
-        } as ClientDetail;
-      });
-
-      const results = await Promise.all(batchPromises);
-      for (const r of results) {
-        if (r) clientDetails.push(r);
+      // Log first client's keys for diagnostics
+      if (i === 0) {
+        console.log(`[sync-xpm] Sample client keys: ${Object.keys(c || {}).join(", ")}`);
+        console.log(`[sync-xpm] Sample BusinessStructure=${xmlText(c, "BusinessStructure")}`);
+        // Type is billing info (Name, CostMarkup, PaymentTerm) — NOT entity type
+        const typeObj = c?.Type;
+        console.log(`[sync-xpm] Sample Type object keys: ${typeObj ? Object.keys(typeObj).join(", ") : "null"}`);
       }
+
+      const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
+      if (!name) continue;
+
+      // BusinessStructure is the actual entity type (Individual, Company, Trust, etc.)
+      // Type is billing/payment info — do NOT use for entity classification
+      clientDetails.push({
+        uuid,
+        name,
+        businessStructure: xmlText(c, "BusinessStructure"),
+        companyNumber: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null,
+        taxNumber: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null,
+      });
     }
 
-    console.log(`[sync-xpm] Fetched details for ${clientDetails.length} clients`);
+    console.log(`[sync-xpm] Extracted details for ${clientDetails.length} clients`);
 
     // Upsert entities from client details
     for (const cd of clientDetails) {
