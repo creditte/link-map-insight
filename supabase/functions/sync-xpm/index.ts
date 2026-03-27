@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { decryptToken, encryptToken } from "../_shared/crypto.ts";
+import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -60,32 +61,53 @@ async function refreshAccessToken(supabase: any, connection: any): Promise<strin
 }
 
 // ── XPM API helpers ─────────────────────────────────────────────────
-function xpmHeaders(accessToken: string, xeroTenantId: string, lastSyncedAt?: string): Record<string, string> {
-  const h: Record<string, string> = {
+function xpmHeaders(accessToken: string, xeroTenantId: string): Record<string, string> {
+  return {
     Authorization: `Bearer ${accessToken}`,
     "xero-tenant-id": xeroTenantId,
-    Accept: "application/json",
+    Accept: "application/xml",
   };
-  if (lastSyncedAt) h["If-Modified-Since"] = lastSyncedAt;
-  return h;
 }
 
-async function xpmGet(path: string, accessToken: string, xeroTenantId: string, lastSyncedAt?: string): Promise<any> {
+async function xpmGetXml(path: string, accessToken: string, xeroTenantId: string): Promise<any> {
   const url = `${XPM_BASE}${path}`;
   console.log(`[sync-xpm] GET ${url}`);
-  const res = await fetch(url, { headers: xpmHeaders(accessToken, xeroTenantId, lastSyncedAt) });
+  const res = await fetch(url, { headers: xpmHeaders(accessToken, xeroTenantId) });
 
-  if (res.status === 304) return null; // Not modified
+  if (res.status === 304) return null;
   if (res.status === 403 || res.status === 401) {
     console.warn(`[sync-xpm] ${res.status} on ${path}`);
     return null;
   }
   if (!res.ok) {
     const errText = await res.text();
-    console.warn(`[sync-xpm] ${res.status} on ${path}: ${errText}`);
+    console.warn(`[sync-xpm] ${res.status} on ${path}: ${errText.substring(0, 300)}`);
     return null;
   }
-  return res.json();
+  const text = await res.text();
+  try {
+    return parseXml(text);
+  } catch (e) {
+    console.warn(`[sync-xpm] XML parse error on ${path}:`, e);
+    return null;
+  }
+}
+
+// Helper to safely extract array from XML parsed result
+function xmlArray(parent: any, key: string): any[] {
+  if (!parent) return [];
+  const val = parent[key];
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  return [val];
+}
+
+function xmlText(node: any, key: string): string {
+  if (!node) return "";
+  const val = node[key];
+  if (val === null || val === undefined) return "";
+  if (typeof val === "object" && val["#text"] !== undefined) return String(val["#text"]);
+  return String(val);
 }
 
 // ── Entity type mapping from XPM Type/Structure fields ──────────────
@@ -114,7 +136,6 @@ const XPM_STRUCTURE_MAP: Record<string, string> = {
 };
 
 function resolveEntityType(type?: string, structure?: string, businessStructure?: string): string {
-  // Structure field is more specific, prefer it
   if (structure) {
     const mapped = XPM_STRUCTURE_MAP[structure];
     if (mapped) return mapped;
@@ -156,6 +177,26 @@ function isCorporateTrustee(name: string, entityType: string): boolean {
 function extractTrustName(name: string): string | null {
   const atfMatch = name.match(/(?:as\s+trustee\s+for|atf)\s+(.+)/i);
   return atfMatch ? atfMatch[1].trim() : null;
+}
+
+// ── Discover PRACTICEMANAGER tenant ID ──────────────────────────────
+async function discoverPmTenantId(accessToken: string, storedTenantId: string | null): Promise<string | null> {
+  try {
+    const res = await fetch("https://api.xero.com/connections", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.ok) {
+      const conns = await res.json();
+      const pmConn = conns.find((c: any) => c.tenantType === "PRACTICEMANAGER");
+      if (pmConn) {
+        console.log(`[sync-xpm] Using PRACTICEMANAGER tenant: ${pmConn.tenantName} (${pmConn.tenantId})`);
+        return pmConn.tenantId;
+      }
+    }
+  } catch (e) {
+    console.warn("[sync-xpm] Failed to fetch /connections:", e);
+  }
+  return storedTenantId;
 }
 
 // ── Main ────────────────────────────────────────────────────────────
@@ -211,47 +252,14 @@ Deno.serve(async (req) => {
     const connection = connections[0];
     const accessToken = await refreshAccessToken(supabase, connection);
 
-    // Discover the PRACTICEMANAGER tenant ID from Xero /connections
-    let xeroTenantId = connection.xero_tenant_id;
-    try {
-      const connectionsRes = await fetch("https://api.xero.com/connections", {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (connectionsRes.ok) {
-        const conns = await connectionsRes.json();
-        const pmConn = conns.find((c: any) => c.tenantType === "PRACTICEMANAGER");
-        if (pmConn) {
-          console.log(`[sync-xpm] Using PRACTICEMANAGER tenant: ${pmConn.tenantName} (${pmConn.tenantId})`);
-          xeroTenantId = pmConn.tenantId;
-        } else {
-          console.log("[sync-xpm] No PRACTICEMANAGER connection found, using stored tenant ID");
-        }
-      }
-    } catch (e) {
-      console.warn("[sync-xpm] Failed to fetch /connections, using stored tenant ID:", e);
-    }
-
+    // Discover PRACTICEMANAGER tenant ID
+    const xeroTenantId = await discoverPmTenantId(accessToken, connection.xero_tenant_id);
     if (!xeroTenantId) {
       return new Response(JSON.stringify({ error: "Xero tenant ID not set on connection" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    // accessToken already obtained above
-
-    // Check last sync timestamp for If-Modified-Since
-    const { data: lastImport } = await supabase
-      .from("import_logs")
-      .select("created_at")
-      .eq("tenant_id", tenantId)
-      .eq("status", "completed")
-      .like("file_name", "xpm-sync%")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const lastSyncedAt = lastImport?.created_at || undefined;
 
     const warnings: string[] = [];
     let entitiesCreated = 0;
@@ -266,15 +274,15 @@ Deno.serve(async (req) => {
     const trusteePairs: { trusteeEntityId: string; trustName: string }[] = [];
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 1: Fetch /client/list — all clients
+    // STEP 1: Fetch /client.api/list — all clients (XML)
     // ════════════════════════════════════════════════════════════════
     console.log("[sync-xpm] Step 1: Fetching client list...");
-    const clientListData = await xpmGet("/client/list", accessToken, xeroTenantId, lastSyncedAt);
+    const clientListXml = await xpmGetXml("/client.api/list", accessToken, xeroTenantId);
 
-    if (!clientListData) {
+    if (!clientListXml) {
       return new Response(JSON.stringify({
         success: true,
-        message: "No changes since last sync",
+        message: "No data returned from XPM client list",
         entitiesCreated: 0,
         entitiesUpdated: 0,
       }), {
@@ -282,16 +290,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Parse client list - XPM 3.1 returns ClientList > Client array
-    const rawClients = clientListData?.ClientList?.Client
-      || clientListData?.Clients
-      || clientListData?.ClientList
-      || [];
-    const clients = Array.isArray(rawClients) ? rawClients : [rawClients].filter(Boolean);
+    // Parse XML: Response > Clients > Client
+    const clientsContainer = clientListXml?.Response?.Clients;
+    const clients = xmlArray(clientsContainer, "Client");
     console.log(`[sync-xpm] Found ${clients.length} clients`);
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 2: Fetch /client/{uuid} — detail for each client
+    // STEP 2: Fetch /client.api/{uuid} — detail for each client
     // ════════════════════════════════════════════════════════════════
     console.log("[sync-xpm] Step 2: Fetching client details...");
 
@@ -301,43 +306,42 @@ Deno.serve(async (req) => {
       type: string;
       structure: string;
       businessStructure: string;
-      companyNumber: string | null; // ACN
-      taxNumber: string | null; // ABN
-      relationshipCount: number;
+      companyNumber: string | null;
+      taxNumber: string | null;
     }
 
     const clientDetails: ClientDetail[] = [];
 
     for (const client of clients) {
-      const uuid = client.UUID || client.ClientUUID || client.ID;
+      const uuid = xmlText(client, "UUID");
       if (!uuid) continue;
 
-      const detail = await xpmGet(`/client/${uuid}`, accessToken, xeroTenantId);
-      const c = detail?.Client || detail || client;
+      // Fetch individual client detail
+      const detailXml = await xpmGetXml(`/client.api/${uuid}`, accessToken, xeroTenantId);
+      const c = detailXml?.Response?.Client || client;
+
+      const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
+      if (!name) continue;
 
       clientDetails.push({
         uuid,
-        name: c.Name || `${c.FirstName || ""} ${c.LastName || ""}`.trim(),
-        type: c.Type || client.Type || "",
-        structure: c.Structure || client.Structure || "",
-        businessStructure: c.BusinessStructure || client.BusinessStructure || "",
-        companyNumber: c.CompanyNumber || c.ACN || null,
-        taxNumber: c.TaxNumber || c.ABN || null,
-        relationshipCount: parseInt(c.RelationshipCount || "0", 10),
+        name,
+        type: xmlText(c, "Type") || xmlText(client, "Type"),
+        structure: xmlText(c, "Structure") || xmlText(client, "Structure"),
+        businessStructure: xmlText(c, "BusinessStructure") || xmlText(client, "BusinessStructure"),
+        companyNumber: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null,
+        taxNumber: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null,
       });
     }
 
     // Upsert entities from client details
     for (const cd of clientDetails) {
-      if (!cd.name) continue;
-
       const entityType = resolveEntityType(cd.type, cd.structure, cd.businessStructure);
       const isTrustee = isCorporateTrustee(cd.name, entityType);
 
       typeCounts[entityType] = (typeCounts[entityType] || 0) + 1;
       if (isTrustee) trusteesDetected++;
 
-      // Try find by xpm_uuid first, then by name
       let existing: { id: string; entity_type: string; xpm_uuid: string | null; abn: string | null; acn: string | null; is_trustee_company: boolean } | null = null;
 
       const { data: byUuid } = await supabase
@@ -407,34 +411,30 @@ Deno.serve(async (req) => {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 3: Fetch /client/{uuid}/contacts — relationships
+    // STEP 3: Fetch /client.api/{uuid}/relationship — relationships
     // ════════════════════════════════════════════════════════════════
     console.log("[sync-xpm] Step 3: Fetching client relationships...");
 
     const relDedupeSet = new Set<string>();
 
     for (const cd of clientDetails) {
-      if (cd.relationshipCount === 0) continue;
+      const relXml = await xpmGetXml(`/client.api/${cd.uuid}/relationship`, accessToken, xeroTenantId);
+      if (!relXml) continue;
 
-      const contactsData = await xpmGet(`/client/${cd.uuid}/contacts`, accessToken, xeroTenantId);
-      if (!contactsData) continue;
+      const relContainer = relXml?.Response?.Relationships;
+      const relList = xmlArray(relContainer, "Relationship");
+      if (relList.length === 0) continue;
 
-      const rawContacts = contactsData?.ContactList?.Contact
-        || contactsData?.Contacts
-        || contactsData?.ContactList
-        || [];
-      const contactList = Array.isArray(rawContacts) ? rawContacts : [rawContacts].filter(Boolean);
-
-      for (const contact of contactList) {
-        const relTypeRaw = (contact.RelationshipType || contact.Type || "").trim().toLowerCase();
-        const relatedUuid = contact.RelatedClientUUID || contact.RelatedClient?.UUID || contact.UUID;
-        const relatedName = contact.RelatedClientName || contact.RelatedClient?.Name || contact.Name;
+      for (const rel of relList) {
+        const relTypeRaw = xmlText(rel, "RelationshipType").trim().toLowerCase();
+        const relatedUuid = xmlText(rel, "RelatedClientUUID") || xmlText(rel, "RelatedClient");
+        const relatedName = xmlText(rel, "RelatedClientName");
 
         if (!relTypeRaw || !relatedUuid) continue;
 
         const relType = REL_TYPE_MAP[relTypeRaw];
         if (!relType) {
-          warnings.push(`Unknown relationship type "${contact.RelationshipType}" on client ${cd.name}`);
+          warnings.push(`Unknown relationship type "${relTypeRaw}" on client ${cd.name}`);
           relationshipsSkipped++;
           continue;
         }
@@ -442,7 +442,6 @@ Deno.serve(async (req) => {
         // Ensure the related entity exists
         let relatedEntityId = xeroUuidToEntityId.get(relatedUuid);
         if (!relatedEntityId && relatedName) {
-          // Create/find the related entity
           const { data: existingRel } = await supabase
             .from("entities")
             .select("id")
@@ -489,8 +488,6 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Direction: "Director Of" means cd.uuid IS a director OF relatedUuid
-        // So from=cd.uuid (person/company), to=relatedUuid (company/trust)
         let fromId = fromEntityId;
         let toId = relatedEntityId;
 
@@ -579,21 +576,28 @@ Deno.serve(async (req) => {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 4: Fetch /clientgroup/list — corporate groups
+    // STEP 4: Fetch /clientgroup.api/list — corporate groups (XML)
     // ════════════════════════════════════════════════════════════════
     console.log("[sync-xpm] Step 4: Fetching client groups...");
 
-    const groupData = await xpmGet("/clientgroup/list", accessToken, xeroTenantId);
-    const rawGroups = groupData?.ClientGroupList?.ClientGroup
-      || groupData?.ClientGroups
-      || groupData?.ClientGroupList
-      || [];
-    const groups = Array.isArray(rawGroups) ? rawGroups : [rawGroups].filter(Boolean);
+    const groupXml = await xpmGetXml("/clientgroup.api/list", accessToken, xeroTenantId);
+    const groupsContainer = groupXml?.Response?.Groups;
+    const groups = xmlArray(groupsContainer, "Group");
     console.log(`[sync-xpm] Found ${groups.length} client groups`);
 
     for (const group of groups) {
-      const groupName = group.Name;
+      const groupName = xmlText(group, "Name");
       if (!groupName) continue;
+
+      // Fetch group details to get members
+      const groupUuid = xmlText(group, "UUID");
+      let members: any[] = [];
+      if (groupUuid) {
+        const groupDetailXml = await xpmGetXml(`/clientgroup.api/${groupUuid}`, accessToken, xeroTenantId);
+        const groupDetail = groupDetailXml?.Response?.Group;
+        const clientsInGroup = groupDetail?.Clients;
+        members = xmlArray(clientsInGroup, "Client");
+      }
 
       // Create or find structure for this group
       const { data: existingStruct } = await supabase
@@ -622,11 +626,8 @@ Deno.serve(async (req) => {
       }
 
       // Link members to the structure
-      const rawMembers = group.Members?.Client || group.Members || group.Clients || [];
-      const members = Array.isArray(rawMembers) ? rawMembers : [rawMembers].filter(Boolean);
-
       for (const member of members) {
-        const memberUuid = member.UUID || member.ClientUUID;
+        const memberUuid = xmlText(member, "UUID");
         if (!memberUuid) continue;
 
         const entityId = xeroUuidToEntityId.get(memberUuid);
@@ -642,7 +643,7 @@ Deno.serve(async (req) => {
 
       // Link relationships belonging to group members to the structure
       const memberEntityIds = members
-        .map((m: any) => xeroUuidToEntityId.get(m.UUID || m.ClientUUID))
+        .map((m: any) => xeroUuidToEntityId.get(xmlText(m, "UUID")))
         .filter(Boolean);
 
       if (memberEntityIds.length > 0) {
@@ -667,39 +668,33 @@ Deno.serve(async (req) => {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 5: Fetch /client/{uuid}/customfield — ownership metadata
+    // STEP 5: Fetch /client.api/{uuid}/customfield — ownership
     // ════════════════════════════════════════════════════════════════
     console.log("[sync-xpm] Step 5: Fetching custom fields for ownership data...");
 
     const ownershipKeywords = ["ownership", "shareholding", "unit", "holding", "percent", "share %", "units held"];
 
     for (const cd of clientDetails) {
-      const cfData = await xpmGet(`/client/${cd.uuid}/customfield`, accessToken, xeroTenantId);
-      if (!cfData) continue;
+      const cfXml = await xpmGetXml(`/client.api/${cd.uuid}/customfield`, accessToken, xeroTenantId);
+      if (!cfXml) continue;
 
-      const rawFields = cfData?.CustomFieldList?.CustomField
-        || cfData?.CustomFields
-        || cfData?.CustomFieldList
-        || [];
-      const fields = Array.isArray(rawFields) ? rawFields : [rawFields].filter(Boolean);
+      const cfContainer = cfXml?.Response?.CustomFields;
+      const fields = xmlArray(cfContainer, "CustomField");
 
       for (const field of fields) {
-        const fieldName = (field.Name || field.Label || "").toLowerCase();
-        const fieldValue = field.Value || field.Text || "";
-
+        const fieldName = xmlText(field, "Name").toLowerCase();
+        const fieldValue = xmlText(field, "Value");
         if (!fieldValue) continue;
 
         const isOwnershipField = ownershipKeywords.some((kw) => fieldName.includes(kw));
         if (!isOwnershipField) continue;
 
-        // Try to parse as a percentage and update matching relationships
         const numericValue = parseFloat(fieldValue.replace(/[^0-9.]/g, ""));
         if (isNaN(numericValue)) continue;
 
         const entityId = xeroUuidToEntityId.get(cd.uuid);
         if (!entityId) continue;
 
-        // Update shareholder/beneficiary/member relationships where this entity is the "from"
         const isPercentage = fieldName.includes("percent") || fieldName.includes("%") || numericValue <= 100;
         const isUnits = fieldName.includes("unit") || fieldName.includes("holding");
 
@@ -711,43 +706,39 @@ Deno.serve(async (req) => {
         }
 
         if (Object.keys(updatePayload).length > 0) {
-          const { error: updateErr } = await supabase
+          await supabase
             .from("relationships")
             .update(updatePayload)
             .eq("tenant_id", tenantId)
             .eq("from_entity_id", entityId)
             .in("relationship_type", ["shareholder", "beneficiary", "member"])
             .is("deleted_at", null);
-
-          if (updateErr) {
-            warnings.push(`Failed to update ownership for "${cd.name}": ${updateErr.message}`);
-          }
         }
       }
     }
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 6: Fetch staff list
+    // STEP 6: Fetch staff list (may 401 if scope missing)
     // ════════════════════════════════════════════════════════════════
     console.log("[sync-xpm] Step 6: Fetching staff...");
-    const staffData = await xpmGet("/staff/list", accessToken, xeroTenantId);
+    const staffXml = await xpmGetXml("/staff.api/list", accessToken, xeroTenantId);
     const staffList: { id: string; name: string; email: string | null; role: string | null }[] = [];
 
-    if (staffData) {
-      const rawStaff = staffData?.StaffList?.Staff || staffData?.Staff || staffData?.StaffList || [];
-      const staffArray = Array.isArray(rawStaff) ? rawStaff : [rawStaff].filter(Boolean);
+    if (staffXml) {
+      const staffContainer = staffXml?.Response?.StaffList;
+      const staffArray = xmlArray(staffContainer, "Staff");
       staffFetched = staffArray.length;
 
       for (const staff of staffArray) {
-        const staffName = staff.Name || `${staff.FirstName || ""} ${staff.LastName || ""}`.trim();
-        const staffEmail = staff.Email || staff.EmailAddress || null;
+        const staffName = xmlText(staff, "Name") || `${xmlText(staff, "FirstName")} ${xmlText(staff, "LastName")}`.trim();
+        const staffEmail = xmlText(staff, "Email") || null;
         if (!staffName) continue;
 
         staffList.push({
-          id: staff.StaffID || staff.ID || staff.UUID || crypto.randomUUID(),
+          id: xmlText(staff, "UUID") || xmlText(staff, "ID") || crypto.randomUUID(),
           name: staffName,
           email: staffEmail,
-          role: staff.Role || staff.Position || null,
+          role: xmlText(staff, "Role") || xmlText(staff, "Position") || null,
         });
 
         // Create staff as Individual entities
@@ -779,6 +770,8 @@ Deno.serve(async (req) => {
           }
         }
       }
+    } else {
+      warnings.push("Staff endpoint returned no data (may require practicemanager.staff.read scope)");
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -814,7 +807,6 @@ Deno.serve(async (req) => {
             );
         }
 
-        // Link all imported relationships
         const { data: allRels } = await supabase
           .from("relationships")
           .select("id")
@@ -840,7 +832,8 @@ Deno.serve(async (req) => {
     // ════════════════════════════════════════════════════════════════
     const result = {
       success: true,
-      dataSource: "practicemanager_3.1",
+      dataSource: "practicemanager_3.1_xml",
+      pmTenantId: xeroTenantId,
       clientsFetched: clientDetails.length,
       entitiesCreated,
       entitiesUpdated,
