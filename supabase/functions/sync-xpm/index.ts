@@ -414,30 +414,40 @@ Deno.serve(async (req) => {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 3: Fetch /client.api/get/{uuid}/relationship — relationships
+    // STEP 3: Extract relationships from detailed list data
+    // The ?detailed=true response includes Relationships per client.
     // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 3: Fetching client relationships...");
+    console.log("[sync-xpm] Step 3: Extracting client relationships from list data...");
 
     const relDedupeSet = new Set<string>();
 
-    for (const cd of clientDetails) {
-      const relXml = await xpmGetXml(`/client.api/get/${cd.uuid}/relationship`, accessToken, xeroTenantId);
-      if (!relXml) continue;
+    for (let ci = 0; ci < clients.length; ci++) {
+      const c = clients[ci];
+      const uuid = xmlText(c, "UUID");
+      if (!uuid) continue;
 
-      const relContainer = relXml?.Response?.Relationships;
+      const relContainer = c?.Relationships;
       const relList = xmlArray(relContainer, "Relationship");
       if (relList.length === 0) continue;
 
+      if (ci === 0) {
+        console.log(`[sync-xpm] First client with relationships: ${xmlText(c, "Name")}, ${relList.length} relationships`);
+        console.log(`[sync-xpm] Sample relationship keys: ${Object.keys(relList[0] || {}).join(", ")}`);
+      }
+
       for (const rel of relList) {
-        const relTypeRaw = xmlText(rel, "RelationshipType").trim().toLowerCase();
-        const relatedUuid = xmlText(rel, "RelatedClientUUID") || xmlText(rel, "RelatedClient");
-        const relatedName = xmlText(rel, "RelatedClientName");
+        // XPM detailed response uses <Type>Shareholder</Type> for relationship type
+        // and <RelatedClient><UUID>...</UUID><Name>...</Name></RelatedClient>
+        const relTypeRaw = (xmlText(rel, "Type") || xmlText(rel, "RelationshipType")).trim().toLowerCase();
+        const relatedClient = rel?.RelatedClient;
+        const relatedUuid = xmlText(relatedClient, "UUID") || xmlText(rel, "RelatedClientUUID") || xmlText(rel, "RelatedClient");
+        const relatedName = xmlText(relatedClient, "Name") || xmlText(rel, "RelatedClientName");
 
         if (!relTypeRaw || !relatedUuid) continue;
 
         const relType = REL_TYPE_MAP[relTypeRaw];
         if (!relType) {
-          warnings.push(`Unknown relationship type "${relTypeRaw}" on client ${cd.name}`);
+          warnings.push(`Unknown relationship type "${relTypeRaw}" on client ${xmlText(c, "Name")}`);
           relationshipsSkipped++;
           continue;
         }
@@ -485,7 +495,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const fromEntityId = xeroUuidToEntityId.get(cd.uuid);
+        const fromEntityId = xeroUuidToEntityId.get(uuid);
         if (!fromEntityId) {
           relationshipsSkipped++;
           continue;
@@ -528,7 +538,7 @@ Deno.serve(async (req) => {
           });
 
         if (relErr) {
-          warnings.push(`Failed to create ${relType} relationship: ${cd.name} → ${relatedName}: ${relErr.message}`);
+          warnings.push(`Failed to create ${relType} relationship: ${xmlText(c, "Name")} → ${relatedName}: ${relErr.message}`);
           relationshipsSkipped++;
         } else {
           relationshipsCreated++;
