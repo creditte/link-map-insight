@@ -339,7 +339,7 @@ Deno.serve(async (req) => {
 
     // Upsert entities from client details
     for (const cd of clientDetails) {
-      const entityType = resolveEntityType(cd.type, cd.structure, cd.businessStructure);
+      const entityType = resolveEntityType(cd.businessStructure);
       const isTrustee = isCorporateTrustee(cd.name, entityType);
 
       typeCounts[entityType] = (typeCounts[entityType] || 0) + 1;
