@@ -21,10 +21,12 @@ const MAX_WIDTH = 500;
 const DEFAULT_WIDTH = 300;
 
 export default function Structures() {
+  const navigate = useNavigate();
   const [selectedGroup, setSelectedGroup] = useState<XpmGroup | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
+  const [importingId, setImportingId] = useState<string | null>(null);
 
   // Groups state for the sidebar strip
   const [groups, setGroups] = useState<XpmGroup[]>([]);
