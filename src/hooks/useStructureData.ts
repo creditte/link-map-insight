@@ -15,6 +15,12 @@ export interface EntityNode {
   is_trustee_company: boolean;
   is_investment_company: boolean;
   created_at: string;
+  tfn: string | null;
+  state: string | null;
+  client_code: string | null;
+  account_manager: string | null;
+  gst_registered: boolean;
+  is_archived: boolean;
 }
 
 export interface RelationshipEdge {
