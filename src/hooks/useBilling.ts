@@ -67,11 +67,6 @@ export function useBilling() {
     void load();
   }, [bootStatus, userId, load]);
 
-  useEffect(() => {
-    if (bootStatus !== "authenticated" || !userId) return;
-    const interval = setInterval(() => void load({ background: true }), 60_000);
-    return () => clearInterval(interval);
-  }, [bootStatus, userId, load]);
 
   const openPortal = async () => {
     const { data, error } = await supabase.functions.invoke("customer-portal");
