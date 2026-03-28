@@ -902,6 +902,7 @@ export type Database = {
           name: string
           parent_structure_id: string | null
           scenario_label: string | null
+          source: string
           tenant_id: string
           updated_at: string
         }
@@ -914,6 +915,7 @@ export type Database = {
           name: string
           parent_structure_id?: string | null
           scenario_label?: string | null
+          source?: string
           tenant_id: string
           updated_at?: string
         }
@@ -926,6 +928,7 @@ export type Database = {
           name?: string
           parent_structure_id?: string | null
           scenario_label?: string | null
+          source?: string
           tenant_id?: string
           updated_at?: string
         }

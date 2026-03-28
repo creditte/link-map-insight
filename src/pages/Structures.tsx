@@ -37,7 +37,10 @@ type Tab = "xpm" | "manual";
 export default function Structures() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<Tab>("xpm");
+const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const saved = sessionStorage.getItem("structures_active_tab");
+    return saved === "manual" ? "manual" : "xpm";
+  });
   const [selectedGroup, setSelectedGroup] = useState<XpmGroup | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH);
@@ -105,6 +108,11 @@ export default function Structures() {
     init();
   }, []);
 
+  // Persist tab to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem("structures_active_tab", activeTab);
+  }, [activeTab]);
+
   // Load manual structures when tab is selected
   useEffect(() => {
     if (activeTab !== "manual" || !user?.id) return;
@@ -118,12 +126,13 @@ export default function Structures() {
       const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user.id });
       if (!tenantId) return;
 
-      // Get structures that are NOT scenarios and NOT deleted
+      // Get manual structures that are NOT scenarios and NOT deleted
       const { data: structures } = await supabase
         .from("structures")
         .select("id, name, created_at")
         .eq("tenant_id", tenantId)
         .eq("is_scenario", false)
+        .eq("source", "manual")
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
 

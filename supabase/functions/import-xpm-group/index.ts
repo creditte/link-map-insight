@@ -209,6 +209,7 @@ Deno.serve(async (req) => {
       name: groupName,
       tenant_id: tenantId,
       layout_mode: "auto",
+      source: "xpm",
     }).select("id").single();
 
     if (structErr || !structure) {
