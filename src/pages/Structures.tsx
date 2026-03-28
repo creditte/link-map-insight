@@ -26,6 +26,7 @@ interface ManualStructure {
   name: string;
   created_at: string;
   entity_count: number;
+  typeBreakdown: Record<string, number>;
 }
 
 const COLLAPSED_WIDTH = 52;
