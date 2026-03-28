@@ -191,7 +191,7 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-3 min-w-0 flex-1">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 shrink-0">
-                      <Users className="h-5 w-5 text-primary" />
+                      <Network className="h-5 w-5 text-primary" />
                     </div>
                     <div className="min-w-0 flex-1 pt-0.5">
                       <p className="text-sm font-semibold truncate text-foreground">{g.name}</p>

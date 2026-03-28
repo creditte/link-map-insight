@@ -535,7 +535,7 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary shrink-0">
-                        <PenLine className="h-5 w-5 text-foreground" />
+                        <Waypoints className="h-5 w-5 text-foreground" />
                       </div>
                       <div className="min-w-0 flex-1 pt-0.5">
                         <p className="text-sm font-semibold truncate text-foreground">{s.name}</p>
