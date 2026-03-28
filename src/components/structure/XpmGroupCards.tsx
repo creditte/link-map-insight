@@ -180,38 +180,50 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
           {filtered.map((g) => (
             <Card
               key={g.xpm_uuid}
-              className={`cursor-pointer transition-all hover:bg-accent/50 ${
+              className={`cursor-pointer transition-all hover:shadow-md hover:border-primary/30 group ${
                 selectedGroupId === g.xpm_uuid
                   ? "ring-2 ring-primary bg-accent/30"
-                  : ""
+                  : "hover:bg-accent/30"
               }`}
               onClick={() => onSelectGroup(g)}
             >
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 shrink-0">
-                  <Users className="h-4 w-4 text-primary" />
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 shrink-0">
+                      <Users className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <p className="text-sm font-semibold truncate text-foreground">{g.name}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Client Group</p>
+                    </div>
+                  </div>
+                  <Tooltip delayDuration={0}>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary transition-all"
+                        onClick={(e) => handleImportToEditor(e, g)}
+                        disabled={importingId === g.xpm_uuid}
+                      >
+                        {importingId === g.xpm_uuid ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <PenLine className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      Open in Editor
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
-                <p className="text-sm font-medium truncate flex-1">{g.name}</p>
-                <Tooltip delayDuration={0}>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-primary"
-                      onClick={(e) => handleImportToEditor(e, g)}
-                      disabled={importingId === g.xpm_uuid}
-                    >
-                      {importingId === g.xpm_uuid ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <PenLine className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    Open in Editor
-                  </TooltipContent>
-                </Tooltip>
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-primary/30 text-primary bg-primary/5">
+                    XPM
+                  </Badge>
+                </div>
               </CardContent>
             </Card>
           ))}

@@ -523,23 +523,23 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
               {filteredManual.map((s) => (
                 <Card
                   key={s.id}
-                  className="cursor-pointer transition-all hover:bg-accent/50 relative group"
+                  className="cursor-pointer transition-all hover:shadow-md hover:border-primary/30 relative group hover:bg-accent/30"
                   onClick={() => navigate(`/structures/${s.id}`)}
                 >
                   <button
                     onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
-                    className="absolute top-3 right-3 p-1 rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+                    className="absolute top-3 right-3 p-1 rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all z-10"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
-                  <CardContent className="p-4 space-y-2">
+                  <CardContent className="p-4 space-y-3">
                     <div className="flex items-start gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 shrink-0">
-                        <PenLine className="h-4 w-4 text-primary" />
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary shrink-0">
+                        <PenLine className="h-5 w-5 text-foreground" />
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{s.name}</p>
-                        <div className="flex items-center gap-3 mt-1">
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <p className="text-sm font-semibold truncate text-foreground">{s.name}</p>
+                        <div className="flex items-center gap-3 mt-0.5">
                           <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                             <Users className="h-3 w-3" />
                             {s.entity_count} {s.entity_count === 1 ? "entity" : "entities"}
@@ -550,6 +550,11 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
                           </span>
                         </div>
                       </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-muted-foreground/30 text-muted-foreground">
+                        Manual
+                      </Badge>
                     </div>
                   </CardContent>
                 </Card>
