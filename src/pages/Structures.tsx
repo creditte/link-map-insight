@@ -59,6 +59,8 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
   const [manualLoading, setManualLoading] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ManualStructure | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Check if XPM is connected
   const [xpmConnected, setXpmConnected] = useState<boolean | null>(null);
