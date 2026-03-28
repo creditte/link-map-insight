@@ -41,3 +41,5 @@ project_id = "kdwmetjwxfzovdmarijl"
     verify_jwt = false
   [functions.handle-email-suppression]
     verify_jwt = false
+  [functions.trusted-device]
+    verify_jwt = false
