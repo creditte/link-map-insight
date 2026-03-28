@@ -80,6 +80,8 @@ function EntityNodeComponent({ data }: { data: any }) {
   const isIndividual = entityType === "Individual";
   const isTrust = entityType?.startsWith("trust_") || entityType === "Trust";
 
+  const typeLabel = getEntityLabel(entityType);
+
   return (
     <div
       onClick={onClick}
@@ -89,6 +91,7 @@ function EntityNodeComponent({ data }: { data: any }) {
     >
       <Handle type="target" position={Position.Top} className="!bg-transparent !border-0 !w-0 !h-0" />
       <p className="text-xs font-semibold truncate">{label}</p>
+      <p className="text-[9px] opacity-60 mt-0.5">{typeLabel}</p>
       {(abn || acn) && (
         <p className="text-[10px] opacity-70 mt-0.5 truncate">
           {abn ? `ABN ${abn}` : `ACN ${acn}`}
