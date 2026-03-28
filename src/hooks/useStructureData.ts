@@ -131,7 +131,7 @@ export function useStructureData(structureId: string | undefined) {
 
       const { data: entitiesData } = await supabase
         .from("entities")
-        .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, is_investment_company, created_at")
+        .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, is_investment_company, created_at, tfn, state, client_code, account_manager, gst_registered, is_archived")
         .in("id", entityIds)
         .is("deleted_at", null);
       setEntities((entitiesData as EntityNode[]) ?? []);
