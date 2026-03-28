@@ -108,6 +108,11 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
     init();
   }, []);
 
+  // Persist tab to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem("structures_active_tab", activeTab);
+  }, [activeTab]);
+
   // Load manual structures when tab is selected
   useEffect(() => {
     if (activeTab !== "manual" || !user?.id) return;
