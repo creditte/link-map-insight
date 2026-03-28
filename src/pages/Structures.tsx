@@ -13,6 +13,7 @@ import { format } from "date-fns";
 import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
 import XpmGroupCards from "@/components/structure/XpmGroupCards";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
 
 interface XpmGroup {
