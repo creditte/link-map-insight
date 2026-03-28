@@ -523,9 +523,15 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
               {filteredManual.map((s) => (
                 <Card
                   key={s.id}
-                  className="cursor-pointer transition-all hover:bg-accent/50"
+                  className="cursor-pointer transition-all hover:bg-accent/50 relative group"
                   onClick={() => navigate(`/structures/${s.id}`)}
                 >
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
+                    className="absolute top-3 right-3 p-1 rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                   <CardContent className="p-4 space-y-2">
                     <div className="flex items-start gap-3">
                       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 shrink-0">
