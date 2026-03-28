@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Search, Users, RefreshCw, AlertCircle, PenLine, Loader2 } from "lucide-react";
+import { Search, Network, RefreshCw, AlertCircle, PenLine, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface XpmGroup {
@@ -160,7 +160,7 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
       {/* Empty state */}
       {groups.length === 0 && !error && !syncing && (
         <div className="text-center py-12 text-muted-foreground">
-          <Users className="h-10 w-10 mx-auto mb-3 opacity-40" />
+          <Network className="h-10 w-10 mx-auto mb-3 opacity-40" />
           <p className="text-sm font-medium">No client groups found</p>
           <p className="text-xs mt-1">Connect XPM Practice Manager and click Refresh to load groups.</p>
         </div>
@@ -191,7 +191,7 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-3 min-w-0 flex-1">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 shrink-0">
-                      <Users className="h-5 w-5 text-primary" />
+                      <Network className="h-5 w-5 text-primary" />
                     </div>
                     <div className="min-w-0 flex-1 pt-0.5">
                       <p className="text-sm font-semibold truncate text-foreground">{g.name}</p>
