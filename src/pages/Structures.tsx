@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Search, Users, RefreshCw, AlertCircle, Plus, Settings, FileBox,
-  Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine,
+  Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine, Star,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -65,6 +65,7 @@ export default function Structures() {
   // Favourite groups (persisted)
   const [favourites, setFavourites] = useState<XpmGroup[]>([]);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
+  const [xpmSearch, setXpmSearch] = useState("");
 
   // Manual structures state
   const [manualStructures, setManualStructures] = useState<ManualStructure[]>([]);
@@ -190,6 +191,13 @@ export default function Structures() {
   const filteredManual = useMemo(
     () => manualStructures.filter((s) => s.name.toLowerCase().includes(manualSearch.toLowerCase())),
     [manualStructures, manualSearch],
+  );
+
+  const filteredXpmGroups = useMemo(
+    () => xpmSearch.trim()
+      ? groups.filter((g) => g.name.toLowerCase().includes(xpmSearch.toLowerCase()))
+      : groups,
+    [groups, xpmSearch],
   );
 
   // ── Handlers ──
@@ -435,6 +443,110 @@ export default function Structures() {
                 onSelect={handleSelectGroup}
                 onRemove={handleToggleFavourite}
               />
+              {/* All groups list */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-foreground">All Groups</h3>
+                    {groups.length > 0 && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        {filteredXpmGroups.length === groups.length
+                          ? groups.length
+                          : `${filteredXpmGroups.length} / ${groups.length}`}
+                      </Badge>
+                    )}
+                  </div>
+                  {groups.length > 0 && (
+                    <div className="relative w-48">
+                      <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Filter groups..."
+                        className="h-8 pl-8 text-xs"
+                        value={xpmSearch}
+                        onChange={(e) => setXpmSearch(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {loading || syncing ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <Skeleton key={i} className="h-20 rounded-xl" />
+                    ))}
+                  </div>
+                ) : filteredXpmGroups.length === 0 && groups.length > 0 ? (
+                  <p className="text-xs text-muted-foreground py-4 text-center">No groups match your search.</p>
+                ) : filteredXpmGroups.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Network className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                    <p className="text-xs">No groups synced yet. Click Refresh to load from XPM.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    {filteredXpmGroups.map((g) => {
+                      const isFav = favouriteIds.has(g.xpm_uuid);
+                      return (
+                        <Card
+                          key={g.xpm_uuid}
+                          className="cursor-pointer transition-all hover:shadow-md hover:border-primary/30 group hover:bg-accent/30"
+                          onClick={() => handleSelectGroup(g)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start gap-3 min-w-0 flex-1">
+                                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 shrink-0">
+                                  <Network className="h-4 w-4 text-primary" />
+                                </div>
+                                <div className="min-w-0 flex-1 pt-0.5">
+                                  <p className="text-sm font-semibold truncate text-foreground">{g.name}</p>
+                                  <p className="text-[11px] text-muted-foreground mt-0.5">Client Group</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary transition-all"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleImportToEditor(g);
+                                      }}
+                                      disabled={importingId === g.xpm_uuid}
+                                    >
+                                      {importingId === g.xpm_uuid ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <PenLine className="h-3.5 w-3.5" />
+                                      )}
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="text-xs">Open in Editor</TooltipContent>
+                                </Tooltip>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleFavourite(g);
+                                  }}
+                                  className={`p-1 rounded transition-colors ${
+                                    isFav
+                                      ? "text-amber-500 hover:text-amber-600"
+                                      : "text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-amber-500"
+                                  }`}
+                                >
+                                  <Star className={`h-3.5 w-3.5 ${isFav ? "fill-current" : ""}`} />
+                                </button>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
