@@ -67,6 +67,9 @@ export default function Structures() {
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
   const [xpmSearch, setXpmSearch] = useState("");
 
+  // Recent structures (persisted, most recently updated)
+  const [recentStructures, setRecentStructures] = useState<ManualStructure[]>([]);
+
   // Manual structures state
   const [manualStructures, setManualStructures] = useState<ManualStructure[]>([]);
   const [manualLoading, setManualLoading] = useState(false);
