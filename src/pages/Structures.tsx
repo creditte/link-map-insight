@@ -146,6 +146,7 @@ export default function Structures() {
           .select("id, name, created_at, updated_at")
           .eq("tenant_id", tenantId)
           .eq("is_scenario", false)
+          .neq("source", "manual")
           .is("deleted_at", null)
           .order("updated_at", { ascending: false })
           .limit(10);
