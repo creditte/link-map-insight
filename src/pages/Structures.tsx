@@ -73,6 +73,7 @@ export default function Structures() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ManualStructure | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [importingId, setImportingId] = useState<string | null>(null);
 
   // XPM connected check
   const [xpmConnected, setXpmConnected] = useState<boolean | null>(null);
