@@ -650,83 +650,39 @@ export default function Dashboard() {
         )}
       </section>
 
-      {/* ── Entities Overview ── */}
-      {totalEntities > 0 && (
+      {/* ── Recently Added Entities ── */}
+      {recentEntities.length > 0 && (
         <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              Synced Entities ({totalEntities})
-            </h2>
-            {xeroConnection && (
-              <Badge variant="outline" className="text-[11px] gap-1">
-                <RefreshCw className="h-3 w-3" />
-                From Xero
-              </Badge>
-            )}
-          </div>
-
-          {/* Entity type breakdown */}
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-            {entityStats.slice(0, 8).map((stat) => {
-              const icon = getEntityIcon(stat.type);
-              return (
-                <div
-                  key={stat.type}
-                  className="rounded-xl border border-border/60 bg-card px-4 py-3 space-y-1"
-                >
-                  <div className="flex items-center gap-2">
-                    {icon}
-                    <span className="text-xs text-muted-foreground truncate">{formatEntityType(stat.type)}</span>
-                  </div>
-                  <p className="text-lg font-semibold text-foreground">{stat.count}</p>
-                </div>
-              );
-            })}
-            {/* Corporate Trustees card — always shown if any exist */}
-            {trusteeCount > 0 && (
-              <div className="rounded-xl border border-border/60 bg-card px-4 py-3 space-y-1">
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-accent-foreground/60" />
-                  <span className="text-xs text-muted-foreground truncate">Corporate Trustees</span>
-                </div>
-                <p className="text-lg font-semibold text-foreground">{trusteeCount}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Recent entities list */}
-          {recentEntities.length > 0 && (
-            <div className="space-y-1.5">
-              <h3 className="text-xs font-medium text-muted-foreground">Recently Added</h3>
-              {recentEntities.map((e) => (
-                <div
-                  key={e.id}
-                  className="flex items-center justify-between rounded-lg border border-border/40 bg-card px-4 py-2.5"
-                >
-                  <div className="flex items-center gap-3">
-                    {getEntityIcon(e.entity_type)}
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">{e.name}</span>
-                        {e.is_trustee_company && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">Trustee</Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-muted-foreground">{formatEntityType(e.entity_type)}</span>
-                        {e.abn && (
-                          <span className="text-[10px] text-muted-foreground/60">ABN {e.abn}</span>
-                        )}
-                      </div>
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Recently Added</h2>
+          <div className="space-y-1.5">
+            {recentEntities.map((e) => (
+              <div
+                key={e.id}
+                className="flex items-center justify-between rounded-lg border border-border/40 bg-card px-4 py-2.5"
+              >
+                <div className="flex items-center gap-3">
+                  {getEntityIcon(e.entity_type)}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">{e.name}</span>
+                      {e.is_trustee_company && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">Trustee</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-muted-foreground">{formatEntityType(e.entity_type)}</span>
+                      {e.abn && (
+                        <span className="text-[10px] text-muted-foreground/60">ABN {e.abn}</span>
+                      )}
                     </div>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(new Date(e.created_at), { addSuffix: true })}
-                  </span>
                 </div>
-              ))}
-            </div>
-          )}
+                <span className="text-xs text-muted-foreground">
+                  {formatDistanceToNow(new Date(e.created_at), { addSuffix: true })}
+                </span>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 
