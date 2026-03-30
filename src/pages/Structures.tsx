@@ -40,7 +40,6 @@ interface ManualStructure {
 }
 
 type Tab = "xpm" | "manual";
-const MAX_RECENT = 10;
 const MAX_FAVOURITES = 10;
 
 export default function Structures() {
