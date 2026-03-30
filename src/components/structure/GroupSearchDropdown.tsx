@@ -17,6 +17,7 @@ interface GroupSearchDropdownProps {
   favouriteIds: Set<string>;
   onSelect: (group: XpmGroup) => void;
   onToggleFavourite: (group: XpmGroup) => void;
+  onImport?: (group: XpmGroup) => void;
   selectedGroupId?: string | null;
 }
 
