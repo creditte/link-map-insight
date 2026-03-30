@@ -189,6 +189,19 @@ export default function GroupSearchDropdown({
                     >
                       <Network className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                       <span className="text-xs font-medium truncate flex-1">{g.name}</span>
+                      {onImport && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onImport(g);
+                            setOpen(false);
+                          }}
+                          className="shrink-0 p-1 rounded text-muted-foreground/40 hover:text-primary transition-colors"
+                          title="Open in Editor"
+                        >
+                          <PenLine className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
