@@ -200,20 +200,14 @@ export default function Dashboard() {
       if (data.staffFetched > 0) parts.push(`${data.staffFetched} staff fetched`);
       if (data.trusteesDetected > 0) parts.push(`${data.trusteesDetected} corporate trustees detected`);
       toast({ title: "XPM Sync Complete", description: parts.join(", ") + "." });
-      // Store staff list from response
-      if (data.staffList && Array.isArray(data.staffList)) {
-        setStaffMembers(data.staffList);
-      }
-      // Refresh entity and relationship data
-      const [entitiesData, recentEnts, relCount] = await Promise.all([
+      // Refresh entity data
+      const [entitiesData, recentEnts] = await Promise.all([
         supabase.from("entities").select("entity_type, is_trustee_company").is("deleted_at", null),
         supabase.from("entities").select("id, name, entity_type, is_trustee_company, abn, created_at").is("deleted_at", null).order("created_at", { ascending: false }).limit(8),
-        supabase.from("relationships").select("id", { count: "exact", head: true }).is("deleted_at", null),
       ]);
       const entities = entitiesData.data ?? [];
       setTotalEntities(entities.length);
       setTrusteeCount(entities.filter((e: any) => e.is_trustee_company).length);
-      setRelationshipCount(relCount.count ?? 0);
       const typeCounts: Record<string, number> = {};
       entities.forEach((e: any) => {
         const t = e.entity_type || "Unclassified";
