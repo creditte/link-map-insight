@@ -297,6 +297,30 @@ export type Database = {
           },
         ]
       }
+      favourite_groups: {
+        Row: {
+          created_at: string
+          group_name: string
+          group_xpm_uuid: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          group_name: string
+          group_xpm_uuid: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          group_name?: string
+          group_xpm_uuid?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       feedback: {
         Row: {
           created_at: string
