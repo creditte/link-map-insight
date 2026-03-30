@@ -43,7 +43,6 @@ export default function Dashboard() {
   const [entityStats, setEntityStats] = useState<{ type: string; count: number }[]>([]);
   const [totalEntities, setTotalEntities] = useState(0);
   const [trusteeCount, setTrusteeCount] = useState(0);
-  const [relationshipCount, setRelationshipCount] = useState(0);
   const [staffMembers, setStaffMembers] = useState<{ id: string; name: string; email: string | null; role: string | null }[]>([]);
   const [recentEntities, setRecentEntities] = useState<{ id: string; name: string; entity_type: string; is_trustee_company: boolean; abn: string | null; created_at: string }[]>([]);
   const [xeroConnection, setXeroConnection] = useState<{
