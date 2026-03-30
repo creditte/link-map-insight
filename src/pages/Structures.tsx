@@ -371,12 +371,13 @@ export default function Structures() {
             <>
               {/* Searchable dropdown */}
               <div className="flex items-center gap-2">
-                <GroupSearchDropdown
+               <GroupSearchDropdown
                   groups={groups}
                   loading={loading || syncing}
                   favouriteIds={favouriteIds}
                   onSelect={handleSelectGroup}
                   onToggleFavourite={handleToggleFavourite}
+                  onImport={handleImportToEditor}
                   selectedGroupId={selectedGroup?.xpm_uuid}
                 />
                 <Button
