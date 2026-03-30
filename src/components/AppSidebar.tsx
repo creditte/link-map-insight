@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { to: "/", label: "Home", icon: Home },
+  { to: "/", label: "Dashboard", icon: Home },
   { to: "/structures", label: "Structures", icon: Network },
   { to: "/governance", label: "Health Check", icon: HeartPulse },
   { to: "/review", label: "Review & Improve", icon: Sparkles },

@@ -28,7 +28,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
-import XpmDiagnosticPanel from "@/components/dashboard/XpmDiagnosticPanel";
+
 import { useBilling } from "@/hooks/useBilling";
 import { formatDistanceToNow, differenceInDays } from "date-fns";
 import BillingBanner from "@/components/BillingBanner";
@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [recentStructures, setRecentStructures] = useState<{ id: string; name: string; updated_at: string }[]>([]);
   const [structureCount, setStructureCount] = useState(0);
   const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [importCount, setImportCount] = useState(0);
   const [entityStats, setEntityStats] = useState<{ type: string; count: number }[]>([]);
   const [totalEntities, setTotalEntities] = useState(0);
   const [trusteeCount, setTrusteeCount] = useState(0);
@@ -103,7 +104,7 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       setDashboardLoading(true);
-      const [sCount, recent, xeroData, entitiesData, recentEnts, relCount] = await Promise.all([
+      const [sCount, recent, xeroData, entitiesData, recentEnts, relCount, impCount] = await Promise.all([
         supabase.from("structures").select("id", { count: "exact", head: true }).is("deleted_at", null),
         supabase
           .from("structures")
@@ -124,11 +125,13 @@ export default function Dashboard() {
           .order("created_at", { ascending: false })
           .limit(8),
         supabase.from("relationships").select("id", { count: "exact", head: true }).is("deleted_at", null),
+        supabase.from("import_logs").select("id", { count: "exact", head: true }),
       ]);
       setStructureCount(sCount.count ?? 0);
       setRecentStructures((recent.data as any) ?? []);
       setXeroConnection(xeroData.data && xeroData.data !== "null" ? (xeroData.data as any) : null);
       setRelationshipCount(relCount.count ?? 0);
+      setImportCount(impCount.count ?? 0);
 
       // Process entity stats
       const entities = entitiesData.data ?? [];
@@ -409,7 +412,32 @@ export default function Dashboard() {
         )}
       </section>
 
-      {/* ── Workflow Cards (moved above recent structures) ── */}
+      {/* ── Metric Cards ── */}
+      <section className="grid gap-4 grid-cols-3">
+        <div className="rounded-2xl border border-border/60 bg-card px-5 py-4 space-y-1">
+          <div className="flex items-center gap-2">
+            <Network className="h-4 w-4 text-primary/70" />
+            <span className="text-xs text-muted-foreground">Structures</span>
+          </div>
+          <p className="text-2xl font-semibold text-foreground">{dashboardLoading ? "—" : structureCount}</p>
+        </div>
+        <div className="rounded-2xl border border-border/60 bg-card px-5 py-4 space-y-1">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-primary/70" />
+            <span className="text-xs text-muted-foreground">Entities</span>
+          </div>
+          <p className="text-2xl font-semibold text-foreground">{dashboardLoading ? "—" : totalEntities}</p>
+        </div>
+        <div className="rounded-2xl border border-border/60 bg-card px-5 py-4 space-y-1">
+          <div className="flex items-center gap-2">
+            <Upload className="h-4 w-4 text-primary/70" />
+            <span className="text-xs text-muted-foreground">Imports</span>
+          </div>
+          <p className="text-2xl font-semibold text-foreground">{dashboardLoading ? "—" : importCount}</p>
+        </div>
+      </section>
+
+      {/* ── Workflow Cards ── */}
       <section className="grid gap-5 sm:grid-cols-2">
         {structureCount === 0 ? (
           <>
@@ -748,8 +776,6 @@ export default function Dashboard() {
           </div>
         </section>
       )}
-      {/* XPM Diagnostic Panel - for debugging API endpoints */}
-      {xeroConnection && <XpmDiagnosticPanel />}
 
       <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
       <CreateStructureModal
