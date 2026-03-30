@@ -41,7 +41,7 @@ interface ManualStructure {
 }
 
 type Tab = "xpm" | "manual";
-const MAX_RECENT = 5;
+const MAX_RECENT = 10;
 const MAX_FAVOURITES = 10;
 
 export default function Structures() {
@@ -434,15 +434,31 @@ export default function Structures() {
                 </Button>
               </div>
 
-              {/* Recent groups */}
-              <RecentGroups groups={recentGroups} onSelect={handleSelectGroup} />
-
               {/* Favourite groups */}
               <FavouriteGroups
                 groups={favourites}
                 onSelect={handleSelectGroup}
                 onRemove={handleToggleFavourite}
               />
+
+              {/* Recent structures */}
+              {recentGroups.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Recent Structures</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
+                    {recentGroups.map((g) => (
+                      <button
+                        key={g.xpm_uuid}
+                        onClick={() => handleSelectGroup(g)}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card text-left text-xs font-medium text-foreground hover:border-primary/40 hover:bg-accent/50 transition-colors"
+                      >
+                        <Network className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate">{g.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* All groups list */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
