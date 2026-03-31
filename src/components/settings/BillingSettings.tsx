@@ -142,50 +142,6 @@ export default function BillingSettings() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Billing History */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Receipt className="h-5 w-5" />
-            Billing History
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow>
-                <TableCell className="text-sm text-muted-foreground">
-                  {format(addDays(new Date(), -30), "dd/MM/yyyy")}
-                </TableCell>
-                <TableCell className="text-sm">strukcha Pro — Monthly</TableCell>
-                <TableCell className="text-sm">A$149.00</TableCell>
-                <TableCell>
-                  <Badge className="bg-success/10 text-success border-0 text-[10px]">Paid</Badge>
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="text-sm text-muted-foreground">
-                  {format(addDays(new Date(), -60), "dd/MM/yyyy")}
-                </TableCell>
-                <TableCell className="text-sm">strukcha Pro — Monthly</TableCell>
-                <TableCell className="text-sm">A$149.00</TableCell>
-                <TableCell>
-                  <Badge className="bg-success/10 text-success border-0 text-[10px]">Paid</Badge>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
     </div>
   );
 }
