@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { CreditCard, Network } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function BillingSettings() {
