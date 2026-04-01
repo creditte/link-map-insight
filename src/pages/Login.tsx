@@ -32,7 +32,10 @@ export default function Login() {
         .maybeSingle();
 
       if (cancelled) return;
-      if (superAdminRow) { navigate("/admin", { replace: true }); return; }
+      if (superAdminRow) {
+        navigate("/admin", { replace: true });
+        return;
+      }
 
       // Check onboarding
       const { data: profile } = await supabase
@@ -49,7 +52,9 @@ export default function Login() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [bootStatus, user, navigate]);
 
   if (bootStatus === "booting") {
@@ -80,7 +85,7 @@ export default function Login() {
       <div className="w-full max-w-sm">
         <Card className="border-border/50 shadow-lg">
           <CardHeader className="text-center pb-2">
-            <CardTitle className="text-2xl font-bold tracking-tight">Welcome back</CardTitle>
+            <CardTitle className="text-2xl font-bold tracking-tight">Strukcha</CardTitle>
             <CardDescription>Log in to access your strukcha workspace.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -111,7 +116,13 @@ export default function Login() {
                 />
               </div>
               <Button type="submit" className="w-full h-11 font-semibold" disabled={submitting}>
-                {submitting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Logging in...</> : "Log In"}
+                {submitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Logging in...
+                  </>
+                ) : (
+                  "Log In"
+                )}
               </Button>
             </form>
 
@@ -128,7 +139,9 @@ export default function Login() {
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
           Need help?{" "}
-          <a href="mailto:hello@strukcha.app" className="hover:underline">hello@strukcha.app</a>
+          <a href="mailto:hello@strukcha.app" className="hover:underline">
+            hello@strukcha.app
+          </a>
         </p>
       </div>
     </div>
