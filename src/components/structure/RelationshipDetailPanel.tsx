@@ -118,14 +118,26 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
     setDeleting(false);
   };
 
-  const handleReverseClick = () => {
-    const reversedFromType = toEntity?.entity_type ?? "Unclassified";
-    const reversedToType = fromEntity?.entity_type ?? "Unclassified";
+  // Check if reversing would fix an invalid relationship
+  const wouldReverseBeValid = fromEntity && toEntity
+    ? isDirectionValid(relationship.relationship_type, toEntity.entity_type, fromEntity.entity_type)
+    : false;
 
-    if (!isReverseAllowed(relationship.relationship_type, fromEntity?.entity_type ?? "Unclassified", toEntity?.entity_type ?? "Unclassified")) {
+  const handleReverseClick = () => {
+    // Allow reverse if the relationship is currently invalid and reversing would fix it
+    if (!isInvalid && !isReverseAllowed(relationship.relationship_type, fromEntity?.entity_type ?? "Unclassified", toEntity?.entity_type ?? "Unclassified")) {
       toast({
         title: "Cannot reverse",
         description: "This relationship type has a required direction and cannot be reversed.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isInvalid && !wouldReverseBeValid) {
+      toast({
+        title: "Cannot reverse",
+        description: "Reversing would not fix this invalid relationship. Consider deleting it instead.",
         variant: "destructive",
       });
       return;
@@ -218,9 +230,19 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
         {isInvalid && (
           <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
             <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
-            <div>
+            <div className="flex-1">
               <p className="text-xs font-medium text-destructive">Invalid Relationship</p>
               <p className="text-xs text-destructive/80 mt-0.5">{invalidMessage}</p>
+              <div className="flex gap-2 mt-2">
+                {wouldReverseBeValid && (
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleReverseClick}>
+                    <ArrowLeftRight className="h-3 w-3 mr-1" /> Fix Direction
+                  </Button>
+                )}
+                <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => setConfirmDelete(true)}>
+                  <Trash2 className="h-3 w-3 mr-1" /> Delete
+                </Button>
+              </div>
             </div>
           </div>
         )}
