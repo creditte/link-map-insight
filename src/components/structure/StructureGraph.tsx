@@ -222,7 +222,8 @@ function StructureGraphInner({
     }
     return dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
   }, [entities, relationships, layoutMode, getPinnedPositions, layoutStrategy, dbPositions]);
-  const initialEdges = useMemo(() => buildEdges(relationships, viewMode), [relationships, viewMode]);
+  const entityMap = useMemo(() => new Map(entities.map((e) => [e.id, e])), [entities]);
+  const initialEdges = useMemo(() => buildEdges(relationships, viewMode, entityMap), [relationships, viewMode, entityMap]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
