@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Pencil, Trash2, ArrowLeftRight } from "lucide-react";
+import { X, Pencil, Trash2, ArrowLeftRight, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -8,18 +8,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { getEntityLabel } from "@/lib/entityTypes";
-import { isDirectionValid } from "@/lib/relationshipRules";
+import {
+  RELATIONSHIP_RULES,
+  isDirectionValid,
+  isReverseAllowed,
+  getDirectionError,
+  getRelationshipLabel,
+  getMetadataFields,
+  hasMetadataFields,
+  getValidRelationshipTypes,
+} from "@/lib/relationshipRules";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 
-const RELATIONSHIP_TYPES = [
-  "director", "shareholder", "beneficiary", "trustee",
-  "appointer", "settlor", "partner", "member", "spouse", "parent", "child",
-] as const;
-
-const REL_LABELS: Record<string, string> = { appointer: "Appointor" };
-function relLabel(t: string) { return REL_LABELS[t] ?? t.charAt(0).toUpperCase() + t.slice(1); }
-
-const OWNERSHIP_REL_TYPES = new Set(["shareholder", "beneficiary", "partner", "member"]);
+const ALL_TYPE_VALUES = RELATIONSHIP_RULES.map((r) => r.type);
 
 interface Props {
   relationship: RelationshipEdge;
@@ -46,7 +47,31 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
   const [confirmReverse, setConfirmReverse] = useState(false);
   const [reversing, setReversing] = useState(false);
 
+  // Check if current relationship is invalid per rules
+  const isInvalid = fromEntity && toEntity
+    ? !isDirectionValid(relationship.relationship_type, fromEntity.entity_type, toEntity.entity_type)
+    : false;
+  const invalidMessage = fromEntity && toEntity
+    ? getDirectionError(relationship.relationship_type, fromEntity.entity_type, toEntity.entity_type)
+    : null;
+
+  // Valid types for editing (filtered by entity pair)
+  const editValidTypes = fromEntity && toEntity
+    ? getValidRelationshipTypes(ALL_TYPE_VALUES, fromEntity.entity_type, toEntity.entity_type)
+    : [...ALL_TYPE_VALUES];
+
+  const editMeta = getMetadataFields(editType);
+
   const handleSave = async () => {
+    // Validate the new type against entity types
+    if (fromEntity && toEntity) {
+      const error = getDirectionError(editType, fromEntity.entity_type, toEntity.entity_type);
+      if (error) {
+        toast({ title: "Invalid relationship", description: error, variant: "destructive" });
+        return;
+      }
+    }
+
     const pctVal = editPercent ? parseFloat(editPercent) : null;
     if (pctVal != null && (pctVal < 0 || pctVal > 100)) {
       toast({ title: "Invalid percentage", description: "Must be between 0 and 100", variant: "destructive" });
@@ -54,17 +79,20 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
     }
     setSaving(true);
     const updates: Record<string, unknown> = { relationship_type: editType };
-    if (OWNERSHIP_REL_TYPES.has(editType)) {
+    if (hasMetadataFields(editType)) {
       updates.ownership_percent = pctVal;
       updates.ownership_units = editUnits ? parseFloat(editUnits) : null;
       updates.ownership_class = editClass || null;
+    } else {
+      updates.ownership_percent = null;
+      updates.ownership_units = null;
+      updates.ownership_class = null;
     }
     const { error } = await supabase
       .from("relationships")
       .update(updates as any)
       .eq("id", relationship.id);
     if (error) {
-      console.error("Relationship update failed:", error);
       toast({ title: "Update failed", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Relationship updated" });
@@ -81,7 +109,6 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
       .update({ deleted_at: new Date().toISOString() } as any)
       .eq("id", relationship.id);
     if (error) {
-      console.error("Relationship delete failed:", error);
       toast({ title: "Delete failed", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Relationship deleted" });
@@ -91,22 +118,19 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
     setDeleting(false);
   };
 
-  // ── Reverse direction ───────────────────────────────────────────
   const handleReverseClick = () => {
-    // 1) Check canonical direction rules
     const reversedFromType = toEntity?.entity_type ?? "Unclassified";
     const reversedToType = fromEntity?.entity_type ?? "Unclassified";
 
-    if (!isDirectionValid(relationship.relationship_type, reversedFromType, reversedToType)) {
+    if (!isReverseAllowed(relationship.relationship_type, fromEntity?.entity_type ?? "Unclassified", toEntity?.entity_type ?? "Unclassified")) {
       toast({
         title: "Cannot reverse",
-        description: "This relationship type has a required direction. Change the relationship type instead if needed.",
+        description: "This relationship type has a required direction and cannot be reversed.",
         variant: "destructive",
       });
       return;
     }
 
-    // 2) Check for duplicate
     const duplicate = allRelationships.find(
       (r) =>
         r.id !== relationship.id &&
@@ -117,19 +141,17 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
     if (duplicate) {
       toast({
         title: "Duplicate exists",
-        description: "A relationship with the reversed direction already exists. Delete the duplicate first.",
+        description: "A relationship with the reversed direction already exists.",
         variant: "destructive",
       });
       return;
     }
 
-    // 3) Show confirmation
     setConfirmReverse(true);
   };
 
   const handleReverseConfirm = async () => {
     setReversing(true);
-
     const { error } = await supabase
       .from("relationships")
       .update({
@@ -139,17 +161,14 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
       .eq("id", relationship.id);
 
     if (error) {
-      console.error("Relationship reverse failed:", error);
       toast({ title: "Reverse failed", description: error.message, variant: "destructive" });
     } else {
-      // Write audit log
       try {
         const { data: profile } = await supabase
           .from("profiles")
           .select("tenant_id, user_id")
           .eq("user_id", (await supabase.auth.getUser()).data.user?.id ?? "")
           .single();
-
         if (profile) {
           await supabase.from("audit_log").insert({
             tenant_id: profile.tenant_id,
@@ -157,22 +176,13 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
             action: "relationship_reverse",
             entity_type: "relationship",
             entity_id: relationship.id,
-            before_state: {
-              from_entity_id: relationship.from_entity_id,
-              to_entity_id: relationship.to_entity_id,
-              relationship_type: relationship.relationship_type,
-            } as any,
-            after_state: {
-              from_entity_id: relationship.to_entity_id,
-              to_entity_id: relationship.from_entity_id,
-              relationship_type: relationship.relationship_type,
-            } as any,
+            before_state: { from_entity_id: relationship.from_entity_id, to_entity_id: relationship.to_entity_id, relationship_type: relationship.relationship_type } as any,
+            after_state: { from_entity_id: relationship.to_entity_id, to_entity_id: relationship.from_entity_id, relationship_type: relationship.relationship_type } as any,
           });
         }
       } catch (e) {
         console.error("Audit log for reversal failed:", e);
       }
-
       toast({ title: "Relationship reversed" });
       setConfirmReverse(false);
       onUpdated();
@@ -204,13 +214,24 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Invalid relationship banner */}
+        {isInvalid && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+            <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+            <div>
+              <p className="text-xs font-medium text-destructive">Invalid Relationship</p>
+              <p className="text-xs text-destructive/80 mt-0.5">{invalidMessage}</p>
+            </div>
+          </div>
+        )}
+
         {/* Reverse confirmation */}
         {confirmReverse && (
           <div className="rounded-md border border-primary/50 bg-primary/5 p-3 space-y-2">
             <p className="text-xs font-medium">Reverse direction?</p>
             <p className="text-xs text-muted-foreground">
-              This will change: {fromEntity?.name ?? "?"} —({relLabel(relationship.relationship_type)})→ {toEntity?.name ?? "?"}{" "}
-              to {toEntity?.name ?? "?"} —({relLabel(relationship.relationship_type)})→ {fromEntity?.name ?? "?"}
+              This will change: {fromEntity?.name ?? "?"} —({getRelationshipLabel(relationship.relationship_type)})→ {toEntity?.name ?? "?"}{" "}
+              to {toEntity?.name ?? "?"} —({getRelationshipLabel(relationship.relationship_type)})→ {fromEntity?.name ?? "?"}
             </p>
             <div className="flex gap-2">
               <Button size="sm" className="flex-1 h-7 text-xs" onClick={handleReverseConfirm} disabled={reversing}>
@@ -249,35 +270,41 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-1">Type</p>
           {editing ? (
-            <Select value={editType} onValueChange={setEditType}>
+            <Select value={editValidTypes.includes(editType) ? editType : ""} onValueChange={setEditType}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {RELATIONSHIP_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>{relLabel(t)}</SelectItem>
+                {editValidTypes.map((t) => (
+                  <SelectItem key={t} value={t}>{getRelationshipLabel(t)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           ) : (
-            <Badge variant="secondary" className="text-xs">{relLabel(relationship.relationship_type)}</Badge>
+            <Badge variant="secondary" className="text-xs">{getRelationshipLabel(relationship.relationship_type)}</Badge>
           )}
         </div>
 
-        {/* Ownership fields */}
-        {OWNERSHIP_REL_TYPES.has(editing ? editType : relationship.relationship_type) && (
+        {/* Metadata fields */}
+        {(editing ? editMeta : getMetadataFields(relationship.relationship_type)).length > 0 && (
           editing ? (
             <>
-              <div>
-                <Label className="text-xs">Ownership %</Label>
-                <Input type="number" min={0} max={100} value={editPercent} onChange={(e) => setEditPercent(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. 50" />
-              </div>
-              <div>
-                <Label className="text-xs">Units</Label>
-                <Input type="number" value={editUnits} onChange={(e) => setEditUnits(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. 100" />
-              </div>
-              <div>
-                <Label className="text-xs">Class</Label>
-                <Input value={editClass} onChange={(e) => setEditClass(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. Ordinary" />
-              </div>
+              {editMeta.includes("ownership_percent") && (
+                <div>
+                  <Label className="text-xs">Ownership %</Label>
+                  <Input type="number" min={0} max={100} value={editPercent} onChange={(e) => setEditPercent(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. 50" />
+                </div>
+              )}
+              {editMeta.includes("ownership_units") && (
+                <div>
+                  <Label className="text-xs">Units</Label>
+                  <Input type="number" value={editUnits} onChange={(e) => setEditUnits(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. 100" />
+                </div>
+              )}
+              {editMeta.includes("ownership_class") && (
+                <div>
+                  <Label className="text-xs">Class</Label>
+                  <Input value={editClass} onChange={(e) => setEditClass(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. Ordinary" />
+                </div>
+              )}
             </>
           ) : (
             <>

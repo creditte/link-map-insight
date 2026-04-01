@@ -5,15 +5,17 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Info } from "lucide-react";
-import { getValidRelationshipTypes, getDirectionError } from "@/lib/relationshipRules";
+import {
+  RELATIONSHIP_RULES,
+  getValidRelationshipTypes,
+  getDirectionError,
+  getMetadataFields,
+  hasMetadataFields,
+  getRelationshipLabel,
+} from "@/lib/relationshipRules";
 import type { EntityNode } from "@/hooks/useStructureData";
 
-const RELATIONSHIP_TYPES = [
-  "director", "shareholder", "beneficiary", "trustee",
-  "appointer", "settlor", "partner", "member", "spouse", "parent", "child",
-] as const;
-
-const OWNERSHIP_REL_TYPES = new Set(["shareholder", "beneficiary", "partner", "member"]);
+const ALL_TYPES = RELATIONSHIP_RULES.map((r) => r.type);
 
 interface Props {
   allEntities: EntityNode[];
@@ -34,24 +36,22 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
   const currentEntity = allEntities.find((e) => e.id === currentEntityId);
   const otherEntities = allEntities.filter((e) => e.id !== currentEntityId);
 
-  // When a target is selected, filter valid relationship types for this pair
   const targetEntity = allEntities.find((e) => e.id === target);
   const validTypes = useMemo(() => {
-    if (!currentEntity || !targetEntity) return [...RELATIONSHIP_TYPES];
-    return getValidRelationshipTypes(
-      RELATIONSHIP_TYPES,
-      currentEntity.entity_type,
-      targetEntity.entity_type,
-    );
+    if (!currentEntity || !targetEntity) return [...ALL_TYPES];
+    return getValidRelationshipTypes(ALL_TYPES, currentEntity.entity_type, targetEntity.entity_type);
   }, [currentEntity, targetEntity]);
 
-  // Reset type if it becomes invalid when target changes
   const effectiveType = validTypes.includes(type) ? type : "";
+
+  const meta = useMemo(() => getMetadataFields(effectiveType), [effectiveType]);
+  const showPercent = meta.includes("ownership_percent");
+  const showUnits = meta.includes("ownership_units");
+  const showClass = meta.includes("ownership_class");
 
   const handleSubmit = async () => {
     if (!target || !effectiveType) return;
 
-    // Final validation
     if (currentEntity && targetEntity) {
       const error = getDirectionError(effectiveType, currentEntity.entity_type, targetEntity.entity_type);
       if (error) {
@@ -72,7 +72,7 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
       relationship_type: effectiveType,
     };
 
-    if (OWNERSHIP_REL_TYPES.has(effectiveType)) {
+    if (hasMetadataFields(effectiveType)) {
       if (ownershipPercent) data.ownership_percent = parseFloat(ownershipPercent);
       if (ownershipUnits) data.ownership_units = parseFloat(ownershipUnits);
       if (ownershipClass) data.ownership_class = ownershipClass;
@@ -101,11 +101,11 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
           <SelectTrigger className="h-8 mt-1 text-xs"><SelectValue placeholder="Select type" /></SelectTrigger>
           <SelectContent>
             {validTypes.map((t) => (
-              <SelectItem key={t} value={t} className="text-xs">{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>
+              <SelectItem key={t} value={t} className="text-xs">{getRelationshipLabel(t)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
-        {target && validTypes.length < RELATIONSHIP_TYPES.length && (
+        {target && validTypes.length < ALL_TYPES.length && (
           <div className="flex items-start gap-1.5 mt-1.5">
             <Info className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
             <p className="text-[10px] text-muted-foreground">
@@ -114,21 +114,23 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
           </div>
         )}
       </div>
-      {OWNERSHIP_REL_TYPES.has(effectiveType) && (
-        <>
-          <div>
-            <Label className="text-xs">Ownership %</Label>
-            <Input type="number" value={ownershipPercent} onChange={(e) => setOwnershipPercent(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. 50" />
-          </div>
-          <div>
-            <Label className="text-xs">Units</Label>
-            <Input type="number" value={ownershipUnits} onChange={(e) => setOwnershipUnits(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. 100" />
-          </div>
-          <div>
-            <Label className="text-xs">Class</Label>
-            <Input value={ownershipClass} onChange={(e) => setOwnershipClass(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. Ordinary" />
-          </div>
-        </>
+      {showPercent && (
+        <div>
+          <Label className="text-xs">Ownership %</Label>
+          <Input type="number" value={ownershipPercent} onChange={(e) => setOwnershipPercent(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. 50" />
+        </div>
+      )}
+      {showUnits && (
+        <div>
+          <Label className="text-xs">Units</Label>
+          <Input type="number" value={ownershipUnits} onChange={(e) => setOwnershipUnits(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. 100" />
+        </div>
+      )}
+      {showClass && (
+        <div>
+          <Label className="text-xs">Class</Label>
+          <Input value={ownershipClass} onChange={(e) => setOwnershipClass(e.target.value)} className="h-8 mt-1 text-xs" placeholder="e.g. Ordinary" />
+        </div>
       )}
       <div className="flex gap-2 pt-1">
         <Button size="sm" className="flex-1 h-7 text-xs" onClick={handleSubmit} disabled={adding || !target || !effectiveType}>

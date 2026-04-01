@@ -2,18 +2,13 @@ import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { X, Info } from "lucide-react";
-import { getValidRelationshipTypes } from "@/lib/relationshipRules";
+import {
+  RELATIONSHIP_RULES,
+  getValidRelationshipTypes,
+  getRelationshipLabel,
+} from "@/lib/relationshipRules";
 
-const ALL_RELATIONSHIP_TYPES = [
-  { value: "beneficiary", label: "Beneficiary" },
-  { value: "shareholder", label: "Shareholder" },
-  { value: "trustee", label: "Trustee" },
-  { value: "appointer", label: "Appointor" },
-  { value: "director", label: "Director" },
-  { value: "member", label: "Unitholder / Member" },
-  { value: "partner", label: "Partner" },
-  { value: "settlor", label: "Settlor" },
-] as const;
+const ALL_TYPE_VALUES = RELATIONSHIP_RULES.map((r) => r.type);
 
 interface Props {
   open: boolean;
@@ -30,13 +25,10 @@ export default function RelationshipTypePicker({ open, fromEntityName, toEntityN
 
   if (!open) return null;
 
-  const allValues = ALL_RELATIONSHIP_TYPES.map((t) => t.value);
   const validTypes =
     fromEntityType && toEntityType
-      ? getValidRelationshipTypes(allValues, fromEntityType, toEntityType)
-      : allValues;
-
-  const availableTypes = ALL_RELATIONSHIP_TYPES.filter((t) => validTypes.includes(t.value));
+      ? getValidRelationshipTypes(ALL_TYPE_VALUES, fromEntityType, toEntityType)
+      : ALL_TYPE_VALUES;
 
   return (
     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 rounded-lg border bg-card shadow-lg p-4 w-80 animate-in fade-in-0 zoom-in-95">
@@ -49,11 +41,11 @@ export default function RelationshipTypePicker({ open, fromEntityName, toEntityN
       <p className="text-xs text-muted-foreground mb-3 truncate">
         {fromEntityName} → {toEntityName}
       </p>
-      {availableTypes.length === 0 ? (
+      {validTypes.length === 0 ? (
         <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
           <Info className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
           <p className="text-xs text-destructive">
-            No valid relationship types for this entity combination. A director must be an individual linked to a company.
+            No valid relationship types for this entity combination.
           </p>
         </div>
       ) : (
@@ -63,12 +55,12 @@ export default function RelationshipTypePicker({ open, fromEntityName, toEntityN
               <SelectValue placeholder="Select relationship type..." />
             </SelectTrigger>
             <SelectContent>
-              {availableTypes.map((t) => (
-                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+              {validTypes.map((t) => (
+                <SelectItem key={t} value={t}>{getRelationshipLabel(t)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {fromEntityType && toEntityType && (
+          {fromEntityType && toEntityType && validTypes.length < ALL_TYPE_VALUES.length && (
             <p className="text-[10px] text-muted-foreground mt-1.5">
               Only relationship types valid for this entity pair are shown.
             </p>
