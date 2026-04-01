@@ -14,6 +14,7 @@
  */
 
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
+import { isDirectionValid, getDirectionError, getRelationshipLabel } from "@/lib/relationshipRules";
 
 // ── Types ──────────────────────────────────────────────────────────
 
