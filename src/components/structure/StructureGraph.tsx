@@ -269,7 +269,7 @@ function StructureGraphInner({
         }
       }
     }
-    setEdges(buildEdges(relationships, viewMode));
+    setEdges(buildEdges(relationships, viewMode, entityMap));
   }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions, layoutStrategy, dbPositions]);
 
   // Auto-layout button trigger
