@@ -1,21 +1,26 @@
 import { Badge } from "@/components/ui/badge";
+import { RELATIONSHIP_RULES, getRelationshipLabel } from "@/lib/relationshipRules";
 
-const GROUP_ORDER = [
-  "director", "shareholder", "trustee", "beneficiary", "spouse",
-  "appointer", "settlor", "partner", "member", "parent", "child",
-];
+const GROUP_ORDER = RELATIONSHIP_RULES.map((r) => r.type);
 
 const GROUP_COLORS: Record<string, string> = {
   director: "bg-blue-500",
   shareholder: "bg-emerald-500",
   trustee: "bg-amber-500",
   beneficiary: "bg-purple-500",
+  member: "bg-sky-500",
+  appointer: "bg-pink-500",
+  settlor: "bg-indigo-500",
+  partner: "bg-teal-500",
   spouse: "bg-muted-foreground",
+  parent: "bg-violet-500",
+  child: "bg-cyan-500",
 };
 
 function groupLabel(type: string): string {
+  const label = getRelationshipLabel(type);
   if (type === "appointer") return "Appointors";
-  return type.charAt(0).toUpperCase() + type.slice(1) + "s";
+  return label + "s";
 }
 
 interface RelatedItem {

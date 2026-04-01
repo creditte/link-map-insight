@@ -21,6 +21,7 @@ import Dagre from "@dagrejs/dagre";
 
 import EntityNodeComponent from "./EntityNode";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
+import { isDirectionValid } from "@/lib/relationshipRules";
 import type { ContextMenuState } from "./StructureContextMenu";
 
 const nodeTypes = { entity: EntityNodeComponent };
@@ -107,31 +108,52 @@ function buildEdgeLabel(r: RelationshipEdge): string {
   return label;
 }
 
-function buildEdges(relationships: RelationshipEdge[], viewMode: string = "full"): Edge[] {
+function buildEdges(
+  relationships: RelationshipEdge[],
+  viewMode: string = "full",
+  entityMap?: Map<string, EntityNode>,
+): Edge[] {
   return relationships.map((r) => {
     const isControl = CONTROL_EDGE_TYPES.has(r.relationship_type);
     const deEmphasize = viewMode !== "control" && isControl;
+
+    // Check validity against central rules engine
+    let invalid = false;
+    if (entityMap) {
+      const from = entityMap.get(r.from_entity_id);
+      const to = entityMap.get(r.to_entity_id);
+      if (from && to) {
+        invalid = !isDirectionValid(r.relationship_type, from.entity_type, to.entity_type);
+      }
+    }
+
     return {
       id: r.id,
       source: r.from_entity_id,
       target: r.to_entity_id,
-      label: buildEdgeLabel(r),
+      label: invalid ? `⚠ ${buildEdgeLabel(r)}` : buildEdgeLabel(r),
       type: "default",
       animated: false,
       style: {
-        stroke: EDGE_COLORS[r.relationship_type] ?? "#94a3b8",
+        stroke: invalid ? "#ef4444" : (EDGE_COLORS[r.relationship_type] ?? "#94a3b8"),
         strokeWidth: deEmphasize ? 1 : 2,
+        strokeDasharray: invalid ? "6 3" : undefined,
         opacity: deEmphasize ? 0.4 : 1,
         cursor: "pointer",
       },
-      labelStyle: { fontSize: 10, fill: "#64748b", opacity: deEmphasize ? 0.5 : 1 },
+      labelStyle: {
+        fontSize: 10,
+        fill: invalid ? "#ef4444" : "#64748b",
+        opacity: deEmphasize ? 0.5 : 1,
+        fontWeight: invalid ? 600 : undefined,
+      },
       labelBgStyle: { fill: "hsl(var(--card))", fillOpacity: 0.9 },
       labelBgPadding: [4, 2] as [number, number],
       markerEnd: {
         type: MarkerType.ArrowClosed,
         width: 14,
         height: 14,
-        color: EDGE_COLORS[r.relationship_type] ?? "#94a3b8",
+        color: invalid ? "#ef4444" : (EDGE_COLORS[r.relationship_type] ?? "#94a3b8"),
       },
     };
   });
@@ -200,7 +222,8 @@ function StructureGraphInner({
     }
     return dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
   }, [entities, relationships, layoutMode, getPinnedPositions, layoutStrategy, dbPositions]);
-  const initialEdges = useMemo(() => buildEdges(relationships, viewMode), [relationships, viewMode]);
+  const entityMap = useMemo(() => new Map(entities.map((e) => [e.id, e])), [entities]);
+  const initialEdges = useMemo(() => buildEdges(relationships, viewMode, entityMap), [relationships, viewMode, entityMap]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -246,7 +269,7 @@ function StructureGraphInner({
         }
       }
     }
-    setEdges(buildEdges(relationships, viewMode));
+    setEdges(buildEdges(relationships, viewMode, entityMap));
   }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions, layoutStrategy, dbPositions]);
 
   // Auto-layout button trigger

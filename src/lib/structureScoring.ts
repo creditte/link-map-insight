@@ -14,6 +14,7 @@
  */
 
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
+import { isDirectionValid, getDirectionError, getRelationshipLabel } from "@/lib/relationshipRules";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -426,27 +427,27 @@ export function computeHealthScoreV2(
     });
   }
 
-  // Invalid director relationships (non-Individual→Company)
+  // Invalid relationships (any type violating the central rules engine)
   for (const rel of relationships) {
-    if (rel.relationship_type === "director") {
-      const from = entityMap.get(rel.from_entity_id);
-      const to = entityMap.get(rel.to_entity_id);
-      if (from && to && (from.entity_type !== "Individual" || to.entity_type !== "Company")) {
-        const ded = 5;
-        structuralDeductions += ded;
-        issues.push({
-          code: "invalid_director",
-          category: "structural",
-          severity: "critical",
-          message: `Invalid director relationship: "${from.name}" (${from.entity_type}) → "${to.name}" (${to.entity_type}). Directors must be individuals linked to companies.`,
-          entity_id: from.id,
-          entity_name: from.name,
-          relationship_id: rel.id,
-          deduction: ded,
-        });
-      }
+    const from = entityMap.get(rel.from_entity_id);
+    const to = entityMap.get(rel.to_entity_id);
+    if (from && to && !isDirectionValid(rel.relationship_type, from.entity_type, to.entity_type)) {
+      const ded = 5;
+      structuralDeductions += ded;
+      const errorMsg = getDirectionError(rel.relationship_type, from.entity_type, to.entity_type);
+      issues.push({
+        code: "invalid_relationship_direction",
+        category: "structural",
+        severity: "critical",
+        message: `Invalid ${getRelationshipLabel(rel.relationship_type)} relationship: "${from.name}" (${from.entity_type}) → "${to.name}" (${to.entity_type}). ${errorMsg ?? ""}`,
+        entity_id: from.id,
+        entity_name: from.name,
+        relationship_id: rel.id,
+        deduction: ded,
+      });
     }
   }
+
 
   for (const entity of entities) {
     if (entity.entity_type === "Unclassified") {

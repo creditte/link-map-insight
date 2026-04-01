@@ -1,81 +1,252 @@
 /**
- * Canonical direction rules for relationship types.
+ * Central Relationship Rules Engine
  *
- * Each entry maps a relationship_type to a set of allowed
- * (fromType, toType) patterns. Entity types use the same values
- * stored in the `entities.entity_type` column.
+ * This is the SINGLE SOURCE OF TRUTH for all relationship type validation
+ * across the entire application. Every component, form, import, sync,
+ * scoring engine, and database trigger should derive its logic from
+ * the RELATIONSHIP_RULES config defined here.
  *
- * "any" matches every entity type. A group prefix like "trust_*"
- * matches all trust sub-types plus legacy "Trust".
+ * Entity type mapping:
+ *   The DB stores entity_type values like "Individual", "Company",
+ *   "trust_discretionary", "smsf", etc. This module works with those
+ *   raw DB values via a normalisation layer so the rules can use
+ *   simplified canonical names.
  */
 
-const TRUST_TYPES = new Set([
-  "Trust",
+// ── Canonical entity categories ──────────────────────────────────
+
+/** All trust-like DB entity_type values (excluding smsf) */
+const DISCRETIONARY_TRUST_TYPES = new Set([
+  "Trust",               // legacy
   "trust_discretionary",
-  "trust_unit",
-  "trust_hybrid",
-  "trust_bare",
-  "trust_testamentary",
-  "trust_deceased_estate",
   "trust_family",
 ]);
 
-function isTrustType(t: string): boolean {
-  return TRUST_TYPES.has(t);
+const UNIT_TRUST_TYPES = new Set(["trust_unit"]);
+const HYBRID_TRUST_TYPES = new Set(["trust_hybrid"]);
+const OTHER_TRUST_TYPES = new Set([
+  "trust_bare",
+  "trust_testamentary",
+  "trust_deceased_estate",
+]);
+
+/** All trust DB types (including smsf) */
+const ALL_TRUST_DB_TYPES = new Set([
+  ...DISCRETIONARY_TRUST_TYPES,
+  ...UNIT_TRUST_TYPES,
+  ...HYBRID_TRUST_TYPES,
+  ...OTHER_TRUST_TYPES,
+  "smsf",
+]);
+
+/** Canonical categories used in rules */
+export type CanonicalEntityCategory =
+  | "individual"
+  | "company"
+  | "discretionary_trust"
+  | "unit_trust"
+  | "hybrid_trust"
+  | "other_trust"
+  | "smsf";
+
+/** Map a raw DB entity_type to canonical categories (one type can match multiple) */
+export function getCanonicalCategories(dbEntityType: string): CanonicalEntityCategory[] {
+  if (dbEntityType === "Individual") return ["individual"];
+  if (dbEntityType === "Company") return ["company"];
+  if (dbEntityType === "smsf") return ["smsf"];
+  if (DISCRETIONARY_TRUST_TYPES.has(dbEntityType)) return ["discretionary_trust"];
+  if (UNIT_TRUST_TYPES.has(dbEntityType)) return ["unit_trust"];
+  if (HYBRID_TRUST_TYPES.has(dbEntityType)) return ["hybrid_trust"];
+  if (OTHER_TRUST_TYPES.has(dbEntityType)) return ["other_trust"];
+  // Partnership, Sole Trader, Incorporated Association, Unclassified — no canonical category
+  return [];
 }
 
-interface DirectionRule {
-  fromTypes: string[] | "any";
-  toTypes: string[] | "any";
+function matchesCategories(
+  dbEntityType: string,
+  allowedCategories: readonly CanonicalEntityCategory[],
+): boolean {
+  const cats = getCanonicalCategories(dbEntityType);
+  return cats.some((c) => allowedCategories.includes(c));
 }
 
-/**
- * Enforced canonical directions.
- * A reversal is blocked if the *reversed* direction would NOT match
- * at least one rule for that relationship_type.
- */
-export const CANONICAL_DIRECTION_RULES: Record<string, DirectionRule[]> = {
-  director: [{ fromTypes: ["Individual"], toTypes: ["Company"] }],
-  trustee: [{ fromTypes: ["Individual", "Company"], toTypes: "any" }], // to trust-type entities
-  appointer: [{ fromTypes: ["Individual", "Company"], toTypes: "any" }],
-  settlor: [{ fromTypes: ["Individual", "Company"], toTypes: "any" }],
-  member: [{ fromTypes: ["Individual"], toTypes: ["smsf"] }],
-  beneficiary: [{ fromTypes: ["Individual", "Company"], toTypes: "any" }],
-};
+// ── Relationship rule definition ─────────────────────────────────
 
-// For trustee/appointer/settlor/beneficiary the "to" side should be a trust or smsf
-const TRUST_TARGET_TYPES = new Set(["trustee", "appointer", "settlor", "beneficiary"]);
+export type RelationshipCategory = "governance" | "ownership";
+
+export interface RelationshipRule {
+  /** The value stored in DB relationship_type column */
+  type: string;
+  /** Human-readable label for UI */
+  label: string;
+  /** Canonical entity categories allowed as source (from) */
+  allowedSourceTypes: readonly CanonicalEntityCategory[];
+  /** Canonical entity categories allowed as target (to) */
+  allowedTargetTypes: readonly CanonicalEntityCategory[];
+  /** Whether the reverse direction is allowed (always false for now) */
+  allowReverse: boolean;
+  /** Validation error message shown when rule is violated */
+  validationMessage: string;
+  /** Functional grouping */
+  category: RelationshipCategory;
+  /** Which optional metadata fields are relevant */
+  metadataFields: readonly MetadataField[];
+}
+
+export type MetadataField = "ownership_percent" | "ownership_units" | "ownership_class";
+
+// ── The central rules configuration ──────────────────────────────
+
+export const RELATIONSHIP_RULES: readonly RelationshipRule[] = [
+  {
+    type: "director",
+    label: "Director",
+    allowedSourceTypes: ["individual"],
+    allowedTargetTypes: ["company"],
+    allowReverse: false,
+    validationMessage: "Directors must be individuals and can only be linked to companies.",
+    category: "governance",
+    metadataFields: [],
+  },
+  {
+    type: "shareholder",
+    label: "Shareholder",
+    allowedSourceTypes: ["individual", "company", "discretionary_trust", "unit_trust", "smsf"],
+    allowedTargetTypes: ["company"],
+    allowReverse: false,
+    validationMessage: "Shareholders can only be linked to companies.",
+    category: "ownership",
+    metadataFields: ["ownership_percent", "ownership_units", "ownership_class"],
+  },
+  {
+    type: "trustee",
+    label: "Trustee",
+    allowedSourceTypes: ["individual", "company"],
+    allowedTargetTypes: ["discretionary_trust", "unit_trust", "hybrid_trust", "other_trust", "smsf"],
+    allowReverse: false,
+    validationMessage: "Trustees must be individuals or companies and can only be linked to trusts or SMSFs.",
+    category: "governance",
+    metadataFields: [],
+  },
+  {
+    type: "beneficiary",
+    label: "Beneficiary",
+    allowedSourceTypes: ["individual", "company", "discretionary_trust"],
+    allowedTargetTypes: ["discretionary_trust", "hybrid_trust", "other_trust"],
+    allowReverse: false,
+    validationMessage: "Beneficiaries can only be linked to eligible trust entities.",
+    category: "ownership",
+    metadataFields: ["ownership_percent"],
+  },
+  {
+    type: "member",
+    label: "Unitholder / Member",
+    allowedSourceTypes: ["individual", "company", "discretionary_trust", "smsf"],
+    allowedTargetTypes: ["unit_trust"],
+    allowReverse: false,
+    validationMessage: "Unitholders can only be linked to unit trusts.",
+    category: "ownership",
+    metadataFields: ["ownership_percent", "ownership_units"],
+  },
+  {
+    type: "appointer",
+    label: "Appointor",
+    allowedSourceTypes: ["individual", "company"],
+    allowedTargetTypes: ["discretionary_trust", "hybrid_trust", "other_trust"],
+    allowReverse: false,
+    validationMessage: "Appointors must be individuals or companies and can only be linked to trusts.",
+    category: "governance",
+    metadataFields: [],
+  },
+  {
+    type: "settlor",
+    label: "Settlor",
+    allowedSourceTypes: ["individual", "company"],
+    allowedTargetTypes: ["discretionary_trust", "unit_trust", "hybrid_trust", "other_trust"],
+    allowReverse: false,
+    validationMessage: "Settlors can only be linked to trust entities.",
+    category: "governance",
+    metadataFields: [],
+  },
+  {
+    type: "partner",
+    label: "Partner",
+    allowedSourceTypes: ["individual", "company"],
+    allowedTargetTypes: ["individual", "company"], // Partnerships are entity-to-entity
+    allowReverse: true,
+    validationMessage: "Partners must be individuals or companies.",
+    category: "ownership",
+    metadataFields: ["ownership_percent"],
+  },
+  {
+    type: "spouse",
+    label: "Spouse",
+    allowedSourceTypes: ["individual"],
+    allowedTargetTypes: ["individual"],
+    allowReverse: true,
+    validationMessage: "Spouse relationships can only be between individuals.",
+    category: "governance",
+    metadataFields: [],
+  },
+  {
+    type: "parent",
+    label: "Parent",
+    allowedSourceTypes: ["individual"],
+    allowedTargetTypes: ["individual"],
+    allowReverse: false,
+    validationMessage: "Parent relationships can only be between individuals.",
+    category: "governance",
+    metadataFields: [],
+  },
+  {
+    type: "child",
+    label: "Child",
+    allowedSourceTypes: ["individual"],
+    allowedTargetTypes: ["individual"],
+    allowReverse: false,
+    validationMessage: "Child relationships can only be between individuals.",
+    category: "governance",
+    metadataFields: [],
+  },
+] as const;
+
+// ── Lookup helpers ───────────────────────────────────────────────
+
+const RULES_BY_TYPE = new Map<string, RelationshipRule>(
+  RELATIONSHIP_RULES.map((r) => [r.type, r]),
+);
+
+export function getRuleForType(relationshipType: string): RelationshipRule | undefined {
+  return RULES_BY_TYPE.get(relationshipType);
+}
+
+export function getRelationshipLabel(relationshipType: string): string {
+  return RULES_BY_TYPE.get(relationshipType)?.label
+    ?? relationshipType.charAt(0).toUpperCase() + relationshipType.slice(1);
+}
+
+// ── Validation functions ─────────────────────────────────────────
 
 /**
- * Check whether a relationship direction is valid according to canonical rules.
- * Returns true if the direction is allowed (or if no rule exists for the type).
+ * Check whether a relationship direction is valid according to the rules.
+ * Returns true if valid or if no rule exists for the type.
  */
 export function isDirectionValid(
   relationshipType: string,
   fromEntityType: string,
   toEntityType: string,
 ): boolean {
-  const rules = CANONICAL_DIRECTION_RULES[relationshipType];
-  if (!rules) return true; // No enforced direction for this type
+  const rule = RULES_BY_TYPE.get(relationshipType);
+  if (!rule) return true; // No enforced rules for unknown types
 
-  for (const rule of rules) {
-    const fromOk = rule.fromTypes === "any" || rule.fromTypes.includes(fromEntityType);
-    let toOk = rule.toTypes === "any" || rule.toTypes.includes(toEntityType);
-
-    // For trust-targeted types, refine "any" to require trust/smsf on the to-side
-    if (TRUST_TARGET_TYPES.has(relationshipType) && rule.toTypes === "any") {
-      toOk = isTrustType(toEntityType) || toEntityType === "smsf";
-    }
-
-    if (fromOk && toOk) return true;
-  }
-
-  return false;
+  const sourceOk = matchesCategories(fromEntityType, rule.allowedSourceTypes);
+  const targetOk = matchesCategories(toEntityType, rule.allowedTargetTypes);
+  return sourceOk && targetOk;
 }
 
 /**
  * Return a user-friendly validation message if the direction is invalid,
- * or null if it's valid.
+ * or null if valid.
  */
 export function getDirectionError(
   relationshipType: string,
@@ -83,18 +254,8 @@ export function getDirectionError(
   toEntityType: string,
 ): string | null {
   if (isDirectionValid(relationshipType, fromEntityType, toEntityType)) return null;
-
-  if (relationshipType === "director") {
-    return "Directors must be individuals and can only be linked to companies.";
-  }
-  if (relationshipType === "member") {
-    return "Members must be individuals linked to an SMSF.";
-  }
-  if (TRUST_TARGET_TYPES.has(relationshipType)) {
-    const label = relationshipType.charAt(0).toUpperCase() + relationshipType.slice(1);
-    return `${label} must be an individual or company linked to a trust or SMSF.`;
-  }
-  return `Invalid direction for ${relationshipType} relationship.`;
+  const rule = RULES_BY_TYPE.get(relationshipType);
+  return rule?.validationMessage ?? `Invalid direction for ${relationshipType} relationship.`;
 }
 
 /**
@@ -106,4 +267,48 @@ export function getValidRelationshipTypes(
   toEntityType: string,
 ): string[] {
   return allTypes.filter((t) => isDirectionValid(t, fromEntityType, toEntityType));
+}
+
+/**
+ * Check if a relationship type has metadata (ownership) fields.
+ */
+export function hasMetadataFields(relationshipType: string): boolean {
+  const rule = RULES_BY_TYPE.get(relationshipType);
+  return (rule?.metadataFields.length ?? 0) > 0;
+}
+
+/**
+ * Get allowed metadata fields for a relationship type.
+ */
+export function getMetadataFields(relationshipType: string): readonly MetadataField[] {
+  return RULES_BY_TYPE.get(relationshipType)?.metadataFields ?? [];
+}
+
+/**
+ * Check if reverse is allowed for a relationship type.
+ */
+export function isReverseAllowed(
+  relationshipType: string,
+  currentFromEntityType: string,
+  currentToEntityType: string,
+): boolean {
+  const rule = RULES_BY_TYPE.get(relationshipType);
+  if (!rule) return true;
+  if (!rule.allowReverse) return false;
+  // Even if allowReverse is true, the reversed direction must still be valid
+  return isDirectionValid(relationshipType, currentToEntityType, currentFromEntityType);
+}
+
+/**
+ * Generate the SQL CASE expression for the DB trigger.
+ * This is exported for documentation/reference; the actual trigger
+ * is maintained as a migration.
+ */
+export function generateValidationSQL(): string {
+  const cases = RELATIONSHIP_RULES.map((r) => {
+    const srcCats = r.allowedSourceTypes;
+    const tgtCats = r.allowedTargetTypes;
+    return `-- ${r.type}: ${r.validationMessage}`;
+  }).join("\n");
+  return cases;
 }
