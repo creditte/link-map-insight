@@ -315,13 +315,13 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
                   {selectedNode.abn && (
                     <div className="flex items-center justify-between">
                       <p className="text-[11px] font-medium text-muted-foreground">ABN</p>
-                      <span className="text-xs font-mono">{selectedNode.abn}</span>
+                      <span className="text-xs font-mono">{formatAbn(selectedNode.abn)}</span>
                     </div>
                   )}
                   {selectedNode.acn && (
                     <div className="flex items-center justify-between">
                       <p className="text-[11px] font-medium text-muted-foreground">ACN</p>
-                      <span className="text-xs font-mono">{selectedNode.acn}</span>
+                      <span className="text-xs font-mono">{formatAcn(selectedNode.acn)}</span>
                     </div>
                   )}
                 </div>
