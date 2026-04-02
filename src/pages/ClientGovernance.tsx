@@ -93,6 +93,17 @@ export default function ClientGovernance() {
 
   const healthyCount = review ? review.structures.filter((s) => s.status === "good").length : 0;
 
+  if (selectedStructure) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16">
+        <StructureIssuesPanel
+          structure={selectedStructure}
+          onBack={() => setSelectedStructure(null)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-16 space-y-14">
       {/* ── Hero / Empty State ── */}
