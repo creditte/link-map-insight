@@ -67,8 +67,11 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
       const { data, error: fnError } = await supabase.functions.invoke("import-xpm-group", {
         body: { group_uuid: group.xpm_uuid, group_name: group.name },
       });
-      if (fnError) throw fnError;
-      if (data?.error) throw new Error(data.error);
+      if (fnError) {
+        const msg = data?.detail || data?.error || fnError.message || "Failed to import group";
+        throw new Error(msg);
+      }
+      if (data?.error) throw new Error(data.detail || data.error);
       
       toast.success(`Imported ${data.entities_count} entities and ${data.relationships_count} relationships`);
       navigate(`/structures/${data.structure_id}`);
