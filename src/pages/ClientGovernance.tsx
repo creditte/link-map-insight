@@ -110,7 +110,7 @@ export default function ClientGovernance() {
           <Button
             size="lg"
             className="gap-2 rounded-xl px-6 text-sm font-medium"
-            onClick={runReview}
+            onClick={handleRunReview}
           >
             <HeartPulse className="h-4 w-4" />
             Run Health Check
@@ -165,7 +165,7 @@ export default function ClientGovernance() {
                   variant="outline"
                   size="sm"
                   className="gap-1.5 rounded-xl text-xs"
-                  onClick={runReview}
+                  onClick={handleRunReview}
                   disabled={loading}
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
