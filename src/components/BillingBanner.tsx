@@ -2,7 +2,6 @@ import { useBilling } from "@/hooks/useBilling";
 import { CreditCard, Sparkles, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { formatDistanceToNow } from "date-fns";
 
 export default function BillingBanner() {
   const { billing, loading, openPortal } = useBilling();
@@ -18,35 +17,17 @@ export default function BillingBanner() {
     }
   };
 
-  // Trial banner — encouraging upgrade prompt
-  if (billing.subscription_status === "trialing") {
-    return (
-      <div className="rounded-xl border border-primary/20 bg-gradient-to-r from-primary/5 via-primary/8 to-primary/5 px-5 py-3.5 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <Sparkles className="h-4 w-4 text-primary" />
-          </div>
-          <p className="text-sm text-foreground">
-            You're on the free trial — upgrade to unlock unlimited structures.
-          </p>
-        </div>
-        <Button size="sm" onClick={handleManage} className="gap-1.5 text-xs shrink-0">
-          <CreditCard className="h-3.5 w-3.5" />
-          Manage Plan
-        </Button>
-      </div>
-    );
-  }
+  const planLabel = billing.subscription_plan === "pro" ? "Pro" : billing.subscription_plan || "Free";
 
-  // Payment failed
+  // Payment failed — high priority
   if (billing.access_locked_reason === "payment_failed") {
     return (
-      <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <CreditCard className="h-4 w-4 text-destructive shrink-0" />
-          <p className="text-sm text-foreground">Payment failed. Update your payment method to restore access.</p>
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CreditCard className="h-3.5 w-3.5 text-destructive shrink-0" />
+          <p className="text-xs text-foreground">Payment failed. Update your payment method to restore access.</p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleManage} className="gap-1.5 text-xs">
+        <Button variant="outline" size="sm" className="h-7 gap-1 text-[11px]" onClick={handleManage}>
           Fix Payment
         </Button>
       </div>
@@ -56,39 +37,53 @@ export default function BillingBanner() {
   // Cancellation pending
   if (billing.cancel_at_period_end) {
     return (
-      <div className="rounded-xl border border-muted bg-muted/30 px-5 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <AlertTriangle className="h-4 w-4 text-muted-foreground shrink-0" />
-          <p className="text-sm text-muted-foreground">
+      <div className="rounded-lg border border-muted bg-muted/30 px-4 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <p className="text-xs text-muted-foreground">
             Your subscription will end at the end of the current period.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleManage} className="gap-1.5 text-xs">
+        <Button variant="outline" size="sm" className="h-7 gap-1 text-[11px]" onClick={handleManage}>
           Resubscribe
         </Button>
       </div>
     );
   }
 
-  // Diagram limit — encouraging
-  if (billing.diagram_count >= billing.diagram_limit) {
+  // Diagram limit reached — only when truly at limit with strict check
+  if (
+    billing.diagram_limit > 0 &&
+    billing.diagram_count >= billing.diagram_limit
+  ) {
     return (
-      <div className="rounded-xl border border-primary/20 bg-gradient-to-r from-primary/5 via-primary/8 to-primary/5 px-5 py-4 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <Sparkles className="h-4.5 w-4.5 text-primary" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-foreground">
-              Structure limit reached
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              You've used all {billing.diagram_limit} structures. Upgrade or archive existing structures to continue.
-            </p>
-          </div>
+      <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+          <p className="text-xs text-foreground">
+            You've used {billing.diagram_count} of {billing.diagram_limit} structures on your {planLabel} plan. Upgrade for more.
+          </p>
         </div>
-        <Button size="sm" onClick={handleManage} className="gap-1.5 text-xs shrink-0">
-          <CreditCard className="h-3.5 w-3.5" />
+        <Button size="sm" className="h-7 gap-1 text-[11px] shrink-0" onClick={handleManage}>
+          <CreditCard className="h-3 w-3" />
+          Upgrade
+        </Button>
+      </div>
+    );
+  }
+
+  // Trial banner — subtle
+  if (billing.subscription_status === "trialing") {
+    return (
+      <div className="rounded-lg border border-primary/15 bg-primary/5 px-4 py-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+          <p className="text-xs text-muted-foreground">
+            Free trial — {billing.diagram_count} of {billing.diagram_limit} structures used.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" className="h-7 gap-1 text-[11px] shrink-0" onClick={handleManage}>
+          <CreditCard className="h-3 w-3" />
           Manage Plan
         </Button>
       </div>
