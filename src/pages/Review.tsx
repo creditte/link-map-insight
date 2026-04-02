@@ -1,8 +1,5 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -10,80 +7,42 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertTriangle,
-  CheckCircle2,
   Copy,
-  Loader2,
   Download,
   CircleDot,
+  AlertCircle,
+  ArrowRight,
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { ENTITY_TYPES, getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
 import DuplicatesTab from "@/components/review/DuplicatesTab";
+import { useClientHealthReview } from "@/hooks/useClientHealthReview";
+import type { StructureIssue } from "@/hooks/useClientHealthReview";
 
-interface UnresolvedEntity {
-  id: string;
-  name: string;
-  entity_type: string;
-  xpm_uuid: string | null;
-  source: string;
-}
+const SEVERITY_STYLES: Record<string, { bg: string; text: string; icon: typeof AlertCircle }> = {
+  critical: { bg: "bg-destructive/10", text: "text-destructive", icon: AlertCircle },
+  gap: { bg: "bg-warning/10", text: "text-warning", icon: AlertTriangle },
+  minor: { bg: "bg-muted", text: "text-muted-foreground", icon: CircleDot },
+};
 
 export default function Review() {
-  const { user } = useAuth();
-  const { toast } = useToast();
   const navigate = useNavigate();
-  const [entities, setEntities] = useState<UnresolvedEntity[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<string | null>(null);
-  const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
-  const initialCountRef = useRef<number | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("entities")
-      .select("id, name, entity_type, xpm_uuid, source")
-      .eq("entity_type", "Unclassified")
-      .is("deleted_at", null)
-      .order("name");
-    const items = (data ?? []) as UnresolvedEntity[];
-    setEntities(items);
-    setResolvedIds(new Set());
-    if (initialCountRef.current === null) {
-      initialCountRef.current = items.length;
-    }
-    setLoading(false);
-  };
+  const { review, loading, runReview } = useClientHealthReview();
 
   useEffect(() => {
-    load();
+    runReview();
   }, []);
 
-  const handleUpdateType = async (entityId: string, newType: string) => {
-    setSaving(entityId);
-    const { error } = await supabase
-      .from("entities")
-      .update({ entity_type: newType } as any)
-      .eq("id", entityId);
-    if (error) {
-      toast({ title: "Update failed", description: error.message, variant: "destructive" });
-    } else {
-      const name = entities.find((e) => e.id === entityId)?.name ?? "Entity";
-      toast({ title: `${name} classified as ${getEntityLabel(newType)}` });
-      setResolvedIds((prev) => new Set(prev).add(entityId));
-      // Animate out then remove
-      setTimeout(() => {
-        setEntities((prev) => prev.filter((e) => e.id !== entityId));
-      }, 400);
-    }
-    setSaving(null);
-  };
+  const issueCount = review?.allIssues.length ?? 0;
+  const totalStructures = review?.structures.length ?? 0;
+  const structuresWithIssues = review?.needsAttention ?? 0;
+  const allResolved = !loading && review !== null && issueCount === 0;
 
-  const unresolvedCount = entities.length;
-  const totalIssues = initialCountRef.current ?? unresolvedCount;
-  const resolvedCount = totalIssues - unresolvedCount;
-  const progressPercent = totalIssues > 0 ? Math.round((resolvedCount / totalIssues) * 100) : 100;
-  const allResolved = !loading && unresolvedCount === 0;
+  // Group issues by structure for display
+  const issuesByStructure = new Map<string, StructureIssue[]>();
+  for (const issue of review?.allIssues ?? []) {
+    const arr = issuesByStructure.get(issue.structure_id) ?? [];
+    arr.push(issue);
+    issuesByStructure.set(issue.structure_id, arr);
+  }
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-16 space-y-10">
@@ -93,34 +52,32 @@ export default function Review() {
           Review &amp; Improve
         </h1>
         {loading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-5 w-48" />
-          </div>
+          <Skeleton className="h-5 w-48" />
         ) : allResolved ? (
           <p className="text-base text-muted-foreground">
             All issues resolved. Your structures are ready.
           </p>
         ) : (
           <p className="text-base text-muted-foreground">
-            {unresolvedCount} issue{unresolvedCount !== 1 ? "s" : ""} to resolve.
+            {issueCount} issue{issueCount !== 1 ? "s" : ""} across {structuresWithIssues} structure{structuresWithIssues !== 1 ? "s" : ""}.
             Complete these to finalise your structures and enable export.
           </p>
         )}
       </section>
 
       {/* ── Progress ── */}
-      {!loading && totalIssues > 0 && (
+      {!loading && totalStructures > 0 && (
         <section className="space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">
-              {allResolved ? "Complete" : `${progressPercent}% complete`}
+              {allResolved ? "Complete" : `${totalStructures - structuresWithIssues} of ${totalStructures} structures healthy`}
             </span>
             <span className="text-xs text-muted-foreground tabular-nums">
-              {resolvedCount} / {totalIssues} resolved
+              {totalStructures - structuresWithIssues} / {totalStructures} healthy
             </span>
           </div>
           <Progress
-            value={progressPercent}
+            value={totalStructures > 0 ? Math.round(((totalStructures - structuresWithIssues) / totalStructures) * 100) : 100}
             className="h-2 rounded-full"
           />
         </section>
@@ -132,9 +89,9 @@ export default function Review() {
           <TabsTrigger value="unresolved" className="gap-1.5 rounded-lg text-xs">
             <CircleDot className="h-3.5 w-3.5" />
             Issues
-            {unresolvedCount > 0 && (
+            {issueCount > 0 && (
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-1 bg-warning/10 text-warning border-0">
-                {unresolvedCount}
+                {issueCount}
               </Badge>
             )}
           </TabsTrigger>
@@ -230,51 +187,57 @@ export default function Review() {
               </Button>
             </div>
           ) : (
-            /* ── Issue list ── */
-            <div className="space-y-2">
-              {entities.map((entity) => {
-                const Icon = getEntityIcon(entity.entity_type);
-                const isResolving = resolvedIds.has(entity.id);
+            /* ── Issue list grouped by structure ── */
+            <div className="space-y-6">
+              {Array.from(issuesByStructure.entries()).map(([structureId, issues]) => {
+                const structureName = issues[0]?.structure_name ?? "Unknown";
+                const criticalCount = issues.filter((i) => i.severity === "critical").length;
                 return (
-                  <div
-                    key={entity.id}
-                    className={`flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4 transition-all duration-300 hover:border-border ${
-                      isResolving ? "opacity-0 scale-95" : "opacity-100 scale-100"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-warning/10">
-                        <Icon className="h-4 w-4 text-warning" />
+                  <div key={structureId} className="space-y-2">
+                    {/* Structure header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-medium text-foreground">{structureName}</h3>
+                        {criticalCount > 0 && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-destructive/10 text-destructive border-0">
+                            {criticalCount} critical
+                          </Badge>
+                        )}
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">
-                          {entity.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Missing entity type
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0 ml-4">
-                      <Select
-                        onValueChange={(v) => handleUpdateType(entity.id, v)}
-                        disabled={saving === entity.id}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1 text-xs text-muted-foreground h-7"
+                        onClick={() => navigate(`/structures/${structureId}`)}
                       >
-                        <SelectTrigger className="w-[180px] h-9 rounded-lg text-xs">
-                          <SelectValue placeholder="Select entity type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ENTITY_TYPES.filter((t) => t !== "Unclassified").map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {getEntityLabel(t)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {saving === entity.id && (
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                      )}
+                        Open
+                        <ArrowRight className="h-3 w-3" />
+                      </Button>
                     </div>
+
+                    {/* Issues for this structure */}
+                    {issues.map((issue, idx) => {
+                      const style = SEVERITY_STYLES[issue.severity] ?? SEVERITY_STYLES.minor;
+                      const Icon = style.icon;
+                      return (
+                        <div
+                          key={`${issue.code}-${issue.entity_id ?? idx}`}
+                          className="flex items-center gap-3.5 rounded-xl border border-border/60 bg-card px-5 py-4 transition-all hover:border-border"
+                        >
+                          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${style.bg}`}>
+                            <Icon className={`h-4 w-4 ${style.text}`} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-foreground truncate">
+                              {issue.message}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-0.5 capitalize">
+                              {issue.category} · {issue.severity === "gap" ? "Warning" : issue.severity}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -282,7 +245,7 @@ export default function Review() {
           )}
 
           {/* ── Blocker message ── */}
-          {!loading && unresolvedCount > 0 && (
+          {!loading && issueCount > 0 && (
             <div className="flex items-start gap-3 rounded-xl bg-muted/50 border border-border/60 px-5 py-3.5">
               <AlertTriangle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
               <div>
