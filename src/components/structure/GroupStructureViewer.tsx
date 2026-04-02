@@ -95,7 +95,9 @@ function EntityNodeComponent({ data }: { data: any }) {
       <p className="text-[9px] opacity-60 mt-0.5">{typeLabel}</p>
       {(abn || acn) && (
         <p className="text-[10px] opacity-70 mt-0.5 truncate">
-          {abn ? `ABN ${abn}` : `ACN ${acn}`}
+          {abn ? `ABN ${formatAbn(abn)}` : `ACN ${formatAcn(acn!)}`}
+        </p>
+      )}
         </p>
       )}
       <Handle type="source" position={Position.Bottom} className="!bg-transparent !border-0 !w-0 !h-0" />
