@@ -20,6 +20,7 @@ import { X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import dagre from "@dagrejs/dagre";
 import { getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
+import { formatAbn, formatAcn } from "./EntityInfoFields";
 
 interface GroupNode {
   id: string;
