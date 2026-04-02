@@ -3,6 +3,24 @@ import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { EntityNode } from "@/hooks/useStructureData";
 
+/** Format ABN as XX XXX XXX XXX (11 digits) */
+export function formatAbn(abn: string): string {
+  const digits = abn.replace(/\D/g, "");
+  if (digits.length === 11) {
+    return `${digits.slice(0, 2)} ${digits.slice(2, 5)} ${digits.slice(5, 8)} ${digits.slice(8)}`;
+  }
+  return abn; // return as-is if not standard length
+}
+
+/** Format ACN as XXX XXX XXX (9 digits) */
+export function formatAcn(acn: string): string {
+  const digits = acn.replace(/\D/g, "");
+  if (digits.length === 9) {
+    return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+  }
+  return acn;
+}
+
 function maskTfn(tfn: string): string {
   if (tfn.length <= 3) return "•••";
   return "•••" + " " + "•••" + " " + tfn.slice(-3);
