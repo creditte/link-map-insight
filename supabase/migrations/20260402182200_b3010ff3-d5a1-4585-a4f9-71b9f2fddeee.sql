@@ -1,0 +1,1 @@
+UPDATE tenants SET access_enabled = true, access_locked_reason = NULL WHERE access_enabled = false AND access_locked_reason = 'trial_expired';
