@@ -41,6 +41,7 @@ export default function BillingSettings() {
     past_due: "Past Due",
     canceled: "Cancelled",
     incomplete: "Incomplete",
+    trial_expired: "Trial Expired",
   };
 
   const statusColors: Record<string, string> = {
@@ -48,9 +49,13 @@ export default function BillingSettings() {
     active: "bg-success/10 text-success border-0",
     past_due: "bg-warning/10 text-warning border-0",
     canceled: "bg-destructive/10 text-destructive border-0",
+    trial_expired: "bg-destructive/10 text-destructive border-0",
   };
 
-  const status = billing?.subscription_status || "free";
+  // If plan is "pro" (or any paid plan) treat trial_expired as active
+  const rawStatus = billing?.subscription_status || "free";
+  const hasPaidPlan = billing?.subscription_plan && billing.subscription_plan !== "free";
+  const status = rawStatus === "trial_expired" && hasPaidPlan ? "active" : rawStatus;
   const label = statusLabels[status] || status;
   const colorClass = statusColors[status] || "bg-muted text-muted-foreground border-0";
 
