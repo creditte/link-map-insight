@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,19 +12,12 @@ import {
   CheckCircle2,
   ArrowRight,
   AlertCircle,
-  Loader2,
 } from "lucide-react";
-import { computeHealthScoreV2, getHealthStatus } from "@/lib/structureScoring";
-import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
+import { getHealthStatus } from "@/lib/structureScoring";
+import { useClientHealthReview } from "@/hooks/useClientHealthReview";
+import type { StructureResult, ClientReview } from "@/hooks/useClientHealthReview";
 
 /* ── Friendly labels ────────────────────────────────────────────── */
-
-function getFriendlyLabel(score: number): string {
-  if (score >= 90) return "Healthy";
-  if (score >= 70) return "Minor gaps";
-  if (score >= 41) return "Needs attention";
-  return "Critical";
-}
 
 function getScoreMessage(score: number, count: number): string {
   if (count === 0) return "No structures to review yet.";
@@ -52,27 +44,6 @@ const STATUS_PILL: Record<string, string> = {
   warning: "bg-warning/15 text-warning",
   critical: "bg-destructive/15 text-destructive",
 };
-
-/* ── Types ──────────────────────────────────────────────────────── */
-
-interface StructureResult {
-  id: string;
-  name: string;
-  score: number;
-  status: "good" | "warning" | "critical";
-  friendlyLabel: string;
-  issues: string[];
-  criticalCount: number;
-}
-
-interface ClientReview {
-  timestamp: string;
-  clientScore: number;
-  structures: StructureResult[];
-  crossObservations: string[];
-  criticalStructures: number;
-  needsAttention: number;
-}
 
 /* ── Page ───────────────────────────────────────────────────────── */
 
