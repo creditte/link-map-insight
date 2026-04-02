@@ -461,6 +461,9 @@ export default function Dashboard() {
         )}
       </section>
 
+      {/* ── Billing Banner (subtle, below hero) ── */}
+      <BillingBanner />
+
       {/* ── Metric Cards ── */}
       <section className="grid gap-4 grid-cols-3">
         <div className="rounded-2xl border border-border/60 bg-card px-5 py-4 space-y-1">
