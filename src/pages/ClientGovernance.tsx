@@ -54,6 +54,7 @@ export default function ClientGovernance() {
   const { review, loading, runReview: doReview } = useClientHealthReview();
   const [structuresChanged, setStructuresChanged] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [selectedStructure, setSelectedStructure] = useState<StructureResult | null>(null);
 
   useEffect(() => {
     if (!review) return;
