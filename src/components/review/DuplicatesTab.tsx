@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { formatAbn, formatAcn } from "@/components/structure/EntityInfoFields";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
