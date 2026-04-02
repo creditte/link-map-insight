@@ -76,11 +76,11 @@ export default function EntityInfoFields({ entity }: Props) {
   }
 
   if (entity.abn) {
-    fields.push({ label: "ABN", value: <span className="text-xs font-mono">{entity.abn}</span> });
+    fields.push({ label: "ABN", value: <span className="text-xs font-mono">{formatAbn(entity.abn)}</span> });
   }
 
   if (entity.acn) {
-    fields.push({ label: "ACN", value: <span className="text-xs font-mono">{entity.acn}</span> });
+    fields.push({ label: "ACN", value: <span className="text-xs font-mono">{formatAcn(entity.acn)}</span> });
   }
 
   if (fields.length === 0) return null;
