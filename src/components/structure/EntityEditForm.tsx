@@ -62,6 +62,7 @@ export default function EntityEditForm({ entity, onSave, onCancel }: Props) {
         <Label className="text-xs">ACN</Label>
         <Input value={editAcn} onChange={(e) => setEditAcn(e.target.value)} placeholder="e.g. 123 456 789" className="h-9 mt-1 font-mono" />
       </div>
+      <div className="flex items-center gap-2">
         <Switch id="is-operating" checked={editIsOperating} onCheckedChange={setEditIsOperating} />
         <Label htmlFor="is-operating" className="text-xs">Operating Entity</Label>
       </div>
