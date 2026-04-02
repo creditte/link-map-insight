@@ -54,7 +54,14 @@ export default function EntityEditForm({ entity, onSave, onCancel }: Props) {
           </SelectContent>
         </Select>
       </div>
-      <div className="flex items-center gap-2">
+      <div>
+        <Label className="text-xs">ABN</Label>
+        <Input value={editAbn} onChange={(e) => setEditAbn(e.target.value)} placeholder="e.g. 12 345 678 901" className="h-9 mt-1 font-mono" />
+      </div>
+      <div>
+        <Label className="text-xs">ACN</Label>
+        <Input value={editAcn} onChange={(e) => setEditAcn(e.target.value)} placeholder="e.g. 123 456 789" className="h-9 mt-1 font-mono" />
+      </div>
         <Switch id="is-operating" checked={editIsOperating} onCheckedChange={setEditIsOperating} />
         <Label htmlFor="is-operating" className="text-xs">Operating Entity</Label>
       </div>
