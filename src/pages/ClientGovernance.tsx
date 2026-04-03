@@ -334,7 +334,7 @@ export default function ClientGovernance() {
               )}
               {healthyCount > 0 && (
                 <button
-                  onClick={() => setStatusFilter(statusFilter === "good" ? null : "good")}
+                  onClick={() => { setInsightFilter(null); setStatusFilter(statusFilter === "good" ? null : "good"); }}
                   className={`w-full flex items-center gap-3 rounded-xl border px-5 py-3.5 text-left transition-all ${
                     statusFilter === "good"
                       ? "border-success/40 bg-success/10 ring-1 ring-success/20"
