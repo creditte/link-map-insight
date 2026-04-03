@@ -759,5 +759,6 @@ export default function Structures() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </TooltipProvider>
   );
 }
