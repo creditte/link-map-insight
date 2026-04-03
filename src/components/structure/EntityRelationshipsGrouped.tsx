@@ -87,7 +87,7 @@ export default function EntityRelationshipsGrouped({ related, onSelectEntity }: 
                       <span className="text-[10px] text-muted-foreground">
                         {r.direction === "outgoing" ? "→" : "←"}
                       </span>
-                      {r.ownership_percent != null && (
+                      {r.ownership_percent != null && !(r.targetEntityType && isDiscretionaryTrustBeneficiary(r.relationship_type, r.targetEntityType)) && (
                         <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
                           {r.ownership_percent}%
                         </Badge>
