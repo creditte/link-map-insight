@@ -1,9 +1,10 @@
-import { useState, useCallback } from "react";
-import { X, ChevronDown, ChevronRight, Sparkles, RefreshCw, HeartPulse, AlertTriangle, CheckCircle2, Wrench } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+import { X, ChevronDown, ChevronRight, Sparkles, RefreshCw, HeartPulse, AlertTriangle, CheckCircle2, Wrench, Maximize2, Minimize2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 import type { HealthScoreV2, ScoringIssue } from "@/lib/structureScoring";
@@ -18,6 +19,7 @@ interface Props {
   entities: EntityNode[];
   relationships: RelationshipEdge[];
   structureName: string;
+  structureId?: string;
   onClose: () => void;
   onSelectEntity?: (entityId: string) => void;
 }
@@ -78,7 +80,7 @@ function IssueList({
             <CheckCircle2 className="h-3 w-3 shrink-0 text-muted-foreground mt-0.5" />
           )}
           <button
-            className="text-left hover:underline disabled:no-underline"
+            className={`text-left ${issue.entity_id ? "hover:underline hover:text-primary cursor-pointer" : "cursor-default"}`}
             disabled={!issue.entity_id}
             onClick={() => issue.entity_id && onSelect?.(issue.entity_id)}
           >
@@ -90,9 +92,125 @@ function IssueList({
   );
 }
 
-export default function ReviewDiagramPanel({ health, entities, relationships, structureName, onClose, onSelectEntity }: Props) {
+// ─── Parse markdown checkboxes into structured items ───
+interface ChecklistItem {
+  id: string;
+  text: string;
+}
+
+function parseChecklistItems(markdown: string): ChecklistItem[] {
+  const lines = markdown.split("\n");
+  const items: ChecklistItem[] = [];
+  for (const line of lines) {
+    const match = line.match(/^[-*]\s*\[[ x]\]\s*(.+)/i);
+    if (match) {
+      const text = match[1].trim();
+      items.push({ id: text.slice(0, 80), text });
+    }
+  }
+  return items;
+}
+
+function getNonChecklistContent(markdown: string): string {
+  const lines = markdown.split("\n");
+  return lines
+    .filter((line) => !line.match(/^[-*]\s*\[[ x]\]\s*.+/i))
+    .join("\n")
+    .trim();
+}
+
+// Persist checked items per structure in localStorage
+function getCheckedKey(structureId: string) {
+  return `review-checklist-${structureId}`;
+}
+
+function loadCheckedItems(structureId: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(getCheckedKey(structureId));
+    if (raw) return new Set(JSON.parse(raw));
+  } catch { /* ignore */ }
+  return new Set();
+}
+
+function saveCheckedItems(structureId: string, items: Set<string>) {
+  localStorage.setItem(getCheckedKey(structureId), JSON.stringify([...items]));
+}
+
+function ImproveChecklist({
+  markdown,
+  structureId,
+}: {
+  markdown: string;
+  structureId: string;
+}) {
+  const items = parseChecklistItems(markdown);
+  const preamble = getNonChecklistContent(markdown);
+  const [checked, setChecked] = useState<Set<string>>(() => loadCheckedItems(structureId));
+
+  const toggle = (id: string) => {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      saveCheckedItems(structureId, next);
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-2">
+      {preamble && (
+        <div className="prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed">
+          <ReactMarkdown>{preamble}</ReactMarkdown>
+        </div>
+      )}
+      {items.length > 0 && (
+        <ul className="space-y-2">
+          {items.map((item) => (
+            <li key={item.id} className="flex items-start gap-2">
+              <Checkbox
+                id={`chk-${item.id}`}
+                checked={checked.has(item.id)}
+                onCheckedChange={() => toggle(item.id)}
+                className="mt-0.5"
+              />
+              <label
+                htmlFor={`chk-${item.id}`}
+                className={`cursor-pointer leading-relaxed ${checked.has(item.id) ? "line-through text-muted-foreground" : ""}`}
+              >
+                {item.text}
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ─── Loading skeleton for AI sections ───
+function AiLoadingSkeleton() {
+  return (
+    <div className="space-y-2 py-2">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <span className="text-xs">Analysing structure…</span>
+      </div>
+      <div className="space-y-1.5">
+        <div className="h-3 w-full rounded bg-muted animate-pulse" />
+        <div className="h-3 w-4/5 rounded bg-muted animate-pulse" />
+        <div className="h-3 w-3/5 rounded bg-muted animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
+export default function ReviewDiagramPanel({ health, entities, relationships, structureName, structureId, onClose, onSelectEntity }: Props) {
   const { toast } = useToast();
   const status = getHealthStatus(health.score);
+
+  // Panel width state
+  const [expanded, setExpanded] = useState(false);
 
   // AI sections state
   const [explainContent, setExplainContent] = useState("");
@@ -172,7 +290,6 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
             const delta = parsed.choices?.[0]?.delta?.content as string | undefined;
             if (delta) {
               accumulated += delta;
-              // Split into explain / improve by heading markers
               const parts = splitSections(accumulated);
               setExplainContent(parts.explain);
               setImproveContent(parts.improve);
@@ -219,16 +336,29 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
   const missingDirectors = health.issues.filter((i) => i.code === "missing_directors").length;
   const missingTrusteeLinks = health.issues.filter((i) => i.code === "missing_trustee" || i.code === "missing_appointer").length;
 
+  const panelWidth = expanded ? "w-[680px]" : "w-[520px]";
+
   return (
-    <div className="absolute left-0 top-0 z-10 flex h-full w-[420px] flex-col border-r bg-card shadow-lg">
+    <div className={`absolute left-0 top-0 z-10 flex h-full ${panelWidth} flex-col border-r bg-card shadow-lg transition-all duration-200`}>
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <HeartPulse className="h-4 w-4 text-primary" />
           <h3 className="font-semibold text-sm">Review Diagram</h3>
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setExpanded(!expanded)}
+            title={expanded ? "Collapse panel" : "Expand panel"}
+          >
+            {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <ScrollArea className="flex-1">
@@ -283,19 +413,12 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
 
           <Separator />
 
-          {/* ─── AI Generate Button ─── */}
+          {/* ─── AI Generate Button (shown when AI hasn't run yet) ─── */}
           {!aiHasRun && !aiLoading && (
             <Button onClick={runAiReview} variant="outline" size="sm" className="w-full gap-2">
               <Sparkles className="h-3.5 w-3.5" />
               Generate Explain & Improve
             </Button>
-          )}
-
-          {aiLoading && !explainContent && !improveContent && (
-            <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground">
-              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              <span className="text-xs">Analysing structure...</span>
-            </div>
           )}
 
           {/* ─── Expandable Sections ─── */}
@@ -306,13 +429,15 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
             icon={<Sparkles className="h-3 w-3 text-primary" />}
             defaultOpen={!!explainContent}
           >
-            {explainContent ? (
+            {aiLoading && !explainContent ? (
+              <AiLoadingSkeleton />
+            ) : explainContent ? (
               <div className="prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed">
                 <ReactMarkdown>{explainContent}</ReactMarkdown>
               </div>
             ) : (
               <p className="text-muted-foreground italic">
-                {aiLoading ? "Generating..." : "Click 'Generate Explain & Improve' to populate."}
+                Click 'Generate Explain & Improve' to populate.
               </p>
             )}
           </CollapsibleSection>
@@ -361,23 +486,36 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
             title="Improve"
             icon={<Wrench className="h-3 w-3 text-primary" />}
           >
-            {improveContent ? (
+            {aiLoading && !improveContent ? (
+              <AiLoadingSkeleton />
+            ) : improveContent && structureId ? (
+              <ImproveChecklist markdown={improveContent} structureId={structureId} />
+            ) : improveContent ? (
               <div className="prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed">
                 <ReactMarkdown>{improveContent}</ReactMarkdown>
               </div>
             ) : (
               <p className="text-muted-foreground italic">
-                {aiLoading ? "Generating..." : "Click 'Generate Explain & Improve' to populate."}
+                Click 'Generate Explain & Improve' to populate.
               </p>
             )}
           </CollapsibleSection>
 
-          {aiHasRun && !aiLoading && (
-            <Button onClick={runAiReview} variant="ghost" size="sm" className="w-full gap-1.5 text-xs">
+          {/* ─── Always-visible Re-run button ─── */}
+          <Button
+            onClick={runAiReview}
+            variant="ghost"
+            size="sm"
+            className="w-full gap-1.5 text-xs"
+            disabled={aiLoading}
+          >
+            {aiLoading ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
               <RefreshCw className="h-3 w-3" />
-              Re-run AI review
-            </Button>
-          )}
+            )}
+            {aiLoading ? "Running AI review…" : "Re-run AI review"}
+          </Button>
         </div>
       </ScrollArea>
     </div>

@@ -539,6 +539,7 @@ export default function StructureView() {
             entities={visibleEntities}
             relationships={visibleRelationships}
             structureName={structureName}
+            structureId={id}
             onClose={() => setShowReviewPanel(false)}
             onSelectEntity={(eid) => { setSelectedEntityId(eid); setSelectedEdgeId(null); }}
           />
