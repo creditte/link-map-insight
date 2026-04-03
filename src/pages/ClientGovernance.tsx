@@ -88,9 +88,11 @@ export default function ClientGovernance() {
   };
 
   const filteredStructures = review
-    ? statusFilter
-      ? review.structures.filter((s) => s.status === statusFilter)
-      : review.structures
+    ? insightFilter
+      ? review.structures.filter((s) => insightFilter.includes(s.id))
+      : statusFilter
+        ? review.structures.filter((s) => s.status === statusFilter)
+        : review.structures
     : [];
 
   const healthyCount = review ? review.structures.filter((s) => s.status === "good").length : 0;
