@@ -62,7 +62,8 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
     ? getValidRelationshipTypes(ALL_TYPE_VALUES, fromEntity.entity_type, toEntity.entity_type)
     : [...ALL_TYPE_VALUES];
 
-  const editMeta = getMetadataFields(editType);
+  const isDiscTrustBene = toEntity ? isDiscretionaryTrustBeneficiary(editType, toEntity.entity_type) : false;
+  const editMeta = isDiscTrustBene ? [] : [...getMetadataFields(editType)];
 
   const handleSave = async () => {
     // Validate the new type against entity types
