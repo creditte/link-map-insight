@@ -10,8 +10,10 @@ import {
   getValidRelationshipTypes,
   getDirectionError,
   getMetadataFields,
+  getEffectiveMetadataFields,
   hasMetadataFields,
   getRelationshipLabel,
+  isDiscretionaryTrustBeneficiary,
 } from "@/lib/relationshipRules";
 import type { EntityNode } from "@/hooks/useStructureData";
 
