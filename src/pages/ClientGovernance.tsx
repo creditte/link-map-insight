@@ -234,6 +234,22 @@ export default function ClientGovernance() {
               </div>
             </div>
 
+            {/* Score legend */}
+            <div className="flex items-center gap-5 text-[11px] text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-success" />
+                <span>90–100 Healthy</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-warning" />
+                <span>50–89 Needs attention</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-destructive" />
+                <span>Below 50 Critical</span>
+              </div>
+            </div>
+
             {structuresChanged && (
               <div className="flex items-center gap-2 rounded-xl bg-warning/10 border border-warning/20 px-4 py-2.5 text-xs text-warning">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
