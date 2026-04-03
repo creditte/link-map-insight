@@ -22,6 +22,11 @@ export interface StructureResult {
   criticalCount: number;
 }
 
+export interface CrossObservation {
+  message: string;
+  structureIds: string[];
+}
+
 export interface ClientReview {
   timestamp: string;
   clientScore: number;
