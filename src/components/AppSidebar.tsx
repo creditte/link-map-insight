@@ -17,10 +17,10 @@ import {
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: Home },
+  { to: "/import", label: "Import", icon: Upload },
   { to: "/structures", label: "Structures", icon: Network },
   { to: "/governance", label: "Health Check", icon: HeartPulse },
   { to: "/review", label: "Review & Improve", icon: Sparkles, badgeKey: "review" as const },
-  { to: "/import", label: "Import", icon: Upload },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 

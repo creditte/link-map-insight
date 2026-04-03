@@ -319,22 +319,24 @@ export default function Structures() {
     <div className="flex items-center gap-1 border-b border-border/50 mb-4">
       <button
         onClick={() => setActiveTab("xpm")}
-        className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+        className={`px-4 py-2.5 text-left transition-colors relative ${
           activeTab === "xpm" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
         }`}
       >
-        XPM Structures
+        <span className="text-sm font-medium block">XPM Structures</span>
+        <span className="text-[11px] text-muted-foreground block mt-0.5">Synced from your practice management software</span>
         {activeTab === "xpm" && (
           <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full" />
         )}
       </button>
       <button
         onClick={() => setActiveTab("manual")}
-        className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
+        className={`px-4 py-2.5 text-left transition-colors relative ${
           activeTab === "manual" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
         }`}
       >
-        My Structures
+        <span className="text-sm font-medium block">My Structures</span>
+        <span className="text-[11px] text-muted-foreground block mt-0.5">Created manually in Strukcha</span>
         {activeTab === "manual" && (
           <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full" />
         )}
@@ -658,11 +660,13 @@ export default function Structures() {
           {!manualLoading && manualStructures.length === 0 && (
             <div className="text-center py-16 text-muted-foreground">
               <FileBox className="h-10 w-10 mx-auto mb-3 opacity-40" />
-              <p className="text-sm font-medium">You haven't created any structures yet</p>
-              <p className="text-xs mt-1">Create your first structure to start mapping entities and relationships.</p>
+              <p className="text-sm font-medium text-foreground">No structures yet</p>
+              <p className="text-xs mt-1.5 max-w-md mx-auto leading-relaxed">
+                Create structures independently of XPM — ideal for prospective clients, restructure scenarios, or standalone planning work.
+              </p>
               <Button
                 size="sm"
-                className="mt-4 gap-1.5"
+                className="mt-5 gap-1.5"
                 onClick={() => setShowCreateModal(true)}
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -705,9 +709,16 @@ export default function Structures() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-muted-foreground/30 text-muted-foreground">
-                        Manual
-                      </Badge>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-muted-foreground/30 text-muted-foreground cursor-help">
+                            Manual
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="text-xs max-w-[220px]">
+                          This structure was created manually in Strukcha and is not synced from XPM.
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                   </CardContent>
                 </Card>
