@@ -309,7 +309,7 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
         </div>
 
         {/* Metadata fields */}
-        {(editing ? editMeta : getMetadataFields(relationship.relationship_type)).length > 0 && (
+        {(editing ? editMeta : (toEntity && isDiscretionaryTrustBeneficiary(relationship.relationship_type, toEntity.entity_type) ? [] : getMetadataFields(relationship.relationship_type))).length > 0 && (
           editing ? (
             <>
               {editMeta.includes("ownership_percent") && (

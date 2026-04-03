@@ -46,7 +46,8 @@ export default function EntityDetailPanel({
     .map((r) => {
       const otherId = r.from_entity_id === entity.id ? r.to_entity_id : r.from_entity_id;
       const direction = r.from_entity_id === entity.id ? "outgoing" : "incoming";
-      return { ...r, otherId, otherName: entityMap.get(otherId)?.name ?? "Unknown", direction };
+      const toEntity = entityMap.get(r.to_entity_id);
+      return { ...r, otherId, otherName: entityMap.get(otherId)?.name ?? "Unknown", direction, targetEntityType: toEntity?.entity_type };
     });
 
   const handleSave = async (updates: Record<string, unknown>) => {
