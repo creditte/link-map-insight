@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { getHealthStatus } from "@/lib/structureScoring";
 import { useClientHealthReview } from "@/hooks/useClientHealthReview";
-import type { StructureResult, ClientReview } from "@/hooks/useClientHealthReview";
+import type { StructureResult, ClientReview, CrossObservation } from "@/hooks/useClientHealthReview";
 import StructureIssuesPanel from "@/components/health/StructureIssuesPanel";
 
 /* ── Friendly labels ────────────────────────────────────────────── */
@@ -54,6 +54,7 @@ export default function ClientGovernance() {
   const { review, loading, runReview: doReview } = useClientHealthReview();
   const [structuresChanged, setStructuresChanged] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [insightFilter, setInsightFilter] = useState<string[] | null>(null);
   const [selectedStructure, setSelectedStructure] = useState<StructureResult | null>(null);
 
   useEffect(() => {
@@ -79,6 +80,7 @@ export default function ClientGovernance() {
     } else if (result) {
       setStructuresChanged(false);
       setStatusFilter(null);
+      setInsightFilter(null);
       toast({ title: "Health check complete" });
     } else {
       toast({ title: "Review failed", variant: "destructive" });
@@ -86,9 +88,11 @@ export default function ClientGovernance() {
   };
 
   const filteredStructures = review
-    ? statusFilter
-      ? review.structures.filter((s) => s.status === statusFilter)
-      : review.structures
+    ? insightFilter
+      ? review.structures.filter((s) => insightFilter.includes(s.id))
+      : statusFilter
+        ? review.structures.filter((s) => s.status === statusFilter)
+        : review.structures
     : [];
 
   const healthyCount = review ? review.structures.filter((s) => s.status === "good").length : 0;
@@ -259,16 +263,31 @@ export default function ClientGovernance() {
               </h2>
               <div className="space-y-2">
                 {review.crossObservations.map((obs, idx) => {
-                  const isActionable = obs.includes("missing") || obs.includes("without") || obs.includes("circular");
+                  const isActionable = obs.message.includes("missing") || obs.message.includes("without") || obs.message.includes("circular");
+                  const affectedStructures = review.structures.filter((s) => obs.structureIds.includes(s.id));
                   return (
-                    <div
+                    <button
                       key={idx}
-                      className={`rounded-xl border border-border/60 bg-card px-5 py-3.5 text-sm text-foreground border-l-[3px] ${
+                      onClick={() => {
+                        if (affectedStructures.length === 1) {
+                          setSelectedStructure(affectedStructures[0]);
+                        } else {
+                          setStatusFilter(null);
+                          setInsightFilter(obs.structureIds);
+                        }
+                      }}
+                      className={`group w-full rounded-xl border border-border/60 bg-card px-5 py-3.5 text-sm text-foreground border-l-[3px] text-left transition-all hover:border-border hover:shadow-sm ${
                         isActionable ? "border-l-warning" : "border-l-primary"
                       }`}
                     >
-                      {obs}
-                    </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span>{obs.message}</span>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+                          <span>{affectedStructures.length} structure{affectedStructures.length !== 1 ? "s" : ""}</span>
+                          <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                        </div>
+                      </div>
+                    </button>
                   );
                 })}
               </div>
@@ -283,7 +302,7 @@ export default function ClientGovernance() {
             <div className="space-y-2">
               {review.criticalStructures > 0 && (
                 <button
-                  onClick={() => setStatusFilter(statusFilter === "critical" ? null : "critical")}
+                  onClick={() => { setInsightFilter(null); setStatusFilter(statusFilter === "critical" ? null : "critical"); }}
                   className={`w-full flex items-center gap-3 rounded-xl border px-5 py-3.5 text-left transition-all ${
                     statusFilter === "critical"
                       ? "border-destructive/40 bg-destructive/10 ring-1 ring-destructive/20"
@@ -299,7 +318,7 @@ export default function ClientGovernance() {
               )}
               {review.needsAttention > review.criticalStructures && (
                 <button
-                  onClick={() => setStatusFilter(statusFilter === "warning" ? null : "warning")}
+                  onClick={() => { setInsightFilter(null); setStatusFilter(statusFilter === "warning" ? null : "warning"); }}
                   className={`w-full flex items-center gap-3 rounded-xl border px-5 py-3.5 text-left transition-all ${
                     statusFilter === "warning"
                       ? "border-warning/40 bg-warning/10 ring-1 ring-warning/20"
@@ -315,7 +334,7 @@ export default function ClientGovernance() {
               )}
               {healthyCount > 0 && (
                 <button
-                  onClick={() => setStatusFilter(statusFilter === "good" ? null : "good")}
+                  onClick={() => { setInsightFilter(null); setStatusFilter(statusFilter === "good" ? null : "good"); }}
                   className={`w-full flex items-center gap-3 rounded-xl border px-5 py-3.5 text-left transition-all ${
                     statusFilter === "good"
                       ? "border-success/40 bg-success/10 ring-1 ring-success/20"
@@ -338,9 +357,9 @@ export default function ClientGovernance() {
               <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
                 All Structures
               </h2>
-              {statusFilter && (
+              {(statusFilter || insightFilter) && (
                 <button
-                  onClick={() => setStatusFilter(null)}
+                  onClick={() => { setStatusFilter(null); setInsightFilter(null); }}
                   className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Clear filter
