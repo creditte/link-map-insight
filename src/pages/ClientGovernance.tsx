@@ -318,7 +318,7 @@ export default function ClientGovernance() {
               )}
               {review.needsAttention > review.criticalStructures && (
                 <button
-                  onClick={() => setStatusFilter(statusFilter === "warning" ? null : "warning")}
+                  onClick={() => { setInsightFilter(null); setStatusFilter(statusFilter === "warning" ? null : "warning"); }}
                   className={`w-full flex items-center gap-3 rounded-xl border px-5 py-3.5 text-left transition-all ${
                     statusFilter === "warning"
                       ? "border-warning/40 bg-warning/10 ring-1 ring-warning/20"
