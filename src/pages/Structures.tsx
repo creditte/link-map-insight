@@ -660,11 +660,13 @@ export default function Structures() {
           {!manualLoading && manualStructures.length === 0 && (
             <div className="text-center py-16 text-muted-foreground">
               <FileBox className="h-10 w-10 mx-auto mb-3 opacity-40" />
-              <p className="text-sm font-medium">You haven't created any structures yet</p>
-              <p className="text-xs mt-1">Create your first structure to start mapping entities and relationships.</p>
+              <p className="text-sm font-medium text-foreground">No structures yet</p>
+              <p className="text-xs mt-1.5 max-w-md mx-auto leading-relaxed">
+                Create structures independently of XPM — ideal for prospective clients, restructure scenarios, or standalone planning work.
+              </p>
               <Button
                 size="sm"
-                className="mt-4 gap-1.5"
+                className="mt-5 gap-1.5"
                 onClick={() => setShowCreateModal(true)}
               >
                 <Plus className="h-3.5 w-3.5" />
