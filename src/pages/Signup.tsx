@@ -93,6 +93,7 @@ export default function Signup() {
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
       setVerifyCode("");
+      autoSubmitTriggered.current = false;
     } finally {
       setVerifying(false);
     }
