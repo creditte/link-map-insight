@@ -727,16 +727,34 @@ export default function Structures() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-muted-foreground/30 text-muted-foreground cursor-help">
-                            Manual
-                          </Badge>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="text-xs max-w-[220px]">
-                          This structure was created manually in Strukcha and is not synced from XPM.
-                        </TooltipContent>
-                      </Tooltip>
+                      {s.is_scenario ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-medium gap-1 cursor-help">
+                              <Copy className="h-2.5 w-2.5" /> Scenario
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="text-xs max-w-[220px]">
+                            This is an independent copy created for "what-if" planning. Changes here don't affect the original.
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-muted-foreground/30 text-muted-foreground cursor-help">
+                              Manual
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="text-xs max-w-[220px]">
+                            This structure was created manually in Strukcha and is not synced from XPM.
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {s.scenario_label && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium">
+                          {s.scenario_label}
+                        </Badge>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
