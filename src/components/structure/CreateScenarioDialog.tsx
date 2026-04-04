@@ -103,11 +103,12 @@ export default function CreateScenarioDialog({
           </div>
           <div>
             <Label htmlFor="scenario-label">Label (optional)</Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Short tag shown on the diagram badge, e.g. "Option A"</p>
             <Input
               id="scenario-label"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Post restructure, FY2025 plan"
+              placeholder="e.g. Option A, Option B"
               className="mt-1"
             />
           </div>
