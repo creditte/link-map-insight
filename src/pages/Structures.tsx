@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import {
   Search, Users, RefreshCw, AlertCircle, Plus, Settings, FileBox,
-  Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine, Star, Clock,
+  Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine, Star, Clock, Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -37,6 +37,9 @@ interface ManualStructure {
   name: string;
   created_at: string;
   entity_count: number;
+  is_scenario?: boolean;
+  scenario_label?: string | null;
+  parent_structure_id?: string | null;
 }
 
 type Tab = "xpm" | "manual";
@@ -192,19 +195,30 @@ export default function Structures() {
     try {
       const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user.id });
       if (!tenantId) return;
-      const { data: structures } = await supabase
-        .from("structures")
-        .select("id, name, created_at")
-        .eq("tenant_id", tenantId)
-        .eq("is_scenario", false)
-        .eq("source", "manual")
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false });
-      if (!structures || structures.length === 0) {
+      // Load manual structures + all scenarios
+      const [manualRes, scenarioRes] = await Promise.all([
+        supabase
+          .from("structures")
+          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id")
+          .eq("tenant_id", tenantId)
+          .eq("is_scenario", false)
+          .eq("source", "manual")
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("structures")
+          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id")
+          .eq("tenant_id", tenantId)
+          .eq("is_scenario", true)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false }),
+      ]);
+      const allStructures = [...(manualRes.data ?? []), ...(scenarioRes.data ?? [])];
+      if (allStructures.length === 0) {
         setManualStructures([]);
         return;
       }
-      const structureIds = structures.map((s) => s.id);
+      const structureIds = allStructures.map((s) => s.id);
       const { data: entityLinks } = await supabase
         .from("structure_entities")
         .select("structure_id")
@@ -214,11 +228,14 @@ export default function Structures() {
         countMap[link.structure_id] = (countMap[link.structure_id] || 0) + 1;
       }
       setManualStructures(
-        structures.map((s) => ({
+        allStructures.map((s) => ({
           id: s.id,
           name: s.name,
           created_at: s.created_at,
           entity_count: countMap[s.id] || 0,
+          is_scenario: s.is_scenario,
+          scenario_label: s.scenario_label,
+          parent_structure_id: s.parent_structure_id,
         }))
       );
     } catch (err) {
@@ -710,16 +727,34 @@ export default function Structures() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-muted-foreground/30 text-muted-foreground cursor-help">
-                            Manual
-                          </Badge>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="text-xs max-w-[220px]">
-                          This structure was created manually in Strukcha and is not synced from XPM.
-                        </TooltipContent>
-                      </Tooltip>
+                      {s.is_scenario ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-medium gap-1 cursor-help">
+                              <Copy className="h-2.5 w-2.5" /> Scenario
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="text-xs max-w-[220px]">
+                            This is an independent copy created for "what-if" planning. Changes here don't affect the original.
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-muted-foreground/30 text-muted-foreground cursor-help">
+                              Manual
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="text-xs max-w-[220px]">
+                            This structure was created manually in Strukcha and is not synced from XPM.
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {s.scenario_label && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium">
+                          {s.scenario_label}
+                        </Badge>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

@@ -87,6 +87,7 @@ export default function CreateScenarioDialog({
           <DialogDescription>
             Create an independent copy of "{structureName}" that you can modify without affecting the original.
           </DialogDescription>
+          <p className="text-xs text-muted-foreground mt-1">Your scenario will appear in My Structures and can be edited independently without affecting the original.</p>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div>
@@ -102,11 +103,12 @@ export default function CreateScenarioDialog({
           </div>
           <div>
             <Label htmlFor="scenario-label">Label (optional)</Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Short tag shown on the diagram badge, e.g. "Option A"</p>
             <Input
               id="scenario-label"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Post restructure, FY2025 plan"
+              placeholder="e.g. Option A, Option B"
               className="mt-1"
             />
           </div>

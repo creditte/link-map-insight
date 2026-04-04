@@ -63,6 +63,7 @@ export default function CreateSnapshotDialog({ structureId, structureName, onCre
           <DialogDescription>
             Save a point-in-time copy of "{structureName}" including all entities, relationships, and layout positions.
           </DialogDescription>
+          <p className="text-xs text-muted-foreground mt-1">Your snapshot will be saved and accessible from the Snapshots section of this structure.</p>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div>
