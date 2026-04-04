@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import {
   Search, Users, RefreshCw, AlertCircle, Plus, Settings, FileBox,
-  Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine, Star, Clock,
+  Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine, Star, Clock, Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
