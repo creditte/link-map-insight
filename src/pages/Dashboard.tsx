@@ -32,7 +32,7 @@ import { useTenantSettings } from "@/hooks/useTenantSettings";
 import { useDuplicateCount } from "@/hooks/useDuplicateCount";
 
 import { useBilling } from "@/hooks/useBilling";
-import { formatDistanceToNow, differenceInDays } from "date-fns";
+import { formatDistanceToNow, differenceInDays, subDays } from "date-fns";
 import BillingBanner from "@/components/BillingBanner";
 import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
