@@ -96,10 +96,24 @@ const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; variant: "defa
   medium: { label: "Medium similarity", variant: "outline", helper: "Names are 85–89% similar. Check carefully." },
 };
 
+const DISMISSED_KEY = "dismissed-duplicate-groups";
+
+function getDismissedGroups(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch { return new Set(); }
+}
+
+function buildGroupKey(entities: DuplicateEntity[]): string {
+  return entities.map(e => e.id).sort().join("|");
+}
+
 export default function DuplicatesTab() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [groups, setGroups] = useState<DuplicateGroup[]>([]);
+  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(getDismissedGroups);
   const [loading, setLoading] = useState(true);
 
   // Merge dialog state
