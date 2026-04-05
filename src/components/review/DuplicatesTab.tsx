@@ -25,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CheckCircle, Merge, Loader2, AlertTriangle, Shield, Building2, Undo2 } from "lucide-react";
+import { CheckCircle, Merge, Loader2, AlertTriangle, Shield, Building2, Undo2, X } from "lucide-react";
 import { getEntityLabel } from "@/lib/entityTypes";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -96,10 +96,24 @@ const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; variant: "defa
   medium: { label: "Medium similarity", variant: "outline", helper: "Names are 85–89% similar. Check carefully." },
 };
 
+const DISMISSED_KEY = "dismissed-duplicate-groups";
+
+function getDismissedGroups(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch { return new Set(); }
+}
+
+function buildGroupKey(entities: DuplicateEntity[]): string {
+  return entities.map(e => e.id).sort().join("|");
+}
+
 export default function DuplicatesTab() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [groups, setGroups] = useState<DuplicateGroup[]>([]);
+  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(getDismissedGroups);
   const [loading, setLoading] = useState(true);
 
   // Merge dialog state
@@ -273,6 +287,24 @@ export default function DuplicatesTab() {
     if (user?.id) loadDuplicates();
   }, [user?.id, loadDuplicates]);
 
+  const dismissGroup = (group: DuplicateGroup) => {
+    const key = buildGroupKey(group.entities);
+    const next = new Set(dismissedKeys);
+    next.add(key);
+    setDismissedKeys(next);
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next]));
+    toast({ title: "Dismissed", description: `"${group.normalizedName}" marked as not a duplicate.` });
+  };
+
+  const restoreDismissed = () => {
+    setDismissedKeys(new Set());
+    localStorage.removeItem(DISMISSED_KEY);
+    toast({ title: "Restored", description: "All dismissed groups are visible again." });
+  };
+
+  const visibleGroups = groups.filter(g => !dismissedKeys.has(buildGroupKey(g.entities)));
+  const dismissedCount = groups.length - visibleGroups.length;
+
   const openMergeDialog = (group: DuplicateGroup) => {
     const types = new Set(group.entities.map((e) => e.type));
     if (types.size > 1) {
@@ -413,7 +445,7 @@ export default function DuplicatesTab() {
     );
   }
 
-  if (groups.length === 0) {
+  if (visibleGroups.length === 0 && groups.length === 0) {
     return (
       <Card className="max-w-lg">
         <CardContent className="flex items-center gap-3 p-6">
@@ -433,12 +465,34 @@ export default function DuplicatesTab() {
     <TooltipProvider>
       <>
         <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            {groups.length} potential duplicate {groups.length === 1 ? "group" : "groups"} detected.
-            Review and merge to keep your data clean.
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {visibleGroups.length} potential duplicate {visibleGroups.length === 1 ? "group" : "groups"} detected.
+              Review and merge to keep your data clean.
+            </p>
+            {dismissedCount > 0 && (
+              <Button variant="ghost" size="sm" className="text-xs gap-1 shrink-0" onClick={restoreDismissed}>
+                <Undo2 className="h-3 w-3" />
+                Show {dismissedCount} dismissed
+              </Button>
+            )}
+          </div>
 
-          {groups.map((group, idx) => {
+          {visibleGroups.length === 0 && dismissedCount > 0 && (
+            <Card className="max-w-lg">
+              <CardContent className="flex items-center gap-3 p-6">
+                <CheckCircle className="h-6 w-6 text-primary" />
+                <div>
+                  <p className="font-medium">All groups dismissed</p>
+                  <p className="text-sm text-muted-foreground">
+                    You've dismissed all {dismissedCount} duplicate {dismissedCount === 1 ? "group" : "groups"}. Click "Show dismissed" to review again.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {visibleGroups.map((group, idx) => {
             const types = new Set(group.entities.map((e) => e.type));
             const crossType = types.size > 1;
             const conf = CONFIDENCE_CONFIG[group.confidence];
@@ -468,15 +522,30 @@ export default function DuplicatesTab() {
                         </Badge>
                       )}
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="shrink-0 gap-1.5"
-                      onClick={() => openMergeDialog(group)}
-                      disabled={crossType}
-                    >
-                      <Merge className="h-3.5 w-3.5" /> Merge
-                    </Button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1 text-muted-foreground"
+                            onClick={() => dismissGroup(group)}
+                          >
+                            <X className="h-3.5 w-3.5" /> Not a duplicate
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">Dismiss this group as a false positive</TooltipContent>
+                      </Tooltip>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        onClick={() => openMergeDialog(group)}
+                        disabled={crossType}
+                      >
+                        <Merge className="h-3.5 w-3.5" /> Merge
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Comparison table */}
