@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Download, Image, FileText, Table } from "lucide-react";
+import { Download, Image, FileText, Table, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
@@ -120,9 +121,17 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
             <Table className="h-4 w-4 mr-2" /> Relationships CSV
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setShowPdfDialog(true)}>
-            <FileText className="h-4 w-4 mr-2" /> Premium PDF Report
-          </DropdownMenuItem>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuItem onClick={() => setShowPdfDialog(true)}>
+                <FileText className="h-4 w-4 mr-2" /> Premium PDF Report
+                <Info className="h-3 w-3 ml-auto text-muted-foreground" />
+              </DropdownMenuItem>
+            </TooltipTrigger>
+            <TooltipContent side="left" className="text-xs max-w-[240px]">
+              6-page advisor-grade report: cover page, entity summary, relationship map, health analysis, governance checklist & recommended actions.
+            </TooltipContent>
+          </Tooltip>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -132,9 +141,20 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
           <DialogHeader>
             <DialogTitle>Premium PDF Report</DialogTitle>
             <DialogDescription>
-              Generate a comprehensive advisor-grade structure report with health insights and governance analysis.
+              Generate a comprehensive advisor-grade structure report.
             </DialogDescription>
           </DialogHeader>
+          <div className="rounded-md border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
+            <p className="font-medium text-foreground text-[11px] uppercase tracking-wide">What's included</p>
+            <ul className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+              <li>• Branded cover page</li>
+              <li>• Structure diagram</li>
+              <li>• Entity summary table</li>
+              <li>• Relationship map</li>
+              <li>• Health score analysis</li>
+              <li>• Governance checklist</li>
+            </ul>
+          </div>
           <div className="space-y-4 py-4">
             <div className="flex items-center space-x-2">
               <Checkbox
