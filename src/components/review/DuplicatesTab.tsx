@@ -287,6 +287,24 @@ export default function DuplicatesTab() {
     if (user?.id) loadDuplicates();
   }, [user?.id, loadDuplicates]);
 
+  const dismissGroup = (group: DuplicateGroup) => {
+    const key = buildGroupKey(group.entities);
+    const next = new Set(dismissedKeys);
+    next.add(key);
+    setDismissedKeys(next);
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next]));
+    toast({ title: "Dismissed", description: `"${group.normalizedName}" marked as not a duplicate.` });
+  };
+
+  const restoreDismissed = () => {
+    setDismissedKeys(new Set());
+    localStorage.removeItem(DISMISSED_KEY);
+    toast({ title: "Restored", description: "All dismissed groups are visible again." });
+  };
+
+  const visibleGroups = groups.filter(g => !dismissedKeys.has(buildGroupKey(g.entities)));
+  const dismissedCount = groups.length - visibleGroups.length;
+
   const openMergeDialog = (group: DuplicateGroup) => {
     const types = new Set(group.entities.map((e) => e.type));
     if (types.size > 1) {
