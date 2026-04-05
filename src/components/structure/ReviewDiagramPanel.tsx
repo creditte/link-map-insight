@@ -336,7 +336,7 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
   const missingDirectors = health.issues.filter((i) => i.code === "missing_directors").length;
   const missingTrusteeLinks = health.issues.filter((i) => i.code === "missing_trustee" || i.code === "missing_appointer").length;
 
-  const panelWidth = expanded ? "w-[680px]" : "w-[520px]";
+  const panelWidth = expanded ? "w-[880px]" : "w-[620px]";
 
   return (
     <div className={`absolute left-0 top-0 z-10 flex h-full ${panelWidth} flex-col border-r bg-card shadow-lg transition-all duration-200`}>
@@ -414,10 +414,19 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
           <Separator />
 
           {/* ─── AI Generate Button (shown when AI hasn't run yet) ─── */}
-          {!aiHasRun && !aiLoading && (
-            <Button onClick={runAiReview} variant="outline" size="sm" className="w-full gap-2">
-              <Sparkles className="h-3.5 w-3.5" />
-              Generate Explain & Improve
+          {!aiHasRun && (
+            <Button onClick={runAiReview} variant="outline" size="sm" className="w-full gap-2" disabled={aiLoading}>
+              {aiLoading ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Analysing structure…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Generate Explain & Improve
+                </>
+              )}
             </Button>
           )}
 
