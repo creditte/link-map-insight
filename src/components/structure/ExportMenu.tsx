@@ -155,7 +155,6 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
               <li>• Governance checklist</li>
             </ul>
           </div>
-          </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center space-x-2">
               <Checkbox
