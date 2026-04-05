@@ -445,7 +445,7 @@ export default function DuplicatesTab() {
     );
   }
 
-  if (groups.length === 0) {
+  if (visibleGroups.length === 0 && groups.length === 0) {
     return (
       <Card className="max-w-lg">
         <CardContent className="flex items-center gap-3 p-6">
@@ -465,12 +465,34 @@ export default function DuplicatesTab() {
     <TooltipProvider>
       <>
         <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            {groups.length} potential duplicate {groups.length === 1 ? "group" : "groups"} detected.
-            Review and merge to keep your data clean.
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {visibleGroups.length} potential duplicate {visibleGroups.length === 1 ? "group" : "groups"} detected.
+              Review and merge to keep your data clean.
+            </p>
+            {dismissedCount > 0 && (
+              <Button variant="ghost" size="sm" className="text-xs gap-1 shrink-0" onClick={restoreDismissed}>
+                <Undo2 className="h-3 w-3" />
+                Show {dismissedCount} dismissed
+              </Button>
+            )}
+          </div>
 
-          {groups.map((group, idx) => {
+          {visibleGroups.length === 0 && dismissedCount > 0 && (
+            <Card className="max-w-lg">
+              <CardContent className="flex items-center gap-3 p-6">
+                <CheckCircle className="h-6 w-6 text-primary" />
+                <div>
+                  <p className="font-medium">All groups dismissed</p>
+                  <p className="text-sm text-muted-foreground">
+                    You've dismissed all {dismissedCount} duplicate {dismissedCount === 1 ? "group" : "groups"}. Click "Show dismissed" to review again.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {visibleGroups.map((group, idx) => {
             const types = new Set(group.entities.map((e) => e.type));
             const crossType = types.size > 1;
             const conf = CONFIDENCE_CONFIG[group.confidence];
