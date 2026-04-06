@@ -211,6 +211,7 @@ function StructureGraphInner({
 }: Props) {
   const { fitView, screenToFlowPosition } = useReactFlow();
   const prevLayoutTrigger = useRef(0);
+  const initialFitDone = useRef(false);
   const nodePositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   const getPinnedPositions = useCallback(() => {
@@ -280,7 +281,13 @@ function StructureGraphInner({
       }
     }
     setEdges(buildEdges(relationships, viewMode, entityMap));
-  }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions, layoutStrategy, dbPositions]);
+
+    // Auto-fit on initial data load
+    if (!initialFitDone.current && entities.length > 0) {
+      initialFitDone.current = true;
+      setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 80);
+    }
+  }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions, layoutStrategy, dbPositions, fitView]);
 
   // Auto-layout button trigger
   useEffect(() => {
