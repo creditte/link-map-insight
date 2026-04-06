@@ -211,6 +211,7 @@ function StructureGraphInner({
 }: Props) {
   const { fitView, screenToFlowPosition } = useReactFlow();
   const prevLayoutTrigger = useRef(0);
+  const initialFitDone = useRef(false);
   const nodePositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   const getPinnedPositions = useCallback(() => {
