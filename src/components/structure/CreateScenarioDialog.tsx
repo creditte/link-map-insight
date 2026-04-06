@@ -87,7 +87,10 @@ export default function CreateScenarioDialog({
           <DialogDescription>
             Create an independent copy of "{structureName}" that you can modify without affecting the original.
           </DialogDescription>
-          <p className="text-xs text-muted-foreground mt-1">Your scenario will appear in My Structures and can be edited independently without affecting the original.</p>
+          <div className="rounded-md border bg-muted/40 px-3 py-2 mt-2 text-xs text-muted-foreground flex items-start gap-2">
+            <Copy className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary" />
+            <span>Your scenario will appear in the <strong className="text-foreground">My Structures</strong> tab on the Structures page, marked with a <strong className="text-foreground">Scenario</strong> badge. You can edit it independently without affecting the original.</span>
+          </div>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div>
