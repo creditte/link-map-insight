@@ -69,6 +69,7 @@ export default function Dashboard() {
   const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [xeroConnectionType, setXeroConnectionType] = useState<"accounting" | "practice_manager">("practice_manager");
+  const { review, loading: healthLoading, runReview } = useClientHealthReview();
 
   const handleCreateNew = () => {
     if (atDiagramLimit) {
