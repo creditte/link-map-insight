@@ -79,7 +79,7 @@ export default function Import() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "completed":
-        return <Badge variant="default" className="bg-emerald-500/15 text-emerald-700 border-emerald-200">Completed</Badge>;
+        return <Badge variant="default" className="bg-primary/15 text-primary border-primary/20">Completed</Badge>;
       case "failed":
         return <Badge variant="destructive">Failed</Badge>;
       case "processing":
