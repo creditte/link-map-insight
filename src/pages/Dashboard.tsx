@@ -549,7 +549,7 @@ export default function Dashboard() {
         ))}
       </section>
 
-      {/* ── Workflow Cards ── */}
+      {/* ── Workflow Insight Cards ── */}
       <section className="grid gap-5 sm:grid-cols-2">
         {dashboardLoading ? (
           <>
@@ -585,37 +585,117 @@ export default function Dashboard() {
           </>
         ) : (
           <>
+            {/* Health Check — live insight */}
             <Link
               to="/governance"
               className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
             >
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-success/10">
-                <HeartPulse className="h-5 w-5 text-success" />
+              <div className="mb-3 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-success/10">
+                  <HeartPulse className="h-5 w-5 text-success" />
+                </div>
+                {review && !healthLoading && (
+                  <Badge
+                    variant="outline"
+                    className={`text-[11px] px-2 py-0.5 font-medium ${
+                      review.clientScore >= 90
+                        ? "border-success/40 text-success"
+                        : review.clientScore >= 50
+                        ? "border-warning/40 text-warning"
+                        : "border-destructive/40 text-destructive"
+                    }`}
+                  >
+                    Score {review.clientScore}
+                  </Badge>
+                )}
               </div>
               <h3 className="text-[15px] font-semibold text-foreground">Health Check</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-                Assess the health of client structures and identify issues quickly.
-              </p>
+              {healthLoading ? (
+                <div className="mt-2 space-y-1.5">
+                  <Skeleton className="h-3.5 w-3/4" />
+                  <Skeleton className="h-3.5 w-1/2" />
+                </div>
+              ) : review ? (
+                <div className="mt-1.5 space-y-1">
+                  <p className="text-sm text-muted-foreground">
+                    {review.criticalStructures > 0 ? (
+                      <>
+                        <span className="font-medium text-destructive">{review.criticalStructures} critical</span>
+                        {review.needsAttention > 0 && (
+                          <>, {review.needsAttention} need{review.needsAttention !== 1 ? "" : "s"} attention</>
+                        )}
+                      </>
+                    ) : review.needsAttention > 0 ? (
+                      <span className="font-medium text-warning">{review.needsAttention} structure{review.needsAttention !== 1 ? "s" : ""} need{review.needsAttention === 1 ? "s" : ""} attention</span>
+                    ) : (
+                      <span className="text-success font-medium">All structures healthy</span>
+                    )}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/70">
+                    Last checked: {formatDistanceToNow(new Date(review.timestamp), { addSuffix: true })}
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  Assess the health of client structures and identify issues quickly.
+                </p>
+              )}
               <Button size="sm" className="mt-4 gap-1.5 text-xs" asChild>
                 <span>
-                  Run Health Check <ArrowRight className="h-3 w-3" />
+                  {review ? "View Details" : "Run Health Check"} <ArrowRight className="h-3 w-3" />
                 </span>
               </Button>
             </Link>
+
+            {/* Review & Improve — live insight */}
             <Link
               to="/review"
               className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
             >
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                <Sparkles className="h-5 w-5 text-primary" />
+              <div className="mb-3 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                </div>
+                {review && !healthLoading && review.allIssues.length > 0 && (
+                  <Badge
+                    variant="outline"
+                    className="text-[11px] px-2 py-0.5 font-medium border-warning/40 text-warning"
+                  >
+                    {review.allIssues.length} issue{review.allIssues.length !== 1 ? "s" : ""}
+                  </Badge>
+                )}
               </div>
               <h3 className="text-[15px] font-semibold text-foreground">Review &amp; Improve</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-                Review flagged issues and improve structure quality.
-              </p>
+              {healthLoading ? (
+                <div className="mt-2 space-y-1.5">
+                  <Skeleton className="h-3.5 w-3/4" />
+                  <Skeleton className="h-3.5 w-1/2" />
+                </div>
+              ) : review ? (
+                <div className="mt-1.5 space-y-1">
+                  {review.allIssues.length > 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">{review.allIssues.filter(i => i.severity === "critical").length} critical</span>
+                      {review.allIssues.filter(i => i.severity === "gap").length > 0 && (
+                        <>, {review.allIssues.filter(i => i.severity === "gap").length} gaps</>
+                      )}
+                      {" "}across {review.structures.filter(s => s.issues.length > 0).length} structure{review.structures.filter(s => s.issues.length > 0).length !== 1 ? "s" : ""}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-success font-medium">No issues found — all clear!</p>
+                  )}
+                  <p className="text-[11px] text-muted-foreground/70">
+                    Resolve issues to unlock clean exports.
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  Review flagged issues and improve structure quality.
+                </p>
+              )}
               <Button size="sm" className="mt-4 gap-1.5 text-xs" asChild>
                 <span>
-                  Review Issues <ArrowRight className="h-3 w-3" />
+                  {review && review.allIssues.length > 0 ? "Fix Issues" : "Review Issues"} <ArrowRight className="h-3 w-3" />
                 </span>
               </Button>
             </Link>
