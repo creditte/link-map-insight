@@ -177,22 +177,22 @@ export default function ClientGovernance() {
                   {getScoreMessage(review.clientScore, review.structures.length)}
                 </p>
               </div>
-              <div className="flex flex-col items-end gap-1 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
+                <p className="text-[11px] text-muted-foreground/50">
+                  Last reviewed {new Date(review.timestamp).toLocaleString("en-AU", {
+                    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+                  })}
+                </p>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="gap-1.5 rounded-xl text-xs"
+                  className="gap-1.5 rounded-xl text-xs h-7"
                   onClick={handleRunReview}
                   disabled={loading}
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                   Re-run
                 </Button>
-                <p className="text-[11px] text-muted-foreground/50">
-                  Last reviewed {new Date(review.timestamp).toLocaleString("en-AU", {
-                    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
-                  })}
-                </p>
               </div>
             </div>
 

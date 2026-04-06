@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Copy, PenTool, HeartPulse } from "lucide-react";
+import { Copy, PenTool, HeartPulse } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -373,15 +373,15 @@ export default function StructureView() {
         </div>
       )}
 
-      {/* Minimal identity bar */}
+      {/* Breadcrumb + identity bar */}
       <div className="flex items-center gap-3 px-3 py-2 border-b bg-background">
-        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" asChild>
-          <Link to="/structures"><ArrowLeft className="h-4 w-4" /></Link>
-        </Button>
+        <nav className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+          <Link to="/structures" className="hover:text-foreground transition-colors">Structures</Link>
+          <span className="text-muted-foreground/50">/</span>
+          <span className="text-foreground font-medium truncate max-w-[200px]">{structureName}</span>
+        </nav>
 
-        <div className="flex flex-col gap-0 min-w-0">
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm font-semibold tracking-tight truncate">{structureName}</h1>
+        <div className="flex items-center gap-2 ml-1">
             {isScenario && (
               <Badge variant="secondary" className="gap-1 text-[10px] shrink-0">
                 <Copy className="h-2.5 w-2.5" /> Scenario
@@ -392,12 +392,12 @@ export default function StructureView() {
                 <PenTool className="h-2.5 w-2.5" /> Manual
               </Badge>
             )}
-          </div>
-          <span className="text-[11px] text-muted-foreground">
-            {displayEntities.length} entities · {displayRelationships.length} relationships
-            {lastUpdated && <> · Updated {lastUpdated}</>}
-          </span>
         </div>
+
+        <span className="text-[11px] text-muted-foreground ml-1">
+          {displayEntities.length} entities · {displayRelationships.length} relationships
+          {lastUpdated && <> · Updated {lastUpdated}</>}
+        </span>
 
         {isScenario && parentStructureId && parentStructureName && (
           <Link to={`/structures/${parentStructureId}`} className="text-[11px] text-muted-foreground hover:underline shrink-0">
