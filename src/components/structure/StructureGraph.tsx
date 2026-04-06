@@ -134,13 +134,16 @@ function buildEdges(
       }
     }
 
+    const edgeLabel = invalid ? `⚠ ${buildEdgeLabel(r, entityMap)}` : buildEdgeLabel(r, entityMap);
+
     return {
       id: r.id,
       source: r.from_entity_id,
       target: r.to_entity_id,
-      label: invalid ? `⚠ ${buildEdgeLabel(r, entityMap)}` : buildEdgeLabel(r, entityMap),
+      label: edgeLabel,
       type: "default",
       animated: false,
+      className: invalid ? "react-flow__edge--invalid" : "",
       style: {
         stroke: invalid ? "#ef4444" : (EDGE_COLORS[r.relationship_type] ?? "#94a3b8"),
         strokeWidth: deEmphasize ? 1 : 2,

@@ -188,3 +188,15 @@
 .react-flow__minimap {
   opacity: 0.85 !important;
 }
+
+/* Hide edge labels by default, show on hover */
+.react-flow__edge .react-flow__edge-textwrapper {
+  opacity: 0;
+  transition: opacity 0.15s ease-in-out;
+  pointer-events: auto;
+}
+.react-flow__edge:hover .react-flow__edge-textwrapper,
+.react-flow__edge.selected .react-flow__edge-textwrapper,
+.react-flow__edge--invalid .react-flow__edge-textwrapper {
+  opacity: 1;
+}
