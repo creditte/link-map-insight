@@ -61,7 +61,7 @@ export default function CreateScenarioDialog({
       }
 
       const { structure_id } = response.data as { structure_id: string };
-      toast({ title: "Scenario created", description: `"${name}" is ready to edit` });
+      toast({ title: "Scenario created", description: `"${name}" is now in your My Structures tab` });
       setOpen(false);
       setName("");
       setLabel("");
