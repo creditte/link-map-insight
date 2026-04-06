@@ -105,7 +105,7 @@ export default function Import() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 mb-2">
       <h1 className="text-2xl font-bold tracking-tight">Import</h1>
 
       {/* Step-by-step instructions */}
