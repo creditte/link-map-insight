@@ -6,7 +6,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const PRICE_ID = "price_1TDLyr03zgsCflnsVAheazkG";
+const PRICE_MAP: Record<string, string | undefined> = {
+  starter: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
+  pro: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -29,12 +32,16 @@ Deno.serve(async (req) => {
     const user = userData.user;
 
     // Get user's tenant
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("tenant_id")
-      .eq("user_id", user.id)
-      .single();
-    if (!profile) throw new Error("No profile found");
+     const { data: profile } = await supabaseAdmin
+       .from("profiles")
+       .select("tenant_id, selected_plan")
+       .eq("user_id", user.id)
+       .single();
+     if (!profile) throw new Error("No profile found");
+
+     const selectedPlan = profile.selected_plan || "pro";
+     const priceId = PRICE_MAP[selectedPlan] || PRICE_MAP.pro;
+     if (!priceId) throw new Error(`No Stripe price configured for plan: ${selectedPlan}`);
 
     // Get tenant
     const { data: tenant } = await supabaseAdmin
@@ -75,7 +82,7 @@ Deno.serve(async (req) => {
 
     const sessionParams: any = {
       customer: customerId,
-      line_items: [{ price: PRICE_ID, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
       success_url: `${origin}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/signup`,
