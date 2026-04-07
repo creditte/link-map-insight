@@ -533,6 +533,8 @@ export type Database = {
           id: string
           last_sign_in_at: string | null
           onboarding_complete: boolean
+          selected_billing: string | null
+          selected_plan: string | null
           status: string
           tenant_id: string
           updated_at: string
@@ -544,6 +546,8 @@ export type Database = {
           id?: string
           last_sign_in_at?: string | null
           onboarding_complete?: boolean
+          selected_billing?: string | null
+          selected_plan?: string | null
           status?: string
           tenant_id: string
           updated_at?: string
@@ -555,6 +559,8 @@ export type Database = {
           id?: string
           last_sign_in_at?: string | null
           onboarding_complete?: boolean
+          selected_billing?: string | null
+          selected_plan?: string | null
           status?: string
           tenant_id?: string
           updated_at?: string
