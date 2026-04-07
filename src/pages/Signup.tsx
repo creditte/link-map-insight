@@ -33,6 +33,15 @@ export default function Signup() {
   const navigate = useNavigate();
   const autoSubmitTriggered = useRef(false);
 
+  // Read plan/billing from URL and store in localStorage
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const plan = params.get("plan");
+    const billing = params.get("billing");
+    localStorage.setItem("selectedPlan", plan && ["starter", "pro", "enterprise"].includes(plan) ? plan : "pro");
+    localStorage.setItem("selectedBilling", billing && ["monthly", "annual"].includes(billing) ? billing : "monthly");
+  }, []);
+
   // Auto-submit when 6 digits entered
   useEffect(() => {
     if (verifyCode.length === 6 && !verifying && !autoSubmitTriggered.current && needsVerification) {
