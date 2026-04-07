@@ -32,12 +32,16 @@ Deno.serve(async (req) => {
     const user = userData.user;
 
     // Get user's tenant
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("tenant_id")
-      .eq("user_id", user.id)
-      .single();
-    if (!profile) throw new Error("No profile found");
+     const { data: profile } = await supabaseAdmin
+       .from("profiles")
+       .select("tenant_id, selected_plan")
+       .eq("user_id", user.id)
+       .single();
+     if (!profile) throw new Error("No profile found");
+
+     const selectedPlan = profile.selected_plan || "pro";
+     const priceId = PRICE_MAP[selectedPlan] || PRICE_MAP.pro;
+     if (!priceId) throw new Error(`No Stripe price configured for plan: ${selectedPlan}`);
 
     // Get tenant
     const { data: tenant } = await supabaseAdmin
