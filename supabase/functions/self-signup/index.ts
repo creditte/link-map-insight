@@ -53,10 +53,12 @@ Deno.serve(async (req) => {
     });
 
   try {
-    const { fullName, email, password, firmName } = await req.json();
+    const { fullName, email, password, firmName, selectedPlan, selectedBilling } = await req.json();
     if (!email || !password || !firmName || !fullName) {
       return json({ error: "Missing required fields" }, 400);
     }
+    const plan = selectedPlan || "pro";
+    const billing = selectedBilling || "monthly";
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
