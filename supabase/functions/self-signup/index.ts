@@ -120,10 +120,10 @@ Deno.serve(async (req) => {
           metadata: { workspace_id: tenant.id, owner_user_id: userId },
         });
 
-        // TODO: Change back to trial_period_days: 7 for production
         const trialEndUnix = Math.floor(trialEnd.getTime() / 1000);
-        const priceId = PRICE_MAP[plan] || PRICE_MAP.pro;
-        if (!priceId) throw new Error(`No Stripe price configured for plan: ${plan}`);
+        const planPrices = PRICE_MAP[plan] || PRICE_MAP.pro;
+        const priceId = planPrices?.[billing] || planPrices?.monthly;
+        if (!priceId) throw new Error(`No Stripe price configured for plan: ${plan}, billing: ${billing}`);
 
         const subscription = await stripe.subscriptions.create({
           customer: customer.id,
