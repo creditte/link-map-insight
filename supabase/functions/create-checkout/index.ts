@@ -59,12 +59,21 @@ Deno.serve(async (req) => {
       .single();
     if (!tenant) throw new Error("No tenant found");
 
-    // Check if already active/trialing
-    if (["active", "trialing"].includes(tenant.subscription_status) && tenant.subscription_status !== "trial_expired") {
-      return new Response(JSON.stringify({ error: "Workspace already has an active subscription" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Only block if there's a real active Stripe subscription
+    if (tenant.stripe_subscription_id && ["active"].includes(tenant.subscription_status)) {
+      // Double-check with Stripe that the subscription is genuinely active
+      const stripe2 = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+      try {
+        const existingSub = await stripe2.subscriptions.retrieve(tenant.stripe_subscription_id);
+        if (existingSub.status === "active" || existingSub.status === "trialing") {
+          return new Response(JSON.stringify({ error: "Workspace already has an active subscription" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      } catch {
+        // Subscription doesn't exist in Stripe, allow checkout
+      }
     }
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
