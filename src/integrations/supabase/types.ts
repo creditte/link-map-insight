@@ -1551,6 +1551,7 @@ export type Database = {
         | "parent"
         | "child"
         | "member"
+        | "unit_holder"
       trust_subtype:
         | "Discretionary"
         | "Unit"
@@ -1723,6 +1724,7 @@ export const Constants = {
         "parent",
         "child",
         "member",
+        "unit_holder",
       ],
       trust_subtype: [
         "Discretionary",
