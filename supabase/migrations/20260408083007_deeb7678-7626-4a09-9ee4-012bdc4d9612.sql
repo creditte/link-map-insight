@@ -1,0 +1,1 @@
+UPDATE public.tenants SET subscription_plan = 'pro', diagram_limit = 50 WHERE stripe_customer_id = 'cus_UISDcPLLp48gLO' AND subscription_plan = 'free';

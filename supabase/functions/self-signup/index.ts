@@ -96,6 +96,10 @@ Deno.serve(async (req) => {
     // 10-minute trial for testing
     const trialEnd = new Date(now.getTime() + 10 * 60 * 1000);
 
+    // Determine plan limits
+    const planLimits: Record<string, number> = { starter: 15, pro: 50 };
+    const diagramLimit = planLimits[plan] || 50;
+
     const { data: tenant, error: tenantError } = await supabaseAdmin
       .from("tenants")
       .insert({
@@ -104,6 +108,8 @@ Deno.serve(async (req) => {
         trial_starts_at: now.toISOString(),
         trial_ends_at: trialEnd.toISOString(),
         subscription_status: "trialing",
+        subscription_plan: plan,
+        diagram_limit: diagramLimit,
       })
       .select("id")
       .single();
