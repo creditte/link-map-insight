@@ -14,10 +14,10 @@ function initPlanConfig() {
   const proProductId = Deno.env.get("STRIPE_PRO_PRODUCT_ID");
 
   if (starterProductId) {
-    PLAN_CONFIG[starterProductId] = { plan: "starter", diagramLimit: 30 };
+    PLAN_CONFIG[starterProductId] = { plan: "starter", diagramLimit: 15 };
   }
   if (proProductId) {
-    PLAN_CONFIG[proProductId] = { plan: "pro", diagramLimit: 100 };
+    PLAN_CONFIG[proProductId] = { plan: "pro", diagramLimit: 50 };
   }
 }
 
@@ -28,7 +28,7 @@ function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan:
   }
   // Fallback to pro if product ID not recognized
   console.warn(`Unknown product ID: ${productId}, defaulting to pro`);
-  return { plan: "pro", diagramLimit: 100 };
+  return { plan: "pro", diagramLimit: 50 };
 }
 
 async function findTenantByCustomer(supabaseAdmin: any, customerId: string): Promise<string | null> {
