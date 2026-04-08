@@ -119,6 +119,16 @@ export const RELATIONSHIP_RULES: readonly RelationshipRule[] = [
     metadataFields: ["ownership_percent", "ownership_units", "ownership_class"],
   },
   {
+    type: "unit_holder",
+    label: "Unit Holder",
+    allowedSourceTypes: ["individual", "company", "discretionary_trust", "unit_trust", "smsf"],
+    allowedTargetTypes: ["unit_trust"],
+    allowReverse: false,
+    validationMessage: "Unit holders can only be linked to unit trusts.",
+    category: "ownership",
+    metadataFields: ["ownership_percent", "ownership_units", "ownership_class"],
+  },
+  {
     type: "trustee",
     label: "Trustee",
     allowedSourceTypes: ["individual", "company"],

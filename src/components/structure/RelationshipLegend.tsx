@@ -6,6 +6,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 const EDGE_COLORS: Record<string, { color: string; label: string }> = {
   director: { color: "#3b82f6", label: "Director" },
   shareholder: { color: "#10b981", label: "Shareholder" },
+  unit_holder: { color: "#22c55e", label: "Unit Holder" },
   beneficiary: { color: "#f59e0b", label: "Beneficiary" },
   trustee: { color: "#8b5cf6", label: "Trustee" },
   appointer: { color: "#ec4899", label: "Appointor" },

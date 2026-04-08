@@ -21,6 +21,7 @@ function groupLabel(type: string): string {
   const label = getRelationshipLabel(type);
   if (type === "appointer") return "Appointors";
   if (type === "beneficiary") return "Beneficiaries";
+  if (type === "unit_holder") return "Unit Holders";
   return label + "s";
 }
 
