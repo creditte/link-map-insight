@@ -75,6 +75,54 @@ Deno.serve(async (req) => {
             tenant.subscription_status = sub.status;
             tenant.access_enabled = false;
             tenant.access_locked_reason = sub.status === "canceled" ? "subscription_canceled" : `subscription_${sub.status}`;
+
+            // Persist bad status to DB so it's not re-queried every time
+            await supabaseAdmin.from("tenants").update({
+              subscription_status: sub.status,
+              access_enabled: false,
+              access_locked_reason: tenant.access_locked_reason,
+            }).eq("id", profile.tenant_id);
+            console.log(`[check-subscription] Synced bad status to DB: ${sub.status}`);
+          }
+
+          // If Stripe subscription IS active/trialing but DB disagrees, self-heal
+          if (["active", "trialing"].includes(sub.status) && !["active", "trialing"].includes(tenant.subscription_status)) {
+            const productId = priceData?.product as string | undefined;
+            const starterProductId = Deno.env.get("STRIPE_STARTER_PRODUCT_ID");
+            const proProductId = Deno.env.get("STRIPE_PRO_PRODUCT_ID");
+            let resolvedPlan = "pro";
+            let resolvedLimit = 50;
+            if (productId && starterProductId && productId === starterProductId) {
+              resolvedPlan = "starter";
+              resolvedLimit = 15;
+            }
+
+            const healUpdate: Record<string, any> = {
+              subscription_status: sub.status,
+              subscription_plan: resolvedPlan,
+              access_enabled: true,
+              access_locked_reason: null,
+              diagram_limit: resolvedLimit,
+              stripe_subscription_id: sub.id,
+              current_period_start: sub.current_period_start
+                ? new Date(sub.current_period_start * 1000).toISOString()
+                : null,
+              current_period_end: sub.current_period_end
+                ? new Date(sub.current_period_end * 1000).toISOString()
+                : null,
+              cancel_at_period_end: sub.cancel_at_period_end ?? false,
+            };
+
+            await supabaseAdmin.from("tenants").update(healUpdate).eq("id", profile.tenant_id);
+            console.log(`[check-subscription] Self-healed tenant: ${tenant.subscription_status} → ${sub.status}`);
+
+            tenant.subscription_status = sub.status;
+            tenant.subscription_plan = resolvedPlan;
+            tenant.access_enabled = true;
+            tenant.access_locked_reason = null;
+            tenant.diagram_limit = resolvedLimit;
+            tenant.cancel_at_period_end = sub.cancel_at_period_end ?? false;
+            tenant.current_period_end = healUpdate.current_period_end;
           }
         }
       } catch (e) {
