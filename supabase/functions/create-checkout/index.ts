@@ -83,9 +83,6 @@ Deno.serve(async (req) => {
         .eq("id", tenant.id);
     }
 
-    // Determine if trial is allowed (not if already expired or used)
-    const trialAllowed = !tenant.trial_used_at && tenant.subscription_status !== "trial_expired";
-
     const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";
 
     const sessionParams: any = {
@@ -95,14 +92,10 @@ Deno.serve(async (req) => {
       success_url: `${origin}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/signup`,
       metadata: { workspace_id: tenant.id, owner_user_id: user.id },
-    };
-
-    if (trialAllowed) {
-      sessionParams.subscription_data = {
-        trial_period_days: 7,
+      subscription_data: {
         metadata: { workspace_id: tenant.id },
-      };
-    }
+      },
+    };
 
     const session = await stripe.checkout.sessions.create(sessionParams);
 

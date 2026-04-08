@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
 
     const { data: profile } = await supabaseAdmin
       .from("profiles")
-      .select("tenant_id")
+      .select("tenant_id, selected_billing")
       .eq("user_id", userData.user.id)
       .single();
     if (!profile) throw new Error("No profile found");
@@ -54,8 +54,8 @@ Deno.serve(async (req) => {
       tenant.access_locked_reason = "trial_expired";
     }
 
-    // Determine billing interval from Stripe subscription if available
-    let billing_interval: string | null = null;
+    // Determine billing interval from Stripe subscription if available, otherwise fall back to the user's chosen billing cycle
+    let billing_interval: string | null = profile.selected_billing === "annual" ? "year" : "month";
     let price_amount: number | null = null;
     if (tenant.stripe_subscription_id) {
       try {
@@ -68,6 +68,13 @@ Deno.serve(async (req) => {
           if (priceData) {
             billing_interval = priceData.recurring?.interval || null;
             price_amount = priceData.unit_amount || null;
+          }
+
+          // If Stripe subscription is not actually active/trialing, reflect that in app state
+          if (!["active", "trialing"].includes(sub.status) && tenant.subscription_status !== "trial_expired") {
+            tenant.subscription_status = sub.status;
+            tenant.access_enabled = false;
+            tenant.access_locked_reason = sub.status === "canceled" ? "subscription_canceled" : `subscription_${sub.status}`;
           }
         }
       } catch (e) {
