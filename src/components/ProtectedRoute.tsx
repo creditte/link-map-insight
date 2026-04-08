@@ -226,29 +226,16 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   // ── Timed out waiting ─────────────────────────────────────────
   if (timedOut) {
-    return (
-      <RecoveryScreen
-        title="Loading Timeout"
-        message="The app took too long to load. This usually means a network issue or missing account data."
-        error={`bootStatus=${bootStatus} tenantStatus=${tenantStatus} userId=${user?.id ?? "none"}`}
-      />
-    );
+    trace("ProtectedRoute", "decision: loading timeout → clearing session, redirect /login");
+    supabase.auth.signOut().catch(() => {});
+    return <Navigate to="/login" replace />;
   }
 
-  // ── Auth error / timeout ──────────────────────────────────────
+  // ── Auth error ─────────────────────────────────────────────────
   if (bootStatus === "error" || bootStatus === "timeout") {
-    trace("ProtectedRoute", "decision: auth error/timeout → RecoveryScreen");
-    return (
-      <RecoveryScreen
-        title={bootStatus === "timeout" ? "Connection Timeout" : "Authentication Error"}
-        message={
-          bootStatus === "timeout"
-            ? "The app took too long to connect. Please check your network and try again."
-            : "We couldn't verify your session. Please reload or sign in again."
-        }
-        error={bootError ?? undefined}
-      />
-    );
+    trace("ProtectedRoute", "decision: auth error/timeout → sign out & redirect /login");
+    supabase.auth.signOut().catch(() => {});
+    return <Navigate to="/login" replace />;
   }
 
   // ── Still booting auth ────────────────────────────────────────

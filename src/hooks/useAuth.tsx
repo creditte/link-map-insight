@@ -37,14 +37,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // ── Timeout guard ───────────────────────────────────────────
-    const timeout = setTimeout(() => {
+    const timeout = setTimeout(async () => {
       if (!bootResolved.current) {
         bootResolved.current = true;
-        const msg = `Authentication timed out after ${BOOT_TIMEOUT_MS / 1000}s`;
-        trace("useAuth", "TIMEOUT", { ms: BOOT_TIMEOUT_MS });
-        console.error("[Auth] Boot timeout after", BOOT_TIMEOUT_MS, "ms");
-        setBootStatus("timeout");
-        setBootError(msg);
+        trace("useAuth", "TIMEOUT – clearing session", { ms: BOOT_TIMEOUT_MS });
+        console.error("[Auth] Boot timeout after", BOOT_TIMEOUT_MS, "ms – signing out");
+        try { localStorage.removeItem("td_token"); } catch { /* noop */ }
+        await supabase.auth.signOut().catch(() => {});
+        setSession(null);
+        setUser(null);
+        setBootStatus("unauthenticated");
+        setBootError(`Authentication timed out after ${BOOT_TIMEOUT_MS / 1000}s`);
       }
     }, BOOT_TIMEOUT_MS);
 
