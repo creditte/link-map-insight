@@ -69,6 +69,13 @@ Deno.serve(async (req) => {
             billing_interval = priceData.recurring?.interval || null;
             price_amount = priceData.unit_amount || null;
           }
+
+          // If Stripe subscription is not actually active/trialing, reflect that in app state
+          if (!["active", "trialing"].includes(sub.status) && tenant.subscription_status !== "trial_expired") {
+            tenant.subscription_status = sub.status;
+            tenant.access_enabled = false;
+            tenant.access_locked_reason = sub.status === "canceled" ? "subscription_canceled" : `subscription_${sub.status}`;
+          }
         }
       } catch (e) {
         console.error("[check-subscription] Error fetching Stripe sub:", e);

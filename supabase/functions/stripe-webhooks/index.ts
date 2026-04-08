@@ -154,14 +154,10 @@ Deno.serve(async (req) => {
             ? new Date(subscription.canceled_at * 1000).toISOString()
             : null,
           access_enabled: accessEnabled,
-          diagram_limit: accessEnabled ? diagramLimit : 3,
+          access_locked_reason: accessEnabled ? null : (status === "canceled" ? "subscription_canceled" : `subscription_${status}`),
+          diagram_limit: accessEnabled ? diagramLimit : 50,
         };
 
-        if (!accessEnabled) {
-          updateData.access_locked_reason = status === "canceled" ? "subscription_canceled" : "subscription_" + status;
-        } else {
-          updateData.access_locked_reason = null;
-        }
 
         if (subscription.trial_end) {
           updateData.trial_ends_at = new Date(subscription.trial_end * 1000).toISOString();
