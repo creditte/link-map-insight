@@ -50,6 +50,27 @@ Deno.serve(async (req) => {
       tenant.subscription_status = "trial_expired";
     }
 
+    // Determine billing interval from Stripe subscription if available
+    let billing_interval: string | null = null;
+    let price_amount: number | null = null;
+    if (tenant.stripe_subscription_id) {
+      try {
+        const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+        if (stripeKey) {
+          const { default: Stripe } = await import("https://esm.sh/stripe@18.5.0");
+          const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+          const sub = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+          const priceData = sub.items?.data?.[0]?.price;
+          if (priceData) {
+            billing_interval = priceData.recurring?.interval || null;
+            price_amount = priceData.unit_amount || null;
+          }
+        }
+      } catch (e) {
+        console.error("[check-subscription] Error fetching Stripe sub:", e);
+      }
+    }
+
     return new Response(JSON.stringify({
       subscription_status: tenant.subscription_status,
       subscription_plan: tenant.subscription_plan,
@@ -62,6 +83,8 @@ Deno.serve(async (req) => {
       cancel_at_period_end: tenant.cancel_at_period_end,
       stripe_customer_id: tenant.stripe_customer_id,
       trial_used_at: tenant.trial_used_at,
+      billing_interval,
+      price_amount,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

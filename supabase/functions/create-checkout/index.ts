@@ -6,9 +6,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const PRICE_MAP: Record<string, string | undefined> = {
-  starter: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
-  pro: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
+const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
+  starter: {
+    monthly: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
+    annual: Deno.env.get("STRIPE_STARTER_ANNUAL_PRICE_ID"),
+  },
+  pro: {
+    monthly: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
+    annual: Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
+  },
 };
 
 Deno.serve(async (req) => {
@@ -34,14 +40,16 @@ Deno.serve(async (req) => {
     // Get user's tenant
      const { data: profile } = await supabaseAdmin
        .from("profiles")
-       .select("tenant_id, selected_plan")
+       .select("tenant_id, selected_plan, selected_billing")
        .eq("user_id", user.id)
        .single();
      if (!profile) throw new Error("No profile found");
 
      const selectedPlan = profile.selected_plan || "pro";
-     const priceId = PRICE_MAP[selectedPlan] || PRICE_MAP.pro;
-     if (!priceId) throw new Error(`No Stripe price configured for plan: ${selectedPlan}`);
+     const selectedBilling = profile.selected_billing || "monthly";
+     const planPrices = PRICE_MAP[selectedPlan] || PRICE_MAP.pro;
+     const priceId = planPrices?.[selectedBilling] || planPrices?.monthly;
+     if (!priceId) throw new Error(`No Stripe price configured for plan: ${selectedPlan}, billing: ${selectedBilling}`);
 
     // Get tenant
     const { data: tenant } = await supabaseAdmin
