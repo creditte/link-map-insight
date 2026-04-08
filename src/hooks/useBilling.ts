@@ -12,6 +12,8 @@ export interface BillingStatus {
   diagram_limit: number;
   diagram_count: number;
   cancel_at_period_end: boolean;
+  billing_interval: string | null;
+  price_amount: number | null;
 }
 
 export function useBilling() {
