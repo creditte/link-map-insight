@@ -29,6 +29,7 @@ const nodeTypes = { entity: EntityNodeComponent };
 export const EDGE_COLORS: Record<string, string> = {
   director: "#3b82f6",
   shareholder: "#10b981",
+  unit_holder: "#22c55e",
   beneficiary: "#f59e0b",
   trustee: "#8b5cf6",
   appointer: "#ec4899",

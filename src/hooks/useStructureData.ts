@@ -56,7 +56,7 @@ export interface StructureHealth {
 // ── Constants ──────────────────────────────────────────────────────
 
 const FAMILY_TYPES = new Set(["spouse", "parent", "child"]);
-const OWNERSHIP_VIEW_TYPES = new Set(["shareholder", "beneficiary", "partner", "member"]);
+const OWNERSHIP_VIEW_TYPES = new Set(["shareholder", "unit_holder", "beneficiary", "partner", "member"]);
 const CONTROL_VIEW_TYPES = new Set(["director", "trustee", "appointer", "settlor"]);
 
 // ── Hook: useStructureData ─────────────────────────────────────────

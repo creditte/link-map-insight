@@ -100,7 +100,7 @@ function estimateDepth(
   relationships: RelationshipEdge[]
 ): number {
   if (entities.length === 0) return 0;
-  const ownershipTypes = new Set(["shareholder", "beneficiary", "trustee", "member"]);
+  const ownershipTypes = new Set(["shareholder", "unit_holder", "beneficiary", "trustee", "member"]);
   const children = new Map<string, string[]>();
   const hasParent = new Set<string>();
 

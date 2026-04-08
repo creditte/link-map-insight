@@ -337,7 +337,7 @@ export default function StructureCompare() {
       relsChanged: diff.relsChanged.filter((rc) => {
         if (filter === "all") return true;
         const types = filter === "ownership"
-          ? new Set(["shareholder", "beneficiary", "partner", "member"])
+          ? new Set(["shareholder", "unit_holder", "beneficiary", "partner", "member"])
           : new Set(["director", "trustee", "appointer", "settlor"]);
         return types.has(rc.rel.relationship_type);
       }),
