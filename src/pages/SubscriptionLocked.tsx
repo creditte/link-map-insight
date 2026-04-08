@@ -65,10 +65,18 @@ export default function SubscriptionLocked() {
           <p className="text-muted-foreground">{msg.description}</p>
         </div>
 
-        {isTrialExpired && (
+        {isTrialExpired && billing && (
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-left">
-            <p className="text-sm font-medium text-foreground">strukcha Pro — A$149/month</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Unlimited structures, full access to all features.</p>
+            <p className="text-sm font-medium text-foreground">
+              {billing.subscription_plan === "starter" ? "strukcha Starter" : "strukcha Pro"} — {
+                billing.subscription_plan === "starter"
+                  ? (billing.billing_interval === "year" ? "A$990/year" : "A$99/month")
+                  : (billing.billing_interval === "year" ? "A$2,490/year" : "A$249/month")
+              }
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Up to {billing.subscription_plan === "starter" ? "15" : "50"} client groups, full access to all features.
+            </p>
           </div>
         )}
 

@@ -52,10 +52,9 @@ export default function BillingSettings() {
     trial_expired: "bg-destructive/10 text-destructive border-0",
   };
 
-  // If plan is "pro" (or any paid plan) treat trial_expired as active
   const rawStatus = billing?.subscription_status || "free";
-  const hasPaidPlan = billing?.subscription_plan && billing.subscription_plan !== "free";
-  const status = rawStatus === "trial_expired" && hasPaidPlan ? "active" : rawStatus;
+  // Show the actual status — don't override trial_expired to active
+  const status = rawStatus;
   const label = statusLabels[status] || status;
   const colorClass = statusColors[status] || "bg-muted text-muted-foreground border-0";
 

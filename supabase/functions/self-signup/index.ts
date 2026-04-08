@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
 
     if (tenantError) throw tenantError;
 
-    // 2b. Create Stripe customer + subscription with 7-day trial
+    // 2b. Create Stripe customer only (NO subscription yet — subscription created via Checkout after trial)
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (stripeKey) {
       try {
@@ -126,26 +126,12 @@ Deno.serve(async (req) => {
           metadata: { workspace_id: tenant.id, owner_user_id: userId },
         });
 
-        const trialEndUnix = Math.floor(trialEnd.getTime() / 1000);
-        const planPrices = PRICE_MAP[plan] || PRICE_MAP.pro;
-        const priceId = planPrices?.[billing] || planPrices?.monthly;
-        if (!priceId) throw new Error(`No Stripe price configured for plan: ${plan}, billing: ${billing}`);
-
-        const subscription = await stripe.subscriptions.create({
-          customer: customer.id,
-          items: [{ price: priceId }],
-          trial_end: trialEndUnix,
-          metadata: { workspace_id: tenant.id },
-        });
-
         await supabaseAdmin.from("tenants").update({
           stripe_customer_id: customer.id,
-          stripe_subscription_id: subscription.id,
-          subscription_status: "trialing",
           trial_used_at: now.toISOString(),
         }).eq("id", tenant.id);
 
-        console.log(`[Signup] Stripe customer ${customer.id} and subscription ${subscription.id} created with 7-day trial`);
+        console.log(`[Signup] Stripe customer ${customer.id} created (no subscription — trial only)`);
       } catch (stripeErr: any) {
         console.error("[Signup] Stripe setup failed:", stripeErr.message);
       }
