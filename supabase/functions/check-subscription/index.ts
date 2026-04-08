@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
       .single();
     if (!tenant) throw new Error("No tenant found");
 
-    // Mark expired trials but keep access enabled (diagram limit is the real constraint)
+    // Mark expired trials and lock access (no subscription = must subscribe)
     if (
       tenant.subscription_status === "trialing" &&
       tenant.trial_ends_at &&
@@ -44,10 +44,14 @@ Deno.serve(async (req) => {
         .from("tenants")
         .update({
           subscription_status: "trial_expired",
+          access_enabled: false,
+          access_locked_reason: "trial_expired",
         })
         .eq("id", profile.tenant_id);
 
       tenant.subscription_status = "trial_expired";
+      tenant.access_enabled = false;
+      tenant.access_locked_reason = "trial_expired";
     }
 
     // Determine billing interval from Stripe subscription if available
