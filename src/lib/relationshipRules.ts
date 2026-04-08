@@ -225,6 +225,24 @@ export function getRelationshipLabel(relationshipType: string): string {
     ?? relationshipType.charAt(0).toUpperCase() + relationshipType.slice(1);
 }
 
+// ── Bare trust beneficiary restriction ────────────────────────────
+
+/** Bare trusts only allow Individual, Company, SMSF as beneficiaries */
+const BARE_TRUST_TYPES = new Set(["trust_bare"]);
+
+const BARE_TRUST_ALLOWED_BENEFICIARY_SOURCES: readonly CanonicalEntityCategory[] = [
+  "individual",
+  "company",
+  "smsf",
+];
+
+export function isBareTrustBeneficiary(
+  relationshipType: string,
+  targetEntityType: string,
+): boolean {
+  return relationshipType === "beneficiary" && BARE_TRUST_TYPES.has(targetEntityType);
+}
+
 // ── Validation functions ─────────────────────────────────────────
 
 /**
@@ -241,7 +259,14 @@ export function isDirectionValid(
 
   const sourceOk = matchesCategories(fromEntityType, rule.allowedSourceTypes);
   const targetOk = matchesCategories(toEntityType, rule.allowedTargetTypes);
-  return sourceOk && targetOk;
+  if (!sourceOk || !targetOk) return false;
+
+  // Bare trusts restrict beneficiary source types
+  if (isBareTrustBeneficiary(relationshipType, toEntityType)) {
+    return matchesCategories(fromEntityType, BARE_TRUST_ALLOWED_BENEFICIARY_SOURCES);
+  }
+
+  return true;
 }
 
 /**
