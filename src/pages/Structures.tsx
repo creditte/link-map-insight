@@ -678,7 +678,7 @@ export default function Structures() {
               <Button
                 size="sm"
                 className="h-8 text-xs gap-1.5"
-                onClick={() => setShowCreateModal(true)}
+                onClick={handleCreateClick}
               >
                 <Plus className="h-3.5 w-3.5" />
                 Create Structure
