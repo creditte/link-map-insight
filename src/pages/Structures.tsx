@@ -51,6 +51,18 @@ export default function Structures() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { tenant } = useTenantSettings();
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  // Fetch current user's tenant role
+  useEffect(() => {
+    supabase.rpc("get_my_tenant_user").then(({ data }) => {
+      if (data && typeof data === "object" && "role" in data) {
+        setUserRole((data as any).role);
+      }
+    });
+  }, []);
+
+  const canManageStructures = userRole === "owner" || userRole === "admin";
 
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = sessionStorage.getItem("structures_active_tab");
@@ -675,14 +687,16 @@ export default function Structures() {
                   />
                 </div>
               )}
-              <Button
-                size="sm"
-                className="h-8 text-xs gap-1.5"
-                onClick={handleCreateClick}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Create Structure
-              </Button>
+              {canManageStructures && (
+                <Button
+                  size="sm"
+                  className="h-8 text-xs gap-1.5"
+                  onClick={handleCreateClick}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Create Structure
+                </Button>
+              )}
             </div>
           </div>
 
@@ -701,14 +715,16 @@ export default function Structures() {
               <p className="text-xs mt-1.5 max-w-md mx-auto leading-relaxed">
                 Create structures independently of XPM — ideal for prospective clients, restructure scenarios, or standalone planning work.
               </p>
-              <Button
-                size="sm"
-                className="mt-5 gap-1.5"
-                onClick={handleCreateClick}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Create Structure
-              </Button>
+              {canManageStructures && (
+                <Button
+                  size="sm"
+                  className="mt-5 gap-1.5"
+                  onClick={handleCreateClick}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Create Structure
+                </Button>
+              )}
             </div>
           )}
 
@@ -720,12 +736,14 @@ export default function Structures() {
                   className="cursor-pointer transition-all hover:shadow-md hover:border-primary/30 relative group hover:bg-accent/30"
                   onClick={() => navigate(`/structures/${s.id}`)}
                 >
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
-                    className="absolute top-3 right-3 p-1 rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all z-10"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {canManageStructures && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
+                      className="absolute top-3 right-3 p-1 rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all z-10"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary shrink-0">
