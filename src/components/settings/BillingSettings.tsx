@@ -1,21 +1,50 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CreditCard, Network } from "lucide-react";
+import { CreditCard, Network, ArrowRightLeft } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
 import { format, addDays } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function BillingSettings() {
-  const { billing, loading, openPortal } = useBilling();
+  const { billing, loading, openPortal, switchBillingInterval } = useBilling();
   const { toast } = useToast();
+  const [showSwitchDialog, setShowSwitchDialog] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
   const handleManageBilling = async () => {
     try {
       await openPortal();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleSwitchInterval = async () => {
+    setSwitching(true);
+    try {
+      await switchBillingInterval();
+      toast({
+        title: "Billing interval updated",
+        description: `Switched to ${isAnnual ? "monthly" : "annual"} billing successfully.`,
+      });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSwitching(false);
+      setShowSwitchDialog(false);
     }
   };
 
@@ -53,34 +82,40 @@ export default function BillingSettings() {
   };
 
   const rawStatus = billing?.subscription_status || "free";
-  // Show the actual status — don't override trial_expired to active
   const status = rawStatus;
   const label = statusLabels[status] || status;
   const colorClass = statusColors[status] || "bg-muted text-muted-foreground border-0";
 
-  // Derive plan display info
   const planName = billing?.subscription_plan === "starter" ? "strukcha Starter" : "strukcha Pro";
   const isAnnual = billing?.billing_interval === "year";
-  
+
   const priceDisplay = (() => {
     if (billing?.price_amount) {
       const amount = billing.price_amount / 100;
       return isAnnual ? `A$${amount.toLocaleString()}/year` : `A$${amount}/month`;
     }
-    // Fallback based on plan
     if (billing?.subscription_plan === "starter") {
       return isAnnual ? "A$990/year" : "A$99/month";
     }
     return isAnnual ? "A$2,490/year" : "A$249/month";
   })();
 
+  const targetIntervalLabel = isAnnual ? "Monthly" : "Annual";
+  const targetPriceDisplay = (() => {
+    if (billing?.subscription_plan === "starter") {
+      return isAnnual ? "A$99/month" : "A$990/year";
+    }
+    return isAnnual ? "A$249/month" : "A$2,490/year";
+  })();
+
   const diagramCount = billing?.diagram_count ?? 0;
   const diagramLimit = billing?.diagram_limit ?? 15;
 
-  // Use a future trial end date for display
   const trialEnd = billing?.trial_ends_at
     ? new Date(billing.trial_ends_at)
     : addDays(new Date(), 5);
+
+  const isActive = billing?.subscription_status === "active";
 
   return (
     <div className="space-y-6">
@@ -99,6 +134,30 @@ export default function BillingSettings() {
             </div>
             <Badge className={colorClass}>{label}</Badge>
           </div>
+
+          {isActive && (
+            <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">
+                  Billing Interval: {isAnnual ? "Annual" : "Monthly"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {isAnnual
+                    ? "You're saving with annual billing"
+                    : "Switch to annual to save"}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => setShowSwitchDialog(true)}
+              >
+                <ArrowRightLeft className="h-4 w-4" />
+                Switch to {targetIntervalLabel}
+              </Button>
+            </div>
+          )}
 
           {billing?.subscription_status === "trialing" && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
@@ -132,7 +191,7 @@ export default function BillingSettings() {
               Manage Billing
             </Button>
 
-            {billing?.subscription_status === "active" && !billing?.cancel_at_period_end && (
+            {isActive && !billing?.cancel_at_period_end && (
               <Button
                 variant="outline"
                 className="gap-2 text-destructive border-destructive/30 hover:bg-destructive/10"
@@ -171,6 +230,33 @@ export default function BillingSettings() {
           </div>
         </CardContent>
       </Card>
+
+      <AlertDialog open={showSwitchDialog} onOpenChange={setShowSwitchDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch to {targetIntervalLabel} billing?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                You will be switched from{" "}
+                <span className="font-medium">{isAnnual ? "Annual" : "Monthly"}</span> to{" "}
+                <span className="font-medium">{targetIntervalLabel}</span> billing at{" "}
+                <span className="font-medium">{targetPriceDisplay}</span>.
+              </p>
+              <p>
+                Your current billing period will be prorated, and the new rate will apply
+                immediately. Any remaining balance from your current period will be credited
+                towards the new charge.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={switching}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSwitchInterval} disabled={switching}>
+              {switching ? "Switching…" : "Confirm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

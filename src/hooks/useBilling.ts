@@ -82,5 +82,13 @@ export function useBilling() {
     if (data.url) window.location.href = data.url;
   };
 
-  return { billing, loading, error, reload: load, openPortal, startCheckout };
+  const switchBillingInterval = async () => {
+    const { data, error } = await supabase.functions.invoke("switch-billing-interval");
+    if (error || data?.error) throw new Error(data?.error || error?.message);
+    // Refresh billing data after switch
+    await load({ background: true });
+    return data;
+  };
+
+  return { billing, loading, error, reload: load, openPortal, startCheckout, switchBillingInterval };
 }
