@@ -85,12 +85,22 @@ Deno.serve(async (req) => {
     // Determine new limit based on plan
     const newLimit = plan === "starter" ? 15 : 50;
 
+    // Safe date conversion: handle both Unix timestamps and ISO strings
+    const toISO = (val: any): string | null => {
+      if (!val) return null;
+      if (typeof val === "number") return new Date(val * 1000).toISOString();
+      if (typeof val === "string") return new Date(val).toISOString();
+      return null;
+    };
+
     // Update tenant record
-    await supabaseAdmin.from("tenants").update({
-      current_period_start: new Date(updatedSub.current_period_start * 1000).toISOString(),
-      current_period_end: new Date(updatedSub.current_period_end * 1000).toISOString(),
-      diagram_limit: newLimit,
-    }).eq("id", tenant.id);
+    const updatePayload: Record<string, any> = { diagram_limit: newLimit };
+    const periodStart = toISO(updatedSub.current_period_start);
+    const periodEnd = toISO(updatedSub.current_period_end);
+    if (periodStart) updatePayload.current_period_start = periodStart;
+    if (periodEnd) updatePayload.current_period_end = periodEnd;
+
+    await supabaseAdmin.from("tenants").update(updatePayload).eq("id", tenant.id);
 
     const newPrice = updatedSub.items.data[0]?.price;
 
