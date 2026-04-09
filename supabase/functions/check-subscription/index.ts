@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
             // Determine limit based on status + plan
             let resolvedLimit = 3; // default for trialing
             if (sub.status === "active") {
-              resolvedLimit = resolvedPlan === "starter" ? 30 : 100;
+              resolvedLimit = resolvedPlan === "starter" ? 15 : 50;
             }
 
             const healUpdate: Record<string, any> = {
@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
     // Determine effective diagram_limit based on subscription_status
     let effectiveDiagramLimit = 3; // default for trialing, trial_expired, canceled
     if (["active", "past_due"].includes(tenant.subscription_status)) {
-      effectiveDiagramLimit = tenant.subscription_plan === "starter" ? 30 : 100;
+      effectiveDiagramLimit = tenant.subscription_plan === "starter" ? 15 : 50;
     }
 
     // Persist corrected limit to DB if it differs
