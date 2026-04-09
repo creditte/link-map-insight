@@ -26,6 +26,8 @@ import {
   BreadcrumbSeparator, BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
 import { useAuth } from "@/hooks/useAuth";
+import { useTenantSettings } from "@/hooks/useTenantSettings";
+import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 
 interface XpmGroup {
   xpm_uuid: string;
@@ -48,6 +50,7 @@ const MAX_FAVOURITES = 10;
 export default function Structures() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { tenant } = useTenantSettings();
 
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = sessionStorage.getItem("structures_active_tab");
@@ -74,9 +77,20 @@ export default function Structures() {
   const [manualLoading, setManualLoading] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ManualStructure | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [importingId, setImportingId] = useState<string | null>(null);
+
+  const limitReached = tenant != null && tenant.diagram_limit > 0 && tenant.diagram_count >= tenant.diagram_limit;
+
+  const handleCreateClick = () => {
+    if (limitReached) {
+      setShowLimitDialog(true);
+    } else {
+      setShowCreateModal(true);
+    }
+  };
 
   // XPM connected check
   const [xpmConnected, setXpmConnected] = useState<boolean | null>(null);
@@ -664,7 +678,7 @@ export default function Structures() {
               <Button
                 size="sm"
                 className="h-8 text-xs gap-1.5"
-                onClick={() => setShowCreateModal(true)}
+                onClick={handleCreateClick}
               >
                 <Plus className="h-3.5 w-3.5" />
                 Create Structure
@@ -690,7 +704,7 @@ export default function Structures() {
               <Button
                 size="sm"
                 className="mt-5 gap-1.5"
-                onClick={() => setShowCreateModal(true)}
+                onClick={handleCreateClick}
               >
                 <Plus className="h-3.5 w-3.5" />
                 Create Structure
@@ -798,6 +812,8 @@ export default function Structures() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
     </div>
     </TooltipProvider>
   );
