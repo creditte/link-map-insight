@@ -143,15 +143,23 @@ Deno.serve(async (req) => {
         const status = subscription.status;
         const accessEnabled = status === "active" || status === "trialing";
 
+        // Safe date conversion: handle both Unix timestamps and ISO strings
+        const toISO = (val: any): string | null => {
+          if (!val) return null;
+          if (typeof val === "number") return new Date(val * 1000).toISOString();
+          if (typeof val === "string") return new Date(val).toISOString();
+          return null;
+        };
+
         const updateData: Record<string, any> = {
           subscription_status: status,
           subscription_plan: plan,
           stripe_subscription_id: subscription.id,
-          current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+          current_period_start: toISO(subscription.current_period_start),
+          current_period_end: toISO(subscription.current_period_end),
           cancel_at_period_end: subscription.cancel_at_period_end,
           canceled_at: subscription.canceled_at
-            ? new Date(subscription.canceled_at * 1000).toISOString()
+            ? toISO(subscription.canceled_at)
             : null,
           access_enabled: accessEnabled,
           access_locked_reason: accessEnabled ? null : (status === "canceled" ? "subscription_canceled" : `subscription_${status}`),
