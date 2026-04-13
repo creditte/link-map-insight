@@ -46,6 +46,7 @@ interface ManualStructure {
   is_scenario?: boolean;
   scenario_label?: string | null;
   parent_structure_id?: string | null;
+  archived_at?: string | null;
 }
 
 type Tab = "xpm" | "manual";
