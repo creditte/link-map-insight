@@ -22,6 +22,20 @@ interface TenantUser {
   accepted_at: string | null;
 }
 
+interface TenantInfo {
+  subscription_status: string;
+  subscription_plan: string | null;
+  access_enabled: boolean | null;
+  access_locked_reason: string | null;
+  trial_ends_at: string | null;
+  current_period_end: string | null;
+  diagram_count: number | null;
+  diagram_limit: number | null;
+  cancel_at_period_end: boolean | null;
+  firm_name: string;
+  stripe_customer_id: string | null;
+}
+
 const statusColor: Record<string, string> = {
   active: "bg-green-100 text-green-800",
   invited: "bg-blue-100 text-blue-800",
@@ -29,9 +43,19 @@ const statusColor: Record<string, string> = {
   deleted: "bg-red-100 text-red-800",
 };
 
+const subStatusColor: Record<string, string> = {
+  active: "bg-green-100 text-green-800 border-green-200",
+  trialing: "bg-blue-100 text-blue-800 border-blue-200",
+  trial_expired: "bg-orange-100 text-orange-800 border-orange-200",
+  past_due: "bg-yellow-100 text-yellow-800 border-yellow-200",
+  canceled: "bg-red-100 text-red-800 border-red-200",
+  unpaid: "bg-red-100 text-red-800 border-red-200",
+};
+
 export default function AdminTenantDetail() {
   const { tenantId } = useParams<{ tenantId: string }>();
   const [users, setUsers] = useState<TenantUser[]>([]);
+  const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -41,21 +65,33 @@ export default function AdminTenantDetail() {
   const [resending, setResending] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const fetchUsers = async () => {
+  const fetchData = async () => {
     if (!tenantId) return;
     setLoading(true);
-    const { data, error } = await supabase.rpc("rpc_list_tenant_users_admin", {
-      p_tenant_id: tenantId,
-    });
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+
+    const [usersRes, tenantRes] = await Promise.all([
+      supabase.rpc("rpc_list_tenant_users_admin", { p_tenant_id: tenantId }),
+      supabase
+        .from("tenants")
+        .select("firm_name, subscription_status, subscription_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_count, diagram_limit, cancel_at_period_end, stripe_customer_id")
+        .eq("id", tenantId)
+        .single(),
+    ]);
+
+    if (usersRes.error) {
+      toast({ title: "Error", description: usersRes.error.message, variant: "destructive" });
     } else {
-      setUsers((data as unknown as TenantUser[]) ?? []);
+      setUsers((usersRes.data as unknown as TenantUser[]) ?? []);
     }
+
+    if (tenantRes.data) {
+      setTenant(tenantRes.data as TenantInfo);
+    }
+
     setLoading(false);
   };
 
-  useEffect(() => { fetchUsers(); }, [tenantId]);
+  useEffect(() => { fetchData(); }, [tenantId]);
 
   const callAdminInvite = async (inviteEmail: string, inviteDisplayName?: string | null, inviteRole?: string) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -82,9 +118,7 @@ export default function AdminTenantDetail() {
   const handleAddUser = async () => {
     if (!tenantId || !email.trim()) return;
     setCreating(true);
-
     const result = await callAdminInvite(email.trim(), displayName.trim() || null, role);
-
     if (result.error) {
       toast({ title: "Error", description: result.error, variant: "destructive" });
     } else {
@@ -93,7 +127,7 @@ export default function AdminTenantDetail() {
       setEmail("");
       setDisplayName("");
       setRole("owner");
-      fetchUsers();
+      fetchData();
     }
     setCreating(false);
   };
@@ -115,11 +149,68 @@ export default function AdminTenantDetail() {
         <Link to="/admin">
           <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
-        <h1 className="text-xl font-bold">Tenant Users</h1>
-        <span className="text-xs text-muted-foreground">{tenantId}</span>
+        <div>
+          <h1 className="text-xl font-bold">{tenant?.firm_name || "Tenant Details"}</h1>
+          <span className="text-xs text-muted-foreground">{tenantId}</span>
+        </div>
       </header>
 
-      <main className="max-w-3xl mx-auto p-6 space-y-4">
+      <main className="max-w-3xl mx-auto p-6 space-y-6">
+        {/* Subscription Overview */}
+        {tenant && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Subscription & Billing</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <p className="text-muted-foreground text-xs mb-1">Status</p>
+                  <Badge variant="outline" className={`text-xs ${subStatusColor[tenant.subscription_status] ?? "bg-gray-100 text-gray-800"}`}>
+                    {tenant.subscription_status.replace(/_/g, " ")}
+                  </Badge>
+                  {tenant.cancel_at_period_end && (
+                    <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200 ml-1">
+                      Canceling
+                    </Badge>
+                  )}
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs mb-1">Plan</p>
+                  <p className="font-medium capitalize">{tenant.subscription_plan || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs mb-1">Access</p>
+                  <p className="font-medium">
+                    {tenant.access_enabled ? (
+                      <span className="text-green-700">Enabled</span>
+                    ) : (
+                      <span className="text-red-700">Locked{tenant.access_locked_reason ? ` (${tenant.access_locked_reason.replace(/_/g, " ")})` : ""}</span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs mb-1">Structures</p>
+                  <p className="font-medium">{tenant.diagram_count ?? 0} / {tenant.diagram_limit ?? "∞"}</p>
+                </div>
+                {tenant.trial_ends_at && (
+                  <div>
+                    <p className="text-muted-foreground text-xs mb-1">Trial Ends</p>
+                    <p className="font-medium">{new Date(tenant.trial_ends_at).toLocaleDateString()}</p>
+                  </div>
+                )}
+                {tenant.current_period_end && (
+                  <div>
+                    <p className="text-muted-foreground text-xs mb-1">Period Ends</p>
+                    <p className="font-medium">{new Date(tenant.current_period_end).toLocaleDateString()}</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Users Section */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Users ({users.length})</h2>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
