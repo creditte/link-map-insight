@@ -819,12 +819,42 @@ export default function Structures() {
                   onClick={() => navigate(`/structures/${s.id}`)}
                 >
                   {canManageStructures && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
-                      className="absolute top-3 right-3 p-1 rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all z-10"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-all">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            onClick={(e) => e.stopPropagation()}
+                            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                          >
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-40">
+                          {showArchived ? (
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); handleUnarchiveStructure(s); }}
+                            >
+                              <ArchiveRestore className="h-3.5 w-3.5 mr-2" />
+                              Unarchive
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); handleArchiveStructure(s); }}
+                            >
+                              <Archive className="h-3.5 w-3.5 mr-2" />
+                              Archive
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   )}
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start gap-3">
