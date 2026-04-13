@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Building2, Plus, Users, Loader2, ShieldPlus, LogOut } from "lucide-react";
@@ -17,7 +18,34 @@ interface TenantRow {
   firm_name: string;
   created_at: string;
   user_count: number;
+  subscription_status: string;
+  subscription_plan: string | null;
+  access_enabled: boolean | null;
+  diagram_count: number | null;
+  diagram_limit: number | null;
+  cancel_at_period_end: boolean | null;
+  trial_ends_at: string | null;
+  current_period_end: string | null;
 }
+
+const statusBadgeVariant = (status: string): { label: string; className: string } => {
+  switch (status) {
+    case "active":
+      return { label: "Active", className: "bg-green-100 text-green-800 border-green-200" };
+    case "trialing":
+      return { label: "Trialing", className: "bg-blue-100 text-blue-800 border-blue-200" };
+    case "trial_expired":
+      return { label: "Trial Expired", className: "bg-orange-100 text-orange-800 border-orange-200" };
+    case "past_due":
+      return { label: "Past Due", className: "bg-yellow-100 text-yellow-800 border-yellow-200" };
+    case "canceled":
+      return { label: "Canceled", className: "bg-red-100 text-red-800 border-red-200" };
+    case "unpaid":
+      return { label: "Unpaid", className: "bg-red-100 text-red-800 border-red-200" };
+    default:
+      return { label: status, className: "bg-gray-100 text-gray-800 border-gray-200" };
+  }
+};
 
 export default function AdminDashboard() {
   const { signOut } = useAuth();
@@ -28,7 +56,6 @@ export default function AdminDashboard() {
   const [newName, setNewName] = useState("");
   const [newFirmName, setNewFirmName] = useState("");
 
-  // Super admin registration state
   const [saDialogOpen, setSaDialogOpen] = useState(false);
   const [saEmail, setSaEmail] = useState("");
   const [saPassword, setSaPassword] = useState("");
@@ -104,6 +131,11 @@ export default function AdminDashboard() {
     setSaCreating(false);
   };
 
+  // Summary stats
+  const activeCount = tenants.filter(t => t.subscription_status === "active").length;
+  const trialingCount = tenants.filter(t => t.subscription_status === "trialing").length;
+  const lapsedCount = tenants.filter(t => ["trial_expired", "canceled", "unpaid", "past_due"].includes(t.subscription_status)).length;
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card px-6 py-4 flex items-center justify-between">
@@ -112,7 +144,6 @@ export default function AdminDashboard() {
           <h1 className="text-xl font-bold">Super Admin Portal</h1>
         </div>
         <div className="flex items-center gap-2">
-          {/* Register Super Admin */}
           <Dialog open={saDialogOpen} onOpenChange={setSaDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" variant="outline" className="gap-1.5">
@@ -144,7 +175,6 @@ export default function AdminDashboard() {
             </DialogContent>
           </Dialog>
 
-          {/* New Tenant */}
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="gap-1.5">
@@ -177,7 +207,35 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto p-6 space-y-4">
+      <main className="max-w-5xl mx-auto p-6 space-y-6">
+        {/* Subscription Summary Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="pt-4 pb-3 text-center">
+              <p className="text-2xl font-bold">{tenants.length}</p>
+              <p className="text-xs text-muted-foreground">Total Firms</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 text-center">
+              <p className="text-2xl font-bold text-green-600">{activeCount}</p>
+              <p className="text-xs text-muted-foreground">Active Subscriptions</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 text-center">
+              <p className="text-2xl font-bold text-blue-600">{trialingCount}</p>
+              <p className="text-xs text-muted-foreground">Trialing</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 text-center">
+              <p className="text-2xl font-bold text-red-600">{lapsedCount}</p>
+              <p className="text-xs text-muted-foreground">Lapsed / Canceled</p>
+            </CardContent>
+          </Card>
+        </div>
+
         <h2 className="text-lg font-semibold">All Tenants ({tenants.length})</h2>
 
         {loading ? (
@@ -194,25 +252,54 @@ export default function AdminDashboard() {
           <p className="text-sm text-muted-foreground py-8">No tenants yet. Create one to get started.</p>
         ) : (
           <div className="grid gap-3">
-            {tenants.map((t) => (
-              <Link key={t.id} to={`/admin/tenants/${t.id}`}>
-                <Card className="hover:border-primary/50 transition-colors cursor-pointer">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex items-center justify-between">
-                      <span>{t.firm_name || t.name}</span>
-                      <span className="text-xs font-normal text-muted-foreground flex items-center gap-1">
-                        <Users className="h-3 w-3" /> {t.user_count}
-                      </span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <p className="text-xs text-muted-foreground">
-                      ID: {t.id} · Created: {new Date(t.created_at).toLocaleDateString()}
-                    </p>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+            {tenants.map((t) => {
+              const badge = statusBadgeVariant(t.subscription_status);
+              return (
+                <Link key={t.id} to={`/admin/tenants/${t.id}`}>
+                  <Card className="hover:border-primary/50 transition-colors cursor-pointer">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center justify-between">
+                        <span>{t.firm_name || t.name}</span>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className={`text-xs ${badge.className}`}>
+                            {badge.label}
+                          </Badge>
+                          {t.subscription_plan && t.subscription_status === "active" && (
+                            <Badge variant="outline" className="text-xs capitalize">
+                              {t.subscription_plan}
+                            </Badge>
+                          )}
+                          {t.cancel_at_period_end && (
+                            <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200">
+                              Canceling
+                            </Badge>
+                          )}
+                          <span className="text-xs font-normal text-muted-foreground flex items-center gap-1">
+                            <Users className="h-3 w-3" /> {t.user_count}
+                          </span>
+                        </div>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-muted-foreground">
+                          Created: {new Date(t.created_at).toLocaleDateString()}
+                          {t.subscription_status === "trialing" && t.trial_ends_at && (
+                            <> · Trial ends: {new Date(t.trial_ends_at).toLocaleDateString()}</>
+                          )}
+                          {t.current_period_end && t.subscription_status === "active" && (
+                            <> · Renews: {new Date(t.current_period_end).toLocaleDateString()}</>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Structures: {t.diagram_count ?? 0}/{t.diagram_limit ?? "∞"}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         )}
       </main>
