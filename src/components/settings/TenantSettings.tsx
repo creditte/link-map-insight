@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Building2, Upload, Trash2, Loader2, Palette, FileText, Save, ChevronDown, X } from "lucide-react";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
+import { useTenantSettings } from "@/hooks/useTenantSettings";
 
 interface Props {
   isAdmin?: boolean;
@@ -21,6 +22,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
   const { user } = useAuth();
   const { toast } = useToast();
   const { currentUser } = useTenantUsers();
+  const { reload: reloadTenant } = useTenantSettings();
   const isOwner = currentUser?.role === "owner";
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,6 +118,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
     } else {
       toast({ title: "Settings saved" });
       setInitial({ ...currentState });
+      reloadTenant();
     }
     setSaving(false);
   }, [tenantId, firmName, brandColor, exportFooter, exportDisclaimer, showDisclaimer, blockOnCritical, defaultViewMode, allowAdminIntegrations, isOwner, toast]);
@@ -159,6 +162,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
     } else {
       setLogoUrl(publicUrl);
       toast({ title: "Logo uploaded" });
+      reloadTenant();
     }
     setUploading(false);
     if (fileRef.current) fileRef.current.value = "";
@@ -174,6 +178,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
     await supabase.from("tenants").update({ logo_url: null }).eq("id", tenantId);
     setLogoUrl(null);
     toast({ title: "Logo removed" });
+    reloadTenant();
     setUploading(false);
   };
 
