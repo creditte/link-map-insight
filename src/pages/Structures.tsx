@@ -98,6 +98,7 @@ export default function Structures() {
   const [deleteTarget, setDeleteTarget] = useState<ManualStructure | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [importingId, setImportingId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   const limitReached = tenant != null && tenant.diagram_limit > 0 && tenant.diagram_count >= tenant.diagram_limit;
 
