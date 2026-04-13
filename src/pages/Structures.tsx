@@ -278,9 +278,20 @@ export default function Structures() {
     }
   }
 
+  const activeManualStructures = useMemo(
+    () => manualStructures.filter((s) => !s.archived_at),
+    [manualStructures],
+  );
+
+  const archivedManualStructures = useMemo(
+    () => manualStructures.filter((s) => !!s.archived_at),
+    [manualStructures],
+  );
+
   const filteredManual = useMemo(
-    () => manualStructures.filter((s) => s.name.toLowerCase().includes(manualSearch.toLowerCase())),
-    [manualStructures, manualSearch],
+    () => (showArchived ? archivedManualStructures : activeManualStructures)
+      .filter((s) => s.name.toLowerCase().includes(manualSearch.toLowerCase())),
+    [activeManualStructures, archivedManualStructures, showArchived, manualSearch],
   );
 
   const filteredXpmGroups = useMemo(
