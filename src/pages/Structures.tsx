@@ -722,10 +722,12 @@ export default function Structures() {
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex flex-col gap-0.5">
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold text-foreground">My Structures</h2>
-                {manualStructures.length > 0 && (
+                <h2 className="text-sm font-semibold text-foreground">
+                  {showArchived ? "Archived Structures" : "My Structures"}
+                </h2>
+                {(showArchived ? archivedManualStructures : activeManualStructures).length > 0 && (
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                    {manualStructures.length}
+                    {(showArchived ? archivedManualStructures : activeManualStructures).length}
                   </Badge>
                 )}
               </div>
