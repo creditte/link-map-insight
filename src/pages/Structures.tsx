@@ -899,6 +899,11 @@ export default function Structures() {
                           </TooltipContent>
                         </Tooltip>
                       )}
+                      {s.archived_at && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-medium gap-1">
+                          <Archive className="h-2.5 w-2.5" /> Archived
+                        </Badge>
+                      )}
                       {s.scenario_label && (
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium">
                           {s.scenario_label}
