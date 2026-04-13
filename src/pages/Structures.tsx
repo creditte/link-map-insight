@@ -737,6 +737,17 @@ export default function Structures() {
             </div>
             <div className="flex items-center gap-2">
               {manualStructures.length > 0 && (
+                <Button
+                  variant={showArchived ? "secondary" : "outline"}
+                  size="sm"
+                  className="h-8 text-xs gap-1.5"
+                  onClick={() => setShowArchived(!showArchived)}
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  {showArchived ? "View Active" : `Archived (${archivedManualStructures.length})`}
+                </Button>
+              )}
+              {manualStructures.length > 0 && !showArchived && (
                 <div className="relative w-48">
                   <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -747,7 +758,18 @@ export default function Structures() {
                   />
                 </div>
               )}
-              {canManageStructures && (
+              {showArchived && archivedManualStructures.length > 0 && (
+                <div className="relative w-48">
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Filter archived..."
+                    className="h-8 pl-8 text-xs"
+                    value={manualSearch}
+                    onChange={(e) => setManualSearch(e.target.value)}
+                  />
+                </div>
+              )}
+              {canManageStructures && !showArchived && (
                 <Button
                   size="sm"
                   className="h-8 text-xs gap-1.5"
