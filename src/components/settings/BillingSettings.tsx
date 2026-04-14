@@ -53,7 +53,25 @@ export default function BillingSettings() {
     }
   };
 
-  if (loading) {
+  const currentPlan = billing?.subscription_plan || "pro";
+  const targetPlan = currentPlan === "starter" ? "pro" : "starter";
+  const isUpgrade = targetPlan === "pro";
+
+  const handleChangePlan = async () => {
+    setChangingPlan(true);
+    try {
+      await changePlan(targetPlan as "starter" | "pro");
+      toast({
+        title: "Plan updated",
+        description: `Successfully switched to strukcha ${targetPlan === "pro" ? "Pro" : "Starter"}.`,
+      });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setChangingPlan(false);
+      setShowPlanDialog(false);
+    }
+  };
     return (
       <div className="space-y-4">
         <Skeleton className="h-6 w-48" />
