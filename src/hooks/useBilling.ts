@@ -85,10 +85,18 @@ export function useBilling() {
   const switchBillingInterval = async () => {
     const { data, error } = await supabase.functions.invoke("switch-billing-interval");
     if (error || data?.error) throw new Error(data?.error || error?.message);
-    // Refresh billing data after switch
     await load({ background: true });
     return data;
   };
 
-  return { billing, loading, error, reload: load, openPortal, startCheckout, switchBillingInterval };
+  const changePlan = async (targetPlan: "starter" | "pro") => {
+    const { data, error } = await supabase.functions.invoke("change-plan", {
+      body: { target_plan: targetPlan },
+    });
+    if (error || data?.error) throw new Error(data?.error || error?.message);
+    await load({ background: true });
+    return data;
+  };
+
+  return { billing, loading, error, reload: load, openPortal, startCheckout, switchBillingInterval, changePlan };
 }
