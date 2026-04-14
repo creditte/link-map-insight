@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CreditCard, Network, ArrowRightLeft, Loader2 } from "lucide-react";
+import { CreditCard, Network, ArrowRightLeft, Loader2, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
 import { format, addDays } from "date-fns";
@@ -19,10 +19,12 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export default function BillingSettings() {
-  const { billing, loading, openPortal, switchBillingInterval } = useBilling();
+  const { billing, loading, openPortal, switchBillingInterval, changePlan } = useBilling();
   const { toast } = useToast();
   const [showSwitchDialog, setShowSwitchDialog] = useState(false);
+  const [showPlanDialog, setShowPlanDialog] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [changingPlan, setChangingPlan] = useState(false);
   const [navigating, setNavigating] = useState(false);
 
   const handleManageBilling = async () => {
@@ -51,6 +53,26 @@ export default function BillingSettings() {
     }
   };
 
+  const currentPlan = billing?.subscription_plan || "pro";
+  const targetPlan = currentPlan === "starter" ? "pro" : "starter";
+  const isUpgrade = targetPlan === "pro";
+
+  const handleChangePlan = async () => {
+    setChangingPlan(true);
+    try {
+      await changePlan(targetPlan as "starter" | "pro");
+      toast({
+        title: "Plan updated",
+        description: `Successfully switched to strukcha ${targetPlan === "pro" ? "Pro" : "Starter"}.`,
+      });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setChangingPlan(false);
+      setShowPlanDialog(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -68,7 +90,6 @@ export default function BillingSettings() {
   }
 
   const statusLabels: Record<string, string> = {
-    trialing: "Free Trial",
     active: "Active",
     past_due: "Past Due",
     canceled: "Cancelled",
@@ -170,6 +191,30 @@ export default function BillingSettings() {
             </div>
           )}
 
+          {isActive && !billing?.cancel_at_period_end && (
+            <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">
+                  Current Plan: {currentPlan === "starter" ? "Starter" : "Pro"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {isUpgrade
+                    ? "Upgrade to Pro for more structures and features"
+                    : "Downgrade to Starter to reduce costs"}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => setShowPlanDialog(true)}
+              >
+                {isUpgrade ? <ArrowUpCircle className="h-4 w-4" /> : <ArrowDownCircle className="h-4 w-4" />}
+                {isUpgrade ? "Upgrade to Pro" : "Switch to Starter"}
+              </Button>
+            </div>
+          )}
+
           {billing?.subscription_status === "trialing" && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
               <p className="text-sm text-primary font-medium">
@@ -265,6 +310,49 @@ export default function BillingSettings() {
             <AlertDialogCancel disabled={switching}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleSwitchInterval} disabled={switching}>
               {switching ? "Switching…" : "Confirm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showPlanDialog} onOpenChange={setShowPlanDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {isUpgrade ? "Upgrade to strukcha Pro?" : "Switch to strukcha Starter?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              {isUpgrade ? (
+                <>
+                  <p>
+                    You'll be upgraded from <span className="font-medium">Starter</span> to{" "}
+                    <span className="font-medium">Pro</span>. The price difference will be
+                    prorated and charged immediately.
+                  </p>
+                  <p>
+                    Pro includes up to <span className="font-medium">50 active structures</span> and
+                    all premium features.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    You'll be switched from <span className="font-medium">Pro</span> to{" "}
+                    <span className="font-medium">Starter</span>. The change takes effect
+                    immediately with no proration charges.
+                  </p>
+                  <p>
+                    Starter is limited to <span className="font-medium">15 active structures</span>.
+                    Please ensure you are within this limit before switching.
+                  </p>
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={changingPlan}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleChangePlan} disabled={changingPlan}>
+              {changingPlan ? "Switching…" : "Confirm"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
