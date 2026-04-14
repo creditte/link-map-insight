@@ -213,6 +213,9 @@ export default function BillingSettings() {
                 {isUpgrade ? "Upgrade to Pro" : "Switch to Starter"}
               </Button>
             </div>
+          )}
+
+          {billing?.subscription_status === "trialing" && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
               <p className="text-sm text-primary font-medium">
                 Trial ends {format(trialEnd, "d MMM yyyy 'at' h:mm a")}
