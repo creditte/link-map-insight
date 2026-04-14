@@ -115,6 +115,8 @@ Deno.serve(async (req) => {
       const updatePayload: Record<string, any> = {
         subscription_plan: targetPlan,
         diagram_limit: PLAN_LIMITS[targetPlan],
+        cancel_at_period_end: false,
+        canceled_at: null,
       };
       const periodEnd = toISO(updatedSub.current_period_end);
       if (periodEnd) updatePayload.current_period_end = periodEnd;
@@ -140,6 +142,8 @@ Deno.serve(async (req) => {
       await supabaseAdmin.from("tenants").update({
         subscription_plan: targetPlan,
         diagram_limit: PLAN_LIMITS[targetPlan],
+        cancel_at_period_end: false,
+        canceled_at: null,
       }).eq("id", tenant.id);
 
       return new Response(JSON.stringify({

@@ -1,0 +1,1 @@
+UPDATE public.tenants SET cancel_at_period_end = false, canceled_at = NULL WHERE id = '12bea2a7-cbd0-4697-8c4e-59fe07d24cc0';
