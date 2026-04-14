@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CreditCard, Network, ArrowRightLeft } from "lucide-react";
+import { CreditCard, Network, ArrowRightLeft, Loader2 } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
 import { format, addDays } from "date-fns";
@@ -23,12 +23,15 @@ export default function BillingSettings() {
   const { toast } = useToast();
   const [showSwitchDialog, setShowSwitchDialog] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [navigating, setNavigating] = useState(false);
 
   const handleManageBilling = async () => {
+    setNavigating(true);
     try {
       await openPortal();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+      setNavigating(false);
     }
   };
 
@@ -118,7 +121,15 @@ export default function BillingSettings() {
   const isActive = billing?.subscription_status === "active";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {navigating && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Redirecting to billing portal…</p>
+          </div>
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
@@ -186,9 +197,9 @@ export default function BillingSettings() {
           )}
 
           <div className="flex items-center gap-3">
-            <Button onClick={handleManageBilling} className="gap-2">
-              <CreditCard className="h-4 w-4" />
-              Manage Billing
+            <Button onClick={handleManageBilling} disabled={navigating} className="gap-2">
+              {navigating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+              {navigating ? "Redirecting…" : "Manage Billing"}
             </Button>
 
             {isActive && !billing?.cancel_at_period_end && (
@@ -196,6 +207,7 @@ export default function BillingSettings() {
                 variant="outline"
                 className="gap-2 text-destructive border-destructive/30 hover:bg-destructive/10"
                 onClick={handleManageBilling}
+                disabled={navigating}
               >
                 Cancel Subscription
               </Button>
