@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Building2, Upload, Trash2, Loader2, Palette, FileText, Save, ChevronDown, X } from "lucide-react";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
-import { useTenantSettings } from "@/hooks/useTenantSettings";
+import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
 
 interface Props {
   isAdmin?: boolean;
@@ -22,7 +22,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
   const { user } = useAuth();
   const { toast } = useToast();
   const { currentUser } = useTenantUsers();
-  const { reload: reloadTenant } = useTenantSettings();
+  const { reload: reloadTenant } = useSharedTenantSettings();
   const isOwner = currentUser?.role === "owner";
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

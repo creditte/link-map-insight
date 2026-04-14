@@ -1,6 +1,6 @@
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
-import { useTenantSettings } from "@/hooks/useTenantSettings";
+import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
 import { useDuplicateCount } from "@/hooks/useDuplicateCount";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +26,7 @@ const navItems = [
 
 export default function AppSidebar() {
   const { signOut, user } = useAuth();
-  const { tenant } = useTenantSettings();
+  const { tenant } = useSharedTenantSettings();
   const { duplicateCount } = useDuplicateCount();
 
   const firmName = tenant?.firm_name || tenant?.name;

@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useStructureData, useFilteredGraph } from "@/hooks/useStructureData";
 import { useOnboarding } from "@/hooks/useOnboarding";
 import { useSnapshots, loadSnapshotData, type SnapshotData } from "@/hooks/useSnapshots";
-import { useTenantSettings } from "@/hooks/useTenantSettings";
+import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
 import { computeHealthScoreV2 } from "@/lib/structureScoring";
 import { supabase } from "@/integrations/supabase/client";
 import StructureGraph, { type LayoutMode, type LayoutStrategy } from "@/components/structure/StructureGraph";
@@ -50,7 +50,7 @@ export default function StructureView() {
   const { toast } = useToast();
   const { showOnboarding, dismiss: dismissOnboarding } = useOnboarding();
   const { snapshots, reload: reloadSnapshots } = useSnapshots(id);
-  const { tenant } = useTenantSettings();
+  const { tenant } = useSharedTenantSettings();
 
   const tenantDefaultView = (tenant?.export_default_view_mode as ViewMode) || "ownership";
   const [filterRelType, setFilterRelType] = useState("all");
