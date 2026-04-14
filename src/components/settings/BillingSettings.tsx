@@ -191,7 +191,28 @@ export default function BillingSettings() {
             </div>
           )}
 
-          {billing?.subscription_status === "trialing" && (
+          {isActive && !billing?.cancel_at_period_end && (
+            <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">
+                  Current Plan: {currentPlan === "starter" ? "Starter" : "Pro"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {isUpgrade
+                    ? "Upgrade to Pro for more structures and features"
+                    : "Downgrade to Starter to reduce costs"}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => setShowPlanDialog(true)}
+              >
+                {isUpgrade ? <ArrowUpCircle className="h-4 w-4" /> : <ArrowDownCircle className="h-4 w-4" />}
+                {isUpgrade ? "Upgrade to Pro" : "Switch to Starter"}
+              </Button>
+            </div>
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
               <p className="text-sm text-primary font-medium">
                 Trial ends {format(trialEnd, "d MMM yyyy 'at' h:mm a")}
