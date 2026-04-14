@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
-import { useTenantSettings } from "@/hooks/useTenantSettings";
+import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
 import { useDuplicateCount } from "@/hooks/useDuplicateCount";
 import { useClientHealthReview } from "@/hooks/useClientHealthReview";
 
@@ -63,7 +63,7 @@ export default function Dashboard() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { currentUser, loading: usersLoading } = useTenantUsers();
-  const { tenant, loading: tenantLoading } = useTenantSettings();
+  const { tenant, loading: tenantLoading } = useSharedTenantSettings();
   const { billing } = useBilling();
   const { duplicateCount } = useDuplicateCount();
   const [showLimitDialog, setShowLimitDialog] = useState(false);

@@ -30,7 +30,7 @@ import {
   BreadcrumbSeparator, BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
 import { useAuth } from "@/hooks/useAuth";
-import { useTenantSettings } from "@/hooks/useTenantSettings";
+import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
 import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 
 interface XpmGroup {
@@ -55,7 +55,7 @@ const MAX_FAVOURITES = 10;
 export default function Structures() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { tenant } = useTenantSettings();
+  const { tenant } = useSharedTenantSettings();
   const [userRole, setUserRole] = useState<string | null>(null);
 
   // Fetch current user's tenant role
