@@ -314,6 +314,49 @@ export default function BillingSettings() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={showPlanDialog} onOpenChange={setShowPlanDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {isUpgrade ? "Upgrade to strukcha Pro?" : "Switch to strukcha Starter?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              {isUpgrade ? (
+                <>
+                  <p>
+                    You'll be upgraded from <span className="font-medium">Starter</span> to{" "}
+                    <span className="font-medium">Pro</span>. The price difference will be
+                    prorated and charged immediately.
+                  </p>
+                  <p>
+                    Pro includes up to <span className="font-medium">50 active structures</span> and
+                    all premium features.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    You'll be switched from <span className="font-medium">Pro</span> to{" "}
+                    <span className="font-medium">Starter</span>. The change takes effect
+                    immediately with no proration charges.
+                  </p>
+                  <p>
+                    Starter is limited to <span className="font-medium">15 active structures</span>.
+                    Please ensure you are within this limit before switching.
+                  </p>
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={changingPlan}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleChangePlan} disabled={changingPlan}>
+              {changingPlan ? "Switching…" : "Confirm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
