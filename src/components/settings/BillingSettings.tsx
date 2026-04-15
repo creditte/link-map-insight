@@ -311,7 +311,14 @@ export default function BillingSettings() {
         currentPlan={(currentPlan as "starter" | "pro")}
         isAnnual={isAnnual}
         diagramCount={diagramCount}
-        onConfirm={() => changePlan(targetPlan as "starter" | "pro")}
+        onConfirm={async () => {
+          setPlanSwitching(true);
+          try {
+            await changePlan(targetPlan as "starter" | "pro");
+          } finally {
+            setPlanSwitching(false);
+          }
+        }}
       />
     </div>
   );
