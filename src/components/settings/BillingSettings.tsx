@@ -33,6 +33,7 @@ export default function BillingSettings() {
       await openPortal();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
       setNavigating(false);
     }
   };
