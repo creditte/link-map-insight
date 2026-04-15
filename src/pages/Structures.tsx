@@ -102,7 +102,7 @@ export default function Structures() {
   const [importingId, setImportingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
 
-  const limitReached = tenant != null && tenant.diagram_limit > 0 && tenant.diagram_count >= tenant.diagram_limit;
+  const limitReached = billing ? billing.diagram_count >= billing.diagram_limit : false;
 
   const handleCreateClick = () => {
     if (limitReached) {
