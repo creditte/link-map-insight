@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { useAuth } from "@/hooks/useAuth";
 import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
+import { useBilling } from "@/hooks/useBilling";
 import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 
 interface XpmGroup {
