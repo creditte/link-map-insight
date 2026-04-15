@@ -25,7 +25,10 @@ export default function BillingSettings() {
   const [showSwitchDialog, setShowSwitchDialog] = useState(false);
   const [showPlanDialog, setShowPlanDialog] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [planSwitching, setPlanSwitching] = useState(false);
   const [navigating, setNavigating] = useState(false);
+
+  const isBusy = switching || planSwitching;
 
   const handleManageBilling = async () => {
     setNavigating(true);
@@ -169,6 +172,7 @@ export default function BillingSettings() {
                 size="sm"
                 className="gap-2"
                 onClick={() => setShowSwitchDialog(true)}
+                disabled={isBusy}
               >
                 <ArrowRightLeft className="h-4 w-4" />
                 Switch to {targetIntervalLabel}
@@ -193,6 +197,7 @@ export default function BillingSettings() {
                 size="sm"
                 className="gap-2"
                 onClick={() => setShowPlanDialog(true)}
+                disabled={isBusy}
               >
                 {isUpgrade ? <ArrowUpCircle className="h-4 w-4" /> : <ArrowDownCircle className="h-4 w-4" />}
                 {isUpgrade ? "Upgrade to Pro" : "Switch to Starter"}
@@ -306,7 +311,14 @@ export default function BillingSettings() {
         currentPlan={(currentPlan as "starter" | "pro")}
         isAnnual={isAnnual}
         diagramCount={diagramCount}
-        onConfirm={() => changePlan(targetPlan as "starter" | "pro")}
+        onConfirm={async () => {
+          setPlanSwitching(true);
+          try {
+            await changePlan(targetPlan as "starter" | "pro");
+          } finally {
+            setPlanSwitching(false);
+          }
+        }}
       />
     </div>
   );
