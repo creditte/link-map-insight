@@ -82,6 +82,7 @@ export default function Dashboard() {
   const atDiagramLimit = billing ? billing.diagram_count >= billing.diagram_limit : false;
   const permissionsLoaded = !usersLoading && !tenantLoading;
   const userRole = currentUser?.role ?? null;
+  const isOwnerOrAdmin = userRole === "owner" || userRole === "admin";
   const canManageIntegrations =
     permissionsLoaded &&
     (userRole === "owner" || (userRole === "admin" && currentUser?.can_manage_integrations === true));
@@ -350,10 +351,12 @@ export default function Dashboard() {
               </p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
-              <Button variant="outline" className="gap-2 rounded-xl px-5 text-sm font-medium" onClick={handleCreateNew}>
-                <Plus className="h-4 w-4" />
-                Create New Structure
-              </Button>
+              {isOwnerOrAdmin && (
+                <Button variant="outline" className="gap-2 rounded-xl px-5 text-sm font-medium" onClick={handleCreateNew}>
+                  <Plus className="h-4 w-4" />
+                  Create New Structure
+                </Button>
+              )}
               {canManageIntegrations && !xeroConnection && (
                 <div className="flex items-center gap-2">
                   <Select
@@ -424,15 +427,17 @@ export default function Dashboard() {
               </p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
-              <Button
-                variant="outline"
-                size="lg"
-                className="gap-2 rounded-xl px-6 text-sm font-medium"
-                onClick={handleCreateNew}
-              >
-                <Plus className="h-4 w-4" />
-                Create New Structure
-              </Button>
+              {isOwnerOrAdmin && (
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="gap-2 rounded-xl px-6 text-sm font-medium"
+                  onClick={handleCreateNew}
+                >
+                  <Plus className="h-4 w-4" />
+                  Create New Structure
+                </Button>
+              )}
               {canManageIntegrations && !xeroConnection && (
                 <div className="flex items-center gap-2">
                   <Select
@@ -787,10 +792,12 @@ export default function Dashboard() {
                 <Share2 className="h-4 w-4 text-primary/60" /> Share with clients easily
               </li>
             </ul>
-            <Button variant="outline" className="mt-10 gap-2 rounded-xl px-6 ml-2" onClick={handleCreateNew}>
-              <Plus className="h-4 w-4" />
-              Create New Structure
-            </Button>
+            {isOwnerOrAdmin && (
+              <Button variant="outline" className="mt-10 gap-2 rounded-xl px-6 ml-2" onClick={handleCreateNew}>
+                <Plus className="h-4 w-4" />
+                Create New Structure
+              </Button>
+            )}
           </div>
         )}
       </section>
