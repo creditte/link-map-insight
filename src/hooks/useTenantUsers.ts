@@ -20,6 +20,7 @@ export interface TenantUser {
   created_at: string;
   updated_at: string;
   can_manage_integrations: boolean;
+  can_manage_billing: boolean;
 }
 
 export interface UseUsersResult {
