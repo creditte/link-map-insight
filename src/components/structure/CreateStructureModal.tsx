@@ -74,7 +74,7 @@ export default function CreateStructureModal({ open, onOpenChange, onImportXpm }
             <DialogDescription className="text-center">
               Your workspace can have up to {billing?.diagram_limit ?? 3} active structures.
               You're currently using all of them.
-              {!isOwner && " Contact the firm owner to upgrade or free up a slot."}
+              {!canManageBilling && " Contact the firm owner to upgrade or free up a slot."}
             </DialogDescription>
           </DialogHeader>
 
@@ -88,7 +88,7 @@ export default function CreateStructureModal({ open, onOpenChange, onImportXpm }
                 </p>
               </div>
             </div>
-            {isOwner && (
+            {canManageBilling && (
               <div className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3.5">
                 <CreditCard className="h-4.5 w-4.5 text-primary mt-0.5 shrink-0" />
                 <div>
@@ -102,7 +102,7 @@ export default function CreateStructureModal({ open, onOpenChange, onImportXpm }
           </div>
 
           <DialogFooter className="flex-col gap-2 sm:flex-col">
-            {isOwner && (
+            {canManageBilling && (
               <Button onClick={handleManage} className="w-full gap-2">
                 <CreditCard className="h-4 w-4" />
                 Manage Plan
