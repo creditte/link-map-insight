@@ -75,6 +75,12 @@ export default function BillingSettings() {
   const currentPlan = billing?.subscription_plan || "pro";
   const hasPendingDowngrade = !!billing?.pending_downgrade;
 
+  // Cooldown check: 24 hours since last plan switch
+  const cooldownUntil = billing?.last_plan_switch_at
+    ? new Date(new Date(billing.last_plan_switch_at).getTime() + 24 * 60 * 60 * 1000)
+    : null;
+  const isOnCooldown = cooldownUntil ? new Date() < cooldownUntil : false;
+
   // If downgrade is pending, the only action is to cancel it (upgrade back to pro)
   const targetPlan = hasPendingDowngrade ? "pro" : (currentPlan === "starter" ? "pro" : "starter");
   const isUpgrade = targetPlan === "pro";
