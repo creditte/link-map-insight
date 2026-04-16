@@ -19,7 +19,7 @@ interface DiagramLimitDialogProps {
 export default function DiagramLimitDialog({ open, onOpenChange }: DiagramLimitDialogProps) {
   const { billing, openPortal } = useBilling();
   const { currentUser } = useTenantUsers();
-  const canManageBilling = currentUser?.role === "owner" || (currentUser?.role === "admin" && currentUser?.can_manage_billing);
+  const canManageBilling = currentUser?.role === "owner" || (currentUser?.role === "admin" && currentUser?.can_manage_billing === true);
 
   const handleManage = async () => {
     try {

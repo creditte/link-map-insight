@@ -22,7 +22,7 @@ export default function CreateStructureModal({ open, onOpenChange, onImportXpm }
   const { billing, openPortal } = useBilling();
   const { currentUser } = useTenantUsers();
   const [creating, setCreating] = useState(false);
-  const canManageBilling = currentUser?.role === "owner" || (currentUser?.role === "admin" && currentUser?.can_manage_billing);
+  const canManageBilling = currentUser?.role === "owner" || (currentUser?.role === "admin" && currentUser?.can_manage_billing === true);
 
   const limitReached = billing ? billing.diagram_count >= billing.diagram_limit : false;
 
