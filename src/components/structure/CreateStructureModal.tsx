@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useBilling } from "@/hooks/useBilling";
+import { useTenantUsers } from "@/hooks/useTenantUsers";
 
 interface Props {
   open: boolean;
@@ -19,7 +20,9 @@ export default function CreateStructureModal({ open, onOpenChange, onImportXpm }
   const { toast } = useToast();
   const { user } = useAuth();
   const { billing, openPortal } = useBilling();
+  const { currentUser } = useTenantUsers();
   const [creating, setCreating] = useState(false);
+  const isOwner = currentUser?.role === "owner";
 
   const limitReached = billing ? billing.diagram_count >= billing.diagram_limit : false;
 
