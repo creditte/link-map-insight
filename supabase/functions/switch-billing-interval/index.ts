@@ -43,6 +43,18 @@ Deno.serve(async (req) => {
       .single();
     if (!profile) throw new Error("No profile found");
 
+    // Owner-only check
+    const { data: tenantUser } = await supabaseAdmin
+      .from("tenant_users")
+      .select("role")
+      .eq("tenant_id", profile.tenant_id)
+      .eq("auth_user_id", userData.user.id)
+      .eq("status", "active")
+      .single();
+    if (!tenantUser || tenantUser.role !== "owner") {
+      throw new Error("Only the firm owner can change billing settings");
+    }
+
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
       .select("id, stripe_subscription_id, subscription_status, subscription_plan")

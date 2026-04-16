@@ -45,6 +45,18 @@ Deno.serve(async (req) => {
        .single();
      if (!profile) throw new Error("No profile found");
 
+    // Owner-only check
+    const { data: tenantUser } = await supabaseAdmin
+      .from("tenant_users")
+      .select("role")
+      .eq("tenant_id", profile.tenant_id)
+      .eq("auth_user_id", user.id)
+      .eq("status", "active")
+      .single();
+    if (!tenantUser || tenantUser.role !== "owner") {
+      throw new Error("Only the firm owner can manage billing");
+    }
+
      const selectedPlan = profile.selected_plan || "pro";
      const selectedBilling = profile.selected_billing || "monthly";
      const planPrices = PRICE_MAP[selectedPlan] || PRICE_MAP.pro;
