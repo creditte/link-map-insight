@@ -64,13 +64,14 @@ Deno.serve(async (req) => {
     if (!tenant) throw new Error("No tenant found");
 
     // 24-hour cooldown check
-    if (tenant.last_plan_switch_at) {
-      const lastSwitch = new Date(tenant.last_plan_switch_at);
-      const cooldownEnd = new Date(lastSwitch.getTime() + 24 * 60 * 60 * 1000);
-      if (new Date() < cooldownEnd) {
-        throw new Error(`You have recently switched plans. Please wait until ${cooldownEnd.toISOString()} to switch again.`);
-      }
-    }
+    // TODO: Re-enable cooldown after testing
+    // if (tenant.last_plan_switch_at) {
+    //   const lastSwitch = new Date(tenant.last_plan_switch_at);
+    //   const cooldownEnd = new Date(lastSwitch.getTime() + 24 * 60 * 60 * 1000);
+    //   if (new Date() < cooldownEnd) {
+    //     throw new Error(`You have recently switched plans. Please wait until ${cooldownEnd.toISOString()} to switch again.`);
+    //   }
+    // }
 
     if (tenant.subscription_status !== "active") {
       throw new Error("Plan can only be changed on active subscriptions");
