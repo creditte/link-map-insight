@@ -64,14 +64,13 @@ Deno.serve(async (req) => {
     if (!tenant) throw new Error("No tenant found");
 
     // 24-hour cooldown check
-    // TODO: Re-enable cooldown after testing
-    // if (tenant.last_plan_switch_at) {
-    //   const lastSwitch = new Date(tenant.last_plan_switch_at);
-    //   const cooldownEnd = new Date(lastSwitch.getTime() + 24 * 60 * 60 * 1000);
-    //   if (new Date() < cooldownEnd) {
-    //     throw new Error(`You have recently switched plans. Please wait until ${cooldownEnd.toISOString()} to switch again.`);
-    //   }
-    // }
+    if (tenant.last_plan_switch_at) {
+      const lastSwitch = new Date(tenant.last_plan_switch_at);
+      const cooldownEnd = new Date(lastSwitch.getTime() + 24 * 60 * 60 * 1000);
+      if (new Date() < cooldownEnd) {
+        throw new Error(`You have recently switched plans. Please wait until ${cooldownEnd.toISOString()} to switch again.`);
+      }
+    }
 
     if (tenant.subscription_status !== "active") {
       throw new Error("Plan can only be changed on active subscriptions");
@@ -173,18 +172,32 @@ Deno.serve(async (req) => {
         );
       }
 
+      // Fetch current_period_end from Stripe (DB may be stale/null)
+      let periodEnd = tenant.current_period_end;
+      try {
+        const subscription = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+        if (subscription.current_period_end) {
+          periodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+        }
+      } catch (e) {
+        console.error("Failed to fetch Stripe subscription for period_end:", e);
+      }
+
       // Do NOT touch Stripe subscription — just record intent in DB
-      await supabaseAdmin.from("tenants").update({
+      const downgradeUpdate: Record<string, any> = {
         selected_plan: "starter",
         last_plan_switch_at: new Date().toISOString(),
-      }).eq("id", tenant.id);
+      };
+      if (periodEnd) downgradeUpdate.current_period_end = periodEnd;
+
+      await supabaseAdmin.from("tenants").update(downgradeUpdate).eq("id", tenant.id);
 
       return new Response(JSON.stringify({
         success: true,
         new_plan: "starter",
         effective: "period_end",
         new_limit: PLAN_LIMITS.starter,
-        current_period_end: tenant.current_period_end,
+        current_period_end: periodEnd,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
