@@ -9,8 +9,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpCircle, ArrowDownCircle, Loader2, Check, AlertTriangle } from "lucide-react";
+import { ArrowUpCircle, ArrowDownCircle, Loader2, Check, AlertTriangle, Clock } from "lucide-react";
 import { toast } from "sonner";
+import { format } from "date-fns";
 
 interface PlanSwitchDialogProps {
   open: boolean;
@@ -18,7 +19,8 @@ interface PlanSwitchDialogProps {
   currentPlan: "starter" | "pro";
   isAnnual: boolean;
   diagramCount: number;
-  onConfirm: () => Promise<void>;
+  currentPeriodEnd: string | null;
+  onConfirm: () => Promise<any>;
 }
 
 const PLAN_DETAILS = {
@@ -56,6 +58,7 @@ export default function PlanSwitchDialog({
   currentPlan,
   isAnnual,
   diagramCount,
+  currentPeriodEnd,
   onConfirm,
 }: PlanSwitchDialogProps) {
   const [loading, setLoading] = useState(false);
@@ -67,13 +70,23 @@ export default function PlanSwitchDialog({
   const currentPrice = isAnnual ? PRICING[currentPlan].annual : PRICING[currentPlan].monthly;
   const willExceedLimit = !isUpgrade && diagramCount > PLAN_DETAILS[targetPlan].limit;
 
+  const periodEndFormatted = currentPeriodEnd
+    ? format(new Date(currentPeriodEnd), "d MMM yyyy")
+    : "end of your current billing period";
+
   const handleConfirm = async () => {
     setLoading(true);
     try {
-      await onConfirm();
-      toast.success(`Switched to ${target.name}`, {
-        description: `Your plan has been updated. New rate: ${targetPrice}.`,
-      });
+      const result = await onConfirm();
+      if (isUpgrade) {
+        toast.success(`Upgraded to ${target.name}`, {
+          description: `Your plan has been updated immediately. New rate: ${targetPrice}.`,
+        });
+      } else {
+        toast.success(`Downgrade to ${target.name} scheduled`, {
+          description: `Your plan will switch to Starter on ${periodEndFormatted}. You'll keep Pro features until then.`,
+        });
+      }
       onOpenChange(false);
     } catch (err: any) {
       toast.error("Plan switch failed", {
@@ -135,7 +148,7 @@ export default function PlanSwitchDialog({
           {/* Billing impact */}
           <div className="rounded-lg border p-3 space-y-1">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Billing impact
+              {isUpgrade ? "Billing impact" : "When will this take effect?"}
             </p>
             {isUpgrade ? (
               <p className="text-sm text-muted-foreground">
@@ -143,11 +156,14 @@ export default function PlanSwitchDialog({
                 Your new rate of <span className="font-medium text-foreground">{targetPrice}</span> applies immediately.
               </p>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                Your plan will be downgraded immediately. The reduced rate of{" "}
-                <span className="font-medium text-foreground">{targetPrice}</span> will 
-                apply from your next billing cycle with a prorated credit.
-              </p>
+              <div className="flex items-start gap-2">
+                <Clock className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+                <p className="text-sm text-muted-foreground">
+                  Your downgrade will take effect on <span className="font-medium text-foreground">{periodEndFormatted}</span>.
+                  You'll continue to have full Pro access until then, and your next invoice will reflect the Starter rate of{" "}
+                  <span className="font-medium text-foreground">{targetPrice}</span>.
+                </p>
+              </div>
             )}
           </div>
 
@@ -178,11 +194,11 @@ export default function PlanSwitchDialog({
             {loading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Switching…
+                {isUpgrade ? "Upgrading…" : "Scheduling…"}
               </>
             ) : (
               <>
-                {isUpgrade ? "Confirm Upgrade" : "Confirm Switch"}
+                {isUpgrade ? "Confirm Upgrade" : "Schedule Downgrade"}
               </>
             )}
           </Button>

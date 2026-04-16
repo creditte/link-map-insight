@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("subscription_status, subscription_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_limit, diagram_count, cancel_at_period_end, stripe_customer_id, stripe_subscription_id, trial_used_at")
+      .select("subscription_status, subscription_plan, selected_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_limit, diagram_count, cancel_at_period_end, stripe_customer_id, stripe_subscription_id, trial_used_at")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
@@ -148,9 +148,13 @@ Deno.serve(async (req) => {
       tenant.diagram_limit = effectiveDiagramLimit;
     }
 
+    const hasPendingDowngrade = tenant.selected_plan && tenant.selected_plan !== tenant.subscription_plan;
+
     return new Response(JSON.stringify({
       subscription_status: tenant.subscription_status,
       subscription_plan: tenant.subscription_plan,
+      selected_plan: tenant.selected_plan,
+      pending_downgrade: hasPendingDowngrade ? tenant.selected_plan : null,
       access_enabled: tenant.access_enabled,
       access_locked_reason: tenant.access_locked_reason,
       trial_ends_at: tenant.trial_ends_at,

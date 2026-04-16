@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CreditCard, Network, ArrowRightLeft, Loader2, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
+import { CreditCard, Network, ArrowRightLeft, Loader2, ArrowUpCircle, ArrowDownCircle, Clock } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
 import { format, addDays } from "date-fns";
@@ -20,12 +20,15 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export default function BillingSettings() {
-  const { billing, loading, openPortal, switchBillingInterval, changePlan } = useBilling();
+  const { billing, loading, openPortal, switchBillingInterval, changePlan, reload } = useBilling();
   const { toast } = useToast();
   const [showSwitchDialog, setShowSwitchDialog] = useState(false);
   const [showPlanDialog, setShowPlanDialog] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [navigating, setNavigating] = useState(false);
+  const [planSwitching, setPlanSwitching] = useState(false);
+
+  const isBusy = switching || planSwitching;
 
   const handleManageBilling = async () => {
     setNavigating(true);
@@ -54,8 +57,26 @@ export default function BillingSettings() {
     }
   };
 
+  const handleCancelDowngrade = async () => {
+    setPlanSwitching(true);
+    try {
+      await changePlan("pro");
+      toast({
+        title: "Downgrade cancelled",
+        description: "Your Pro plan will continue without changes.",
+      });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setPlanSwitching(false);
+    }
+  };
+
   const currentPlan = billing?.subscription_plan || "pro";
-  const targetPlan = currentPlan === "starter" ? "pro" : "starter";
+  const hasPendingDowngrade = !!billing?.pending_downgrade;
+
+  // If downgrade is pending, the only action is to cancel it (upgrade back to pro)
+  const targetPlan = hasPendingDowngrade ? "pro" : (currentPlan === "starter" ? "pro" : "starter");
   const isUpgrade = targetPlan === "pro";
 
   if (loading) {
@@ -158,14 +179,44 @@ export default function BillingSettings() {
                   {isAnnual ? "You're saving with annual billing" : "Switch to annual to save"}
                 </p>
               </div>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowSwitchDialog(true)}>
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowSwitchDialog(true)} disabled={isBusy}>
                 <ArrowRightLeft className="h-4 w-4" />
                 Switch to {targetIntervalLabel}
               </Button>
             </div>
           )}
 
-          {isActive && !billing?.cancel_at_period_end && (
+          {/* Pending downgrade banner */}
+          {isActive && hasPendingDowngrade && (
+            <div className="flex items-center justify-between rounded-lg border border-warning/30 bg-warning/5 px-4 py-3">
+              <div className="flex items-start gap-2">
+                <Clock className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-warning">Downgrade to Starter scheduled</p>
+                  <p className="text-xs text-muted-foreground">
+                    Your plan will switch to Starter at the end of your current billing period
+                    {billing?.current_period_end
+                      ? ` (${format(new Date(billing.current_period_end), "d MMM yyyy")})`
+                      : ""}.
+                    You'll keep Pro features until then.
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 shrink-0 ml-3"
+                onClick={handleCancelDowngrade}
+                disabled={isBusy}
+              >
+                {planSwitching ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpCircle className="h-4 w-4" />}
+                Keep Pro
+              </Button>
+            </div>
+          )}
+
+          {/* Plan switch button — only show if no pending downgrade and not cancelling */}
+          {isActive && !billing?.cancel_at_period_end && !hasPendingDowngrade && (
             <div className="flex items-center justify-between rounded-lg border px-4 py-3">
               <div>
                 <p className="text-sm font-medium">Current Plan: {currentPlan === "starter" ? "Starter" : "Pro"}</p>
@@ -173,7 +224,7 @@ export default function BillingSettings() {
                   {isUpgrade ? "Upgrade to Pro for more structures and features" : " "}
                 </p>
               </div>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowPlanDialog(true)}>
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowPlanDialog(true)} disabled={isBusy}>
                 {isUpgrade ? <ArrowUpCircle className="h-4 w-4" /> : <ArrowDownCircle className="h-4 w-4" />}
                 {isUpgrade ? "Upgrade to Pro" : "Switch to Starter"}
               </Button>
@@ -288,6 +339,7 @@ export default function BillingSettings() {
         currentPlan={currentPlan as "starter" | "pro"}
         isAnnual={isAnnual}
         diagramCount={diagramCount}
+        currentPeriodEnd={billing?.current_period_end || null}
         onConfirm={() => changePlan(targetPlan as "starter" | "pro")}
       />
     </div>

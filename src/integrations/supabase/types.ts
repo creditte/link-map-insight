@@ -1168,6 +1168,7 @@ export type Database = {
           id: string
           logo_url: string | null
           name: string
+          selected_plan: string | null
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
           subscription_plan: string | null
@@ -1198,6 +1199,7 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name: string
+          selected_plan?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           subscription_plan?: string | null
@@ -1228,6 +1230,7 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name?: string
+          selected_plan?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           subscription_plan?: string | null
