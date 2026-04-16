@@ -147,6 +147,7 @@ Deno.serve(async (req) => {
       } catch (e) {
         console.error("[check-subscription] Error fetching Stripe sub:", e);
       }
+    }
 
     // Determine effective diagram_limit based on subscription_status
     let effectiveDiagramLimit = 3; // default for trialing, trial_expired, canceled
