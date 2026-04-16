@@ -1166,6 +1166,7 @@ export type Database = {
           export_show_disclaimer: boolean
           firm_name: string
           id: string
+          last_plan_switch_at: string | null
           logo_url: string | null
           name: string
           selected_plan: string | null
@@ -1197,6 +1198,7 @@ export type Database = {
           export_show_disclaimer?: boolean
           firm_name?: string
           id?: string
+          last_plan_switch_at?: string | null
           logo_url?: string | null
           name: string
           selected_plan?: string | null
@@ -1228,6 +1230,7 @@ export type Database = {
           export_show_disclaimer?: boolean
           firm_name?: string
           id?: string
+          last_plan_switch_at?: string | null
           logo_url?: string | null
           name?: string
           selected_plan?: string | null
