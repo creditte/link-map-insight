@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_subscription_id, subscription_status, subscription_plan, diagram_count")
+      .select("id, stripe_subscription_id, subscription_status, subscription_plan, selected_plan, diagram_count, current_period_end")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
@@ -69,37 +69,55 @@ Deno.serve(async (req) => {
     if (!tenant.stripe_subscription_id) {
       throw new Error("No Stripe subscription found");
     }
-    if (tenant.subscription_plan === targetPlan) {
+
+    const activePlan = tenant.subscription_plan;
+    const pendingPlan = tenant.selected_plan;
+    const isUpgrade = targetPlan === "pro";
+    const isDowngrade = targetPlan === "starter";
+
+    // Block: already on that plan with no pending change
+    if (activePlan === targetPlan && pendingPlan === targetPlan) {
       throw new Error(`You are already on the ${targetPlan} plan`);
     }
 
-    // For downgrade: check if current usage exceeds target limit
-    const targetLimit = PLAN_LIMITS[targetPlan];
-    if (targetPlan === "starter" && (tenant.diagram_count || 0) > targetLimit) {
-      throw new Error(
-        `Cannot downgrade to Starter. You have ${tenant.diagram_count} active structures, but Starter allows a maximum of ${targetLimit}. Please archive or delete some structures first.`
-      );
+    // Block: downgrade already pending
+    if (isDowngrade && pendingPlan === "starter" && activePlan === "pro") {
+      throw new Error("A downgrade to Starter is already scheduled for the end of your billing period.");
     }
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
 
-    // Retrieve current subscription to get interval and item
-    const subscription = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
-    const currentItem = subscription.items.data[0];
-    if (!currentItem) throw new Error("No subscription item found");
-
-    const currentInterval = currentItem.price.recurring?.interval || "month";
-
-    // Get the target price (same interval, different plan)
-    const targetPriceId = PRICE_MAP[targetPlan]?.[currentInterval];
-    if (!targetPriceId) {
-      throw new Error(`No price configured for plan: ${targetPlan}, interval: ${currentInterval}`);
-    }
-
-    const isUpgrade = targetPlan === "pro";
-
     if (isUpgrade) {
-      // Upgrade: apply immediately with proration
+      // ── UPGRADE: starter → pro (or cancel pending downgrade) ──
+      // If active plan is already pro but selected_plan was starter (pending downgrade),
+      // just clear the pending downgrade without touching Stripe
+      if (activePlan === "pro" && pendingPlan === "starter") {
+        await supabaseAdmin.from("tenants").update({
+          selected_plan: "pro",
+        }).eq("id", tenant.id);
+
+        return new Response(JSON.stringify({
+          success: true,
+          new_plan: "pro",
+          effective: "immediate",
+          new_limit: PLAN_LIMITS.pro,
+          canceled_downgrade: true,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Actual upgrade: starter → pro
+      const subscription = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+      const currentItem = subscription.items.data[0];
+      if (!currentItem) throw new Error("No subscription item found");
+      const currentInterval = currentItem.price.recurring?.interval || "month";
+
+      const targetPriceId = PRICE_MAP.pro?.[currentInterval];
+      if (!targetPriceId) {
+        throw new Error(`No price configured for plan: pro, interval: ${currentInterval}`);
+      }
+
       const updatedSub = await stripe.subscriptions.update(tenant.stripe_subscription_id, {
         items: [{ id: currentItem.id, price: targetPriceId }],
         proration_behavior: "create_prorations",
@@ -113,8 +131,9 @@ Deno.serve(async (req) => {
       };
 
       const updatePayload: Record<string, any> = {
-        subscription_plan: targetPlan,
-        diagram_limit: PLAN_LIMITS[targetPlan],
+        subscription_plan: "pro",
+        selected_plan: "pro",
+        diagram_limit: PLAN_LIMITS.pro,
         cancel_at_period_end: false,
         canceled_at: null,
       };
@@ -125,32 +144,34 @@ Deno.serve(async (req) => {
 
       return new Response(JSON.stringify({
         success: true,
-        new_plan: targetPlan,
+        new_plan: "pro",
         effective: "immediate",
-        new_limit: PLAN_LIMITS[targetPlan],
+        new_limit: PLAN_LIMITS.pro,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     } else {
-      // Downgrade: schedule at end of current period
-      const updatedSub = await stripe.subscriptions.update(tenant.stripe_subscription_id, {
-        items: [{ id: currentItem.id, price: targetPriceId }],
-        proration_behavior: "none",
-      });
+      // ── DOWNGRADE: pro → starter (scheduled at period end) ──
 
-      // Update tenant plan immediately since Stripe applies the change
+      // Check if current usage exceeds target limit
+      const targetLimit = PLAN_LIMITS.starter;
+      if ((tenant.diagram_count || 0) > targetLimit) {
+        throw new Error(
+          `Cannot downgrade to Starter. You have ${tenant.diagram_count} active structures, but Starter allows a maximum of ${targetLimit}. Please archive or delete some structures first.`
+        );
+      }
+
+      // Do NOT touch Stripe subscription — just record intent in DB
       await supabaseAdmin.from("tenants").update({
-        subscription_plan: targetPlan,
-        diagram_limit: PLAN_LIMITS[targetPlan],
-        cancel_at_period_end: false,
-        canceled_at: null,
+        selected_plan: "starter",
       }).eq("id", tenant.id);
 
       return new Response(JSON.stringify({
         success: true,
-        new_plan: targetPlan,
-        effective: "immediate",
-        new_limit: PLAN_LIMITS[targetPlan],
+        new_plan: "starter",
+        effective: "period_end",
+        new_limit: PLAN_LIMITS.starter,
+        current_period_end: tenant.current_period_end,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
