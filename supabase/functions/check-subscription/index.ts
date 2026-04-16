@@ -126,11 +126,6 @@ Deno.serve(async (req) => {
             tenant.diagram_limit = resolvedLimit;
             tenant.cancel_at_period_end = sub.cancel_at_period_end ?? false;
             tenant.current_period_end = healUpdate.current_period_end;
-          }
-        }
-      } catch (e) {
-        console.error("[check-subscription] Error fetching Stripe sub:", e);
-      }
           } else if (["active", "trialing"].includes(sub.status)) {
             // Always sync current_period_end from Stripe even when statuses match
             const stripePeriodEnd = sub.current_period_end
@@ -148,6 +143,10 @@ Deno.serve(async (req) => {
               tenant.current_period_end = stripePeriodEnd;
             }
           }
+        }
+      } catch (e) {
+        console.error("[check-subscription] Error fetching Stripe sub:", e);
+      }
 
     // Determine effective diagram_limit based on subscription_status
     let effectiveDiagramLimit = 3; // default for trialing, trial_expired, canceled
