@@ -596,15 +596,8 @@ export default function UsersPage() {
                   toast({ title: "Integration access granted" });
                 } catch (e: any) {
                   if (e.message?.includes("integration_already_granted")) {
-                    // Parse the holder name from the error response
-                    try {
-                      const parsed = JSON.parse(e.message.replace("Request failed", "").trim());
-                      setConflictDialog({ type: "integration", holderName: parsed.holder_name });
-                    } catch {
-                      // Fallback: try to get from the users list
-                      const holder = users.find(u => u.can_manage_integrations && u.id !== grantIntegrationTarget.id);
-                      setConflictDialog({ type: "integration", holderName: holder?.display_name || holder?.email || "another admin" });
-                    }
+                    const holder = users.find(x => x.can_manage_integrations && x.id !== grantIntegrationTarget.id);
+                    setConflictDialog({ type: "integration", holderName: holder?.display_name || holder?.email || "another admin" });
                   } else {
                     toast({ title: "Failed", description: e.message, variant: "destructive" });
                   }
