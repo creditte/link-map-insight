@@ -103,6 +103,7 @@ Deno.serve(async (req) => {
       if (activePlan === "pro" && pendingPlan === "starter") {
         await supabaseAdmin.from("tenants").update({
           selected_plan: "pro",
+          last_plan_switch_at: new Date().toISOString(),
         }).eq("id", tenant.id);
 
         return new Response(JSON.stringify({
@@ -145,6 +146,7 @@ Deno.serve(async (req) => {
         diagram_limit: PLAN_LIMITS.pro,
         cancel_at_period_end: false,
         canceled_at: null,
+        last_plan_switch_at: new Date().toISOString(),
       };
       const periodEnd = toISO(updatedSub.current_period_end);
       if (periodEnd) updatePayload.current_period_end = periodEnd;
@@ -173,6 +175,7 @@ Deno.serve(async (req) => {
       // Do NOT touch Stripe subscription — just record intent in DB
       await supabaseAdmin.from("tenants").update({
         selected_plan: "starter",
+        last_plan_switch_at: new Date().toISOString(),
       }).eq("id", tenant.id);
 
       return new Response(JSON.stringify({
