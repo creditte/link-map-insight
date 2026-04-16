@@ -5,6 +5,8 @@ import { useAuth } from "@/hooks/useAuth";
 export interface BillingStatus {
   subscription_status: string;
   subscription_plan: string | null;
+  selected_plan: string | null;
+  pending_downgrade: string | null;
   access_enabled: boolean;
   access_locked_reason: string | null;
   trial_ends_at: string | null;
