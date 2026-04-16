@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, CreditCard, Archive } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
+import { useTenantUsers } from "@/hooks/useTenantUsers";
 
 interface DiagramLimitDialogProps {
   open: boolean;
@@ -17,6 +18,8 @@ interface DiagramLimitDialogProps {
 
 export default function DiagramLimitDialog({ open, onOpenChange }: DiagramLimitDialogProps) {
   const { billing, openPortal } = useBilling();
+  const { currentUser } = useTenantUsers();
+  const isOwner = currentUser?.role === "owner";
 
   const handleManage = async () => {
     try {
@@ -37,6 +40,7 @@ export default function DiagramLimitDialog({ open, onOpenChange }: DiagramLimitD
           <DialogDescription className="text-center">
             Your workspace can have up to {billing?.diagram_limit ?? 3} active structures.
             You're currently using all of them.
+            {!isOwner && " Contact the firm owner to upgrade or free up a slot."}
           </DialogDescription>
         </DialogHeader>
 
@@ -50,22 +54,26 @@ export default function DiagramLimitDialog({ open, onOpenChange }: DiagramLimitD
               </p>
             </div>
           </div>
-          <div className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3.5">
-            <CreditCard className="h-4.5 w-4.5 text-primary mt-0.5 shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-foreground">Upgrade your plan</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Get more structures and additional features by upgrading your workspace plan.
-              </p>
+          {isOwner && (
+            <div className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3.5">
+              <CreditCard className="h-4.5 w-4.5 text-primary mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Upgrade your plan</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Get more structures and additional features by upgrading your workspace plan.
+                </p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <DialogFooter className="flex-col gap-2 sm:flex-col">
-          <Button onClick={handleManage} className="w-full gap-2">
-            <CreditCard className="h-4 w-4" />
-            Manage Plan
-          </Button>
+          {isOwner && (
+            <Button onClick={handleManage} className="w-full gap-2">
+              <CreditCard className="h-4 w-4" />
+              Manage Plan
+            </Button>
+          )}
           <Button variant="ghost" onClick={() => onOpenChange(false)} className="w-full text-muted-foreground">
             Close
           </Button>
