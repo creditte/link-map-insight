@@ -1,0 +1,1 @@
+ALTER TABLE public.tenants ADD COLUMN IF NOT EXISTS last_plan_switch_at timestamp with time zone DEFAULT NULL;

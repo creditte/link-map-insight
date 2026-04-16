@@ -58,10 +58,19 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_subscription_id, subscription_status, subscription_plan, selected_plan, diagram_count, current_period_end")
+      .select("id, stripe_subscription_id, subscription_status, subscription_plan, selected_plan, diagram_count, current_period_end, last_plan_switch_at")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
+
+    // 24-hour cooldown check
+    if (tenant.last_plan_switch_at) {
+      const lastSwitch = new Date(tenant.last_plan_switch_at);
+      const cooldownEnd = new Date(lastSwitch.getTime() + 24 * 60 * 60 * 1000);
+      if (new Date() < cooldownEnd) {
+        throw new Error(`You have recently switched plans. Please wait until ${cooldownEnd.toISOString()} to switch again.`);
+      }
+    }
 
     if (tenant.subscription_status !== "active") {
       throw new Error("Plan can only be changed on active subscriptions");
@@ -94,6 +103,7 @@ Deno.serve(async (req) => {
       if (activePlan === "pro" && pendingPlan === "starter") {
         await supabaseAdmin.from("tenants").update({
           selected_plan: "pro",
+          last_plan_switch_at: new Date().toISOString(),
         }).eq("id", tenant.id);
 
         return new Response(JSON.stringify({
@@ -136,6 +146,7 @@ Deno.serve(async (req) => {
         diagram_limit: PLAN_LIMITS.pro,
         cancel_at_period_end: false,
         canceled_at: null,
+        last_plan_switch_at: new Date().toISOString(),
       };
       const periodEnd = toISO(updatedSub.current_period_end);
       if (periodEnd) updatePayload.current_period_end = periodEnd;
@@ -164,6 +175,7 @@ Deno.serve(async (req) => {
       // Do NOT touch Stripe subscription — just record intent in DB
       await supabaseAdmin.from("tenants").update({
         selected_plan: "starter",
+        last_plan_switch_at: new Date().toISOString(),
       }).eq("id", tenant.id);
 
       return new Response(JSON.stringify({

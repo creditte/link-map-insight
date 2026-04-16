@@ -16,6 +16,7 @@ export interface BillingStatus {
   cancel_at_period_end: boolean;
   billing_interval: string | null;
   price_amount: number | null;
+  last_plan_switch_at: string | null;
 }
 
 export function useBilling() {

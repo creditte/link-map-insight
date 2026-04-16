@@ -75,6 +75,12 @@ export default function BillingSettings() {
   const currentPlan = billing?.subscription_plan || "pro";
   const hasPendingDowngrade = !!billing?.pending_downgrade;
 
+  // Cooldown check: 24 hours since last plan switch
+  const cooldownUntil = billing?.last_plan_switch_at
+    ? new Date(new Date(billing.last_plan_switch_at).getTime() + 24 * 60 * 60 * 1000)
+    : null;
+  const isOnCooldown = cooldownUntil ? new Date() < cooldownUntil : false;
+
   // If downgrade is pending, the only action is to cancel it (upgrade back to pro)
   const targetPlan = hasPendingDowngrade ? "pro" : (currentPlan === "starter" ? "pro" : "starter");
   const isUpgrade = targetPlan === "pro";
@@ -215,16 +221,32 @@ export default function BillingSettings() {
             </div>
           )}
 
+          {/* Cooldown notice */}
+          {isActive && isOnCooldown && !hasPendingDowngrade && (
+            <div className="flex items-start gap-2 rounded-lg border border-muted px-4 py-3">
+              <Clock className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium">Plan switch cooldown</p>
+                <p className="text-xs text-muted-foreground">
+                  You recently switched plans. You can switch again after{" "}
+                  {cooldownUntil ? format(cooldownUntil, "d MMM yyyy 'at' h:mm a") : "24 hours"}.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Plan switch button — only show if no pending downgrade and not cancelling */}
           {isActive && !billing?.cancel_at_period_end && !hasPendingDowngrade && (
             <div className="flex items-center justify-between rounded-lg border px-4 py-3">
               <div>
                 <p className="text-sm font-medium">Current Plan: {currentPlan === "starter" ? "Starter" : "Pro"}</p>
                 <p className="text-xs text-muted-foreground">
-                  {isUpgrade ? "Upgrade to Pro for more structures and features" : " "}
+                  {isOnCooldown
+                    ? "Plan switching is temporarily unavailable"
+                    : isUpgrade ? "Upgrade to Pro for more structures and features" : " "}
                 </p>
               </div>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowPlanDialog(true)} disabled={isBusy}>
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowPlanDialog(true)} disabled={isBusy || isOnCooldown}>
                 {isUpgrade ? <ArrowUpCircle className="h-4 w-4" /> : <ArrowDownCircle className="h-4 w-4" />}
                 {isUpgrade ? "Upgrade to Pro" : "Switch to Starter"}
               </Button>
