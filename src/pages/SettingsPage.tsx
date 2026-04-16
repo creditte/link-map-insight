@@ -68,7 +68,7 @@ export default function SettingsPage() {
           <TabsTrigger value="security" className="gap-1.5">
             <Lock className="h-3.5 w-3.5" /> Security
           </TabsTrigger>
-          {isOwnerOrAdmin && (
+          {isOwner && (
             <TabsTrigger value="billing" className="gap-1.5">
               <CreditCard className="h-3.5 w-3.5" /> Billing
             </TabsTrigger>
@@ -94,7 +94,7 @@ export default function SettingsPage() {
           <MfaSettings />
         </TabsContent>
 
-        {isOwnerOrAdmin && (
+        {isOwner && (
           <TabsContent value="billing" className="mt-4">
             <BillingSettings />
           </TabsContent>
