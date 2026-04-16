@@ -278,11 +278,16 @@ export default function UsersPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <RoleBadge role={u.role} />
                         {u.role === "admin" && u.can_manage_integrations && (
                           <Badge variant="outline" className="gap-1 text-[10px] border-green-500/60 text-green-600">
                             <Link2 className="h-2.5 w-2.5" /> Integrations
+                          </Badge>
+                        )}
+                        {u.role === "admin" && u.can_manage_billing && (
+                          <Badge variant="outline" className="gap-1 text-[10px] border-amber-500/60 text-amber-600">
+                            <CreditCard className="h-2.5 w-2.5" /> Billing
                           </Badge>
                         )}
                       </div>
