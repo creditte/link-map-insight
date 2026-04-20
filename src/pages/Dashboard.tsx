@@ -46,8 +46,21 @@ export default function Dashboard() {
   const [entityStats, setEntityStats] = useState<{ type: string; count: number }[]>([]);
   const [totalEntities, setTotalEntities] = useState(0);
   const [trusteeCount, setTrusteeCount] = useState(0);
-  const [weeklyTrends, setWeeklyTrends] = useState<{ structures: number; entities: number; imports: number }>({ structures: 0, entities: 0, imports: 0 });
-  const [recentEntities, setRecentEntities] = useState<{ id: string; name: string; entity_type: string; is_trustee_company: boolean; abn: string | null; created_at: string }[]>([]);
+  const [weeklyTrends, setWeeklyTrends] = useState<{ structures: number; entities: number; imports: number }>({
+    structures: 0,
+    entities: 0,
+    imports: 0,
+  });
+  const [recentEntities, setRecentEntities] = useState<
+    {
+      id: string;
+      name: string;
+      entity_type: string;
+      is_trustee_company: boolean;
+      abn: string | null;
+      created_at: string;
+    }[]
+  >([]);
   const [xeroConnection, setXeroConnection] = useState<{
     id: string;
     connected_at: string | null;
@@ -119,10 +132,7 @@ export default function Dashboard() {
           .order("updated_at", { ascending: false })
           .limit(5),
         supabase.rpc("get_xero_connection_info"),
-        supabase
-          .from("entities")
-          .select("entity_type, is_trustee_company")
-          .is("deleted_at", null),
+        supabase.from("entities").select("entity_type, is_trustee_company").is("deleted_at", null),
         supabase
           .from("entities")
           .select("id, name, entity_type, is_trustee_company, abn, created_at")
@@ -154,8 +164,16 @@ export default function Dashboard() {
       // Fetch weekly trends
       const oneWeekAgo = subDays(new Date(), 7).toISOString();
       const [weekStructures, weekEntities, weekImports] = await Promise.all([
-        supabase.from("structures").select("id", { count: "exact", head: true }).is("deleted_at", null).gte("created_at", oneWeekAgo),
-        supabase.from("entities").select("id", { count: "exact", head: true }).is("deleted_at", null).gte("created_at", oneWeekAgo),
+        supabase
+          .from("structures")
+          .select("id", { count: "exact", head: true })
+          .is("deleted_at", null)
+          .gte("created_at", oneWeekAgo),
+        supabase
+          .from("entities")
+          .select("id", { count: "exact", head: true })
+          .is("deleted_at", null)
+          .gte("created_at", oneWeekAgo),
         supabase.from("import_logs").select("id", { count: "exact", head: true }).gte("created_at", oneWeekAgo),
       ]);
       setWeeklyTrends({
@@ -223,7 +241,12 @@ export default function Dashboard() {
       // Refresh entity data
       const [entitiesData, recentEnts] = await Promise.all([
         supabase.from("entities").select("entity_type, is_trustee_company").is("deleted_at", null),
-        supabase.from("entities").select("id, name, entity_type, is_trustee_company, abn, created_at").is("deleted_at", null).order("created_at", { ascending: false }).limit(8),
+        supabase
+          .from("entities")
+          .select("id, name, entity_type, is_trustee_company, abn, created_at")
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .limit(8),
       ]);
       const entities = entitiesData.data ?? [];
       setTotalEntities(entities.length);
@@ -233,7 +256,11 @@ export default function Dashboard() {
         const t = e.entity_type || "Unclassified";
         typeCounts[t] = (typeCounts[t] || 0) + 1;
       });
-      setEntityStats(Object.entries(typeCounts).map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count));
+      setEntityStats(
+        Object.entries(typeCounts)
+          .map(([type, count]) => ({ type, count }))
+          .sort((a, b) => b.count - a.count),
+      );
       setRecentEntities((recentEnts.data as any) ?? []);
     } catch (err: any) {
       toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
@@ -327,7 +354,6 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-16 space-y-14">
-
       {/* ── Hero Section ── */}
       <section className="space-y-5">
         {dashboardLoading ? (
@@ -367,7 +393,7 @@ export default function Dashboard() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="accounting">Accounting API</SelectItem>
+                      {/* <SelectItem value="accounting">Accounting API</SelectItem> */}
                       <SelectItem value="practice_manager">Practice Manager</SelectItem>
                     </SelectContent>
                   </Select>
@@ -514,7 +540,9 @@ export default function Dashboard() {
         >
           <Copy className="h-4 w-4 text-warning shrink-0" />
           <span className="flex-1 text-sm text-foreground">
-            <span className="font-semibold">{duplicateCount} potential duplicate{duplicateCount !== 1 ? "s" : ""}</span>{" "}
+            <span className="font-semibold">
+              {duplicateCount} potential duplicate{duplicateCount !== 1 ? "s" : ""}
+            </span>{" "}
             detected — review and merge to keep data clean.
           </span>
           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
@@ -524,9 +552,27 @@ export default function Dashboard() {
       {/* ── Metric Cards ── */}
       <section className="grid gap-4 grid-cols-3">
         {[
-          { icon: <Network className="h-4 w-4 text-primary/70" />, label: "Structures", value: structureCount, trend: weeklyTrends.structures, href: "/structures" },
-          { icon: <Building2 className="h-4 w-4 text-primary/70" />, label: "Entities", value: totalEntities, trend: weeklyTrends.entities, href: "/review" },
-          { icon: <Upload className="h-4 w-4 text-primary/70" />, label: "Imports", value: importCount, trend: weeklyTrends.imports, href: "/import" },
+          {
+            icon: <Network className="h-4 w-4 text-primary/70" />,
+            label: "Structures",
+            value: structureCount,
+            trend: weeklyTrends.structures,
+            href: "/structures",
+          },
+          {
+            icon: <Building2 className="h-4 w-4 text-primary/70" />,
+            label: "Entities",
+            value: totalEntities,
+            trend: weeklyTrends.entities,
+            href: "/review",
+          },
+          {
+            icon: <Upload className="h-4 w-4 text-primary/70" />,
+            label: "Imports",
+            value: importCount,
+            trend: weeklyTrends.imports,
+            href: "/import",
+          },
         ].map((card) => (
           <Link
             key={card.label}
@@ -544,9 +590,7 @@ export default function Dashboard() {
               <div className="flex items-baseline gap-2">
                 <p className="text-2xl font-semibold text-foreground">{card.value}</p>
                 {card.trend > 0 && (
-                  <span className="text-[11px] font-medium text-primary">
-                    ↑ {card.trend} this week
-                  </span>
+                  <span className="text-[11px] font-medium text-primary">↑ {card.trend} this week</span>
                 )}
               </div>
             )}
@@ -818,14 +862,14 @@ export default function Dashboard() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-foreground">{e.name}</span>
                       {e.is_trustee_company && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">Trustee</Badge>
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
+                          Trustee
+                        </Badge>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] text-muted-foreground">{formatEntityType(e.entity_type)}</span>
-                      {e.abn && (
-                        <span className="text-[10px] text-muted-foreground/60">ABN {e.abn}</span>
-                      )}
+                      {e.abn && <span className="text-[10px] text-muted-foreground/60">ABN {e.abn}</span>}
                     </div>
                   </div>
                 </div>
@@ -837,7 +881,6 @@ export default function Dashboard() {
           </div>
         </section>
       )}
-
 
       <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
       <CreateStructureModal
