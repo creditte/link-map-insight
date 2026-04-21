@@ -83,8 +83,8 @@ Deno.serve(async (req) => {
 
     // 2. Create the tenant
     const now = new Date();
-    // 10-minute trial for testing
-    const trialEnd = new Date(now.getTime() + 10 * 60 * 1000);
+    // 7-day free trial
+    const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     // Determine plan limits
     const planLimits: Record<string, number> = { starter: 15, pro: 50 };
