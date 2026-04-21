@@ -36,18 +36,24 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+    const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("Unauthorized");
-    const token = authHeader.replace("Bearer ", "");
+    if (!authHeader?.startsWith("Bearer ")) throw new Error("Unauthorized");
+
+    // Use anon client + Authorization header so ES256 access tokens validate reliably
+    // (service role getUser(jwt) can reject ES256 in edge runtime).
+    const anonClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
     const {
       data: { user },
       error: userError,
-    } = await supabaseAdmin.auth.getUser(token);
+    } = await anonClient.auth.getUser();
     if (userError || !user) throw new Error("Unauthorized");
 
     const body = await req.json();
@@ -62,7 +68,7 @@ Deno.serve(async (req) => {
       const deviceLabel = parseUserAgent(userAgent);
       const expiresAt = new Date(Date.now() + THIRTY_DAYS_MS).toISOString();
 
-      await supabaseAdmin.from("trusted_devices").insert({
+      const { error: insertError } = await supabaseAdmin.from("trusted_devices").insert({
         user_id: user.id,
         token_hash: tokenHash,
         ip_address: clientIp,
@@ -70,6 +76,10 @@ Deno.serve(async (req) => {
         device_label: deviceLabel,
         expires_at: expiresAt,
       });
+      if (insertError) {
+        console.error("[trusted-device] insert failed:", insertError);
+        throw new Error(insertError.message);
+      }
 
       return new Response(
         JSON.stringify({
@@ -111,7 +121,7 @@ Deno.serve(async (req) => {
       // Valid! Update last_used_at and current IP/UA for display purposes
       const clientIp = getClientIp(req);
       const userAgent = req.headers.get("user-agent") || "";
-      await supabaseAdmin
+      const { error: updateErr } = await supabaseAdmin
         .from("trusted_devices")
         .update({
           last_used_at: new Date().toISOString(),
@@ -120,6 +130,9 @@ Deno.serve(async (req) => {
           device_label: parseUserAgent(userAgent),
         })
         .eq("id", device.id);
+      if (updateErr) {
+        console.warn("[trusted-device] last_used update failed:", updateErr);
+      }
 
       return new Response(
         JSON.stringify({ trusted: true }),

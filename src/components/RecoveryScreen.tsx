@@ -26,7 +26,7 @@ export default function RecoveryScreen({
           <Button
             variant="outline"
             onClick={() => {
-              window.location.href = "/auth";
+              window.location.href = "/login";
             }}
             className="gap-2"
           >

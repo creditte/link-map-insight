@@ -16,7 +16,7 @@ export default function ProtectedAdminRoute({ children }: { children: React.Reac
   }
 
   if (bootStatus === "unauthenticated") {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   if (!isSuperAdmin) {

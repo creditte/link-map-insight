@@ -202,9 +202,13 @@ export default function MfaVerify() {
     if (trustDevice) {
       try {
         await registerDevice();
-      } catch (err) {
+      } catch (err: any) {
         console.warn("[MfaVerify] Failed to register trusted device:", err);
-        // Don't block login for this
+        toast({
+          title: "Could not trust this device",
+          description: err?.message ?? "You are signed in, but this browser was not saved for 30-day skip. Try again from Settings → Security.",
+          variant: "destructive",
+        });
       }
     }
     clearStoredMfaVerifyState(user?.id);
