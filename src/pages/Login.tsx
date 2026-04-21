@@ -86,7 +86,7 @@ export default function Login() {
         <Card className="border-border/50 shadow-lg">
           <CardHeader className="text-center pb-2">
             <CardTitle className="text-2xl font-bold tracking-tight">Strukcha</CardTitle>
-            <CardDescription>Log in to access your strukcha workspace Development.</CardDescription>
+            <CardDescription>Log in to access your strukcha workspace Production.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
