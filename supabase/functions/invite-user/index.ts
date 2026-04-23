@@ -27,6 +27,16 @@ function buildSetupPasswordRedirect(supabaseUrl: string): string {
   }
 }
 
+function forceRedirectOnActionLink(actionLink: string, redirectTo: string): string {
+  try {
+    const url = new URL(actionLink);
+    url.searchParams.set("redirect_to", redirectTo);
+    return url.toString();
+  } catch {
+    return actionLink;
+  }
+}
+
 function renderInviteHtml(actionLink: string): string {
   return `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:28px">
 <h2 style="margin-bottom:12px;color:#18181b">You've been invited to ${SITE_NAME}</h2>
@@ -167,11 +177,12 @@ Deno.serve(async (req) => {
       }
 
       try {
+        const safeInviteLink = forceRedirectOnActionLink(inviteLink, setupPasswordRedirect);
         await sendViaSmtp2go(
           email,
           "You're invited to strukcha",
-          renderInviteHtml(inviteLink),
-          `Accept your invitation and set your password: ${inviteLink}`
+          renderInviteHtml(safeInviteLink),
+          `Accept your invitation and set your password: ${safeInviteLink}`
         );
       } catch (smtpErr) {
         await userClient.from("invitations").delete().eq("id", invitation.id);
@@ -215,11 +226,12 @@ Deno.serve(async (req) => {
       if (authError) throw authError;
       const actionLink = linkData?.properties?.action_link;
       if (!actionLink) throw new Error("Failed to generate invitation link");
+      const safeActionLink = forceRedirectOnActionLink(actionLink, setupPasswordRedirect);
       await sendViaSmtp2go(
         email,
         "Your strukcha sign-in link",
-        renderInviteHtml(actionLink),
-        `Use this secure link to continue: ${actionLink}`
+        renderInviteHtml(safeActionLink),
+        `Use this secure link to continue: ${safeActionLink}`
       );
 
       return new Response(

@@ -29,6 +29,16 @@ function buildSetupPasswordRedirect(): string | null {
   }
 }
 
+function forceRedirectOnActionLink(actionLink: string, redirectTo: string): string {
+  try {
+    const url = new URL(actionLink);
+    url.searchParams.set("redirect_to", redirectTo);
+    return url.toString();
+  } catch {
+    return actionLink;
+  }
+}
+
 function renderInviteHtml(actionLink: string): string {
   return `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:28px">
 <h2 style="margin-bottom:12px;color:#18181b">You've been invited to ${SITE_NAME}</h2>
@@ -140,6 +150,9 @@ Deno.serve(async (req) => {
       if (!actionLink) {
         return json({ error: "Failed to generate invitation link" }, 500);
       }
+      if (setupPasswordRedirect) {
+        actionLink = forceRedirectOnActionLink(actionLink, setupPasswordRedirect);
+      }
 
       try {
         await sendViaSmtp2go(
@@ -182,12 +195,15 @@ Deno.serve(async (req) => {
         }
         const actionLink = linkData?.properties?.action_link;
         if (!actionLink) return json({ error: "Failed to generate reinvite link" }, 500);
+        const safeActionLink = setupPasswordRedirect
+          ? forceRedirectOnActionLink(actionLink, setupPasswordRedirect)
+          : actionLink;
         try {
           await sendViaSmtp2go(
             email,
             "Your strukcha sign-in link",
-            renderInviteHtml(actionLink),
-            `Use this secure link to continue: ${actionLink}`
+            renderInviteHtml(safeActionLink),
+            `Use this secure link to continue: ${safeActionLink}`
           );
         } catch (smtpErr: any) {
           return json({ error: smtpErr?.message || "Failed to send invitation email" }, 500);
@@ -283,12 +299,15 @@ Deno.serve(async (req) => {
         }
         const actionLink = linkData?.properties?.action_link;
         if (!actionLink) return json({ error: "Failed to generate restore link" }, 500);
+        const safeActionLink = setupPasswordRedirect
+          ? forceRedirectOnActionLink(actionLink, setupPasswordRedirect)
+          : actionLink;
         try {
           await sendViaSmtp2go(
             email,
             "Your strukcha sign-in link",
-            renderInviteHtml(actionLink),
-            `Use this secure link to continue: ${actionLink}`
+            renderInviteHtml(safeActionLink),
+            `Use this secure link to continue: ${safeActionLink}`
           );
         } catch (smtpErr: any) {
           return json({ error: smtpErr?.message || "Failed to send invitation email" }, 500);
