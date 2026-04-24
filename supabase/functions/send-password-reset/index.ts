@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,7 +12,7 @@ const PROD_FRONTEND_URL = "https://strukcha.app";
 function buildResetRedirect(): string {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
   const isLocalRuntime = supabaseUrl.includes("127.0.0.1") || supabaseUrl.includes("localhost");
-  const configured = Deno.env.get("FRONTEND_URL") || PROD_FRONTEND_URL;
+  const configured = (Deno.env.get("FRONTEND_URL") || "").trim() || PROD_FRONTEND_URL;
   try {
     const url = new URL(configured);
     if (!isLocalRuntime && (url.hostname === "localhost" || url.hostname === "127.0.0.1")) {
@@ -72,6 +72,34 @@ async function sendViaSmtp2go(to: string, subject: string, html: string, text?: 
   }
 }
 
+function isRateLimitError(message?: string): boolean {
+  const m = (message ?? "").toLowerCase();
+  return m.includes("rate limit") || m.includes("too many");
+}
+
+/** Resolve auth user id by email (paginated; cap avoids unbounded work). */
+async function findAuthUserIdByEmail(
+  adminClient: SupabaseClient,
+  emailLower: string,
+): Promise<{ userId: string | null; listError: Error | null }> {
+  let page = 1;
+  const perPage = 1000;
+  const maxPages = 100;
+
+  while (page <= maxPages) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      return { userId: null, listError: error };
+    }
+    const users = data?.users ?? [];
+    const match = users.find((u) => u.email?.toLowerCase() === emailLower);
+    if (match) return { userId: match.id, listError: null };
+    if (users.length < perPage) break;
+    page++;
+  }
+  return { userId: null, listError: null };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -84,7 +112,9 @@ Deno.serve(async (req) => {
   try {
     const { email } = await req.json();
     const normalizedEmail = String(email ?? "").trim().toLowerCase();
-    if (!normalizedEmail) return json({ error: "email is required" }, 400);
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      return json({ ok: false, sent: false, error: "Please enter a valid email address." }, 400);
+    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -92,29 +122,90 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
+    const { userId, listError } = await findAuthUserIdByEmail(adminClient, normalizedEmail);
+    if (listError) {
+      console.error("[send-password-reset] listUsers:", listError);
+      return json(
+        { ok: false, sent: false, error: "Unable to verify your email. Try again later." },
+        500,
+      );
+    }
+
+    if (!userId) {
+      return json({
+        ok: false,
+        sent: false,
+        code: "user_not_found",
+        error: "No account exists for this email address. Check the spelling or sign up.",
+      });
+    }
+
     const redirectTo = buildResetRedirect();
-    const { data, error } = await adminClient.auth.admin.generateLink({
+    const { data, error: linkError } = await adminClient.auth.admin.generateLink({
       type: "recovery",
       email: normalizedEmail,
       options: { redirectTo },
     });
 
-    // Always return generic success to avoid user enumeration.
-    if (error || !data?.properties?.action_link) {
-      return json({ ok: true });
+    if (linkError || !data?.properties?.action_link) {
+      console.error("[send-password-reset] generateLink:", linkError?.message);
+      if (isRateLimitError(linkError?.message)) {
+        return json(
+          {
+            ok: false,
+            sent: false,
+            code: "rate_limit",
+            error: "Too many reset attempts. Please try again in a few minutes.",
+          },
+          429,
+        );
+      }
+      return json(
+        { ok: false, sent: false, error: "Could not create a reset link. Try again later." },
+        500,
+      );
     }
 
     const actionLink = forceRedirectOnActionLink(data.properties.action_link, redirectTo);
-    await sendViaSmtp2go(
-      normalizedEmail,
-      "Reset your strukcha password",
-      renderResetHtml(actionLink),
-      `Reset your password using this secure link: ${actionLink}`
-    );
 
-    return json({ ok: true });
+    try {
+      await sendViaSmtp2go(
+        normalizedEmail,
+        "Reset your strukcha password",
+        renderResetHtml(actionLink),
+        `Reset your password using this secure link: ${actionLink}`,
+      );
+    } catch (smtpErr: unknown) {
+      const msg = smtpErr instanceof Error ? smtpErr.message : String(smtpErr);
+      console.error("[send-password-reset] SMTP:", msg);
+      if (msg.toLowerCase().includes("rate limit")) {
+        return json(
+          {
+            ok: false,
+            sent: false,
+            code: "rate_limit",
+            error: "Email rate limit reached. Try again in a few minutes.",
+          },
+          429,
+        );
+      }
+      return json(
+        {
+          ok: false,
+          sent: false,
+          code: "email_failed",
+          error:
+            msg.includes("SMTP2GO_API_KEY")
+              ? "Password reset email is not configured. Contact support."
+              : "We could not send the email. Try again later.",
+        },
+        500,
+      );
+    }
+
+    return json({ ok: true, sent: true });
   } catch (err) {
     console.error("send-password-reset error:", err);
-    return json({ error: "Unable to process password reset request" }, 500);
+    return json({ ok: false, sent: false, error: "Unable to process password reset request." }, 500);
   }
 });

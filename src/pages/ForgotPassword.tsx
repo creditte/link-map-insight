@@ -18,13 +18,41 @@ export default function ForgotPassword() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const { error } = await supabase.functions.invoke("send-password-reset", {
-        body: { email },
+      const { data, error } = await supabase.functions.invoke("send-password-reset", {
+        body: { email: email.trim().toLowerCase() },
       });
-      if (error) throw error;
-      setSent(true);
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+
+      if (error) {
+        let description = error.message;
+        try {
+          const ctx = (error as { context?: Response }).context;
+          if (ctx && typeof ctx.json === "function") {
+            const body = (await ctx.json()) as { error?: string };
+            if (body?.error) description = body.error;
+          }
+        } catch {
+          // keep error.message
+        }
+        toast({ title: "Could not send reset link", description, variant: "destructive" });
+        return;
+      }
+
+      if (data?.ok === true && data?.sent === true) {
+        setSent(true);
+        return;
+      }
+
+      toast({
+        title: data?.code === "user_not_found" ? "No account found" : "Could not send reset link",
+        description:
+          typeof data?.error === "string"
+            ? data.error
+            : "Something went wrong. Try again or contact support.",
+        variant: "destructive",
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Something went wrong.";
+      toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
