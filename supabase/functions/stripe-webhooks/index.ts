@@ -415,7 +415,13 @@ Deno.serve(async (req) => {
       }
     }
   } catch (err: any) {
-    console.error(`Error processing ${event.type}:`, err);
+    console.error(`Error processing ${event.type} (${event.id}):`, err);
+    // Remove the idempotency record so Stripe's retry can reprocess after the misconfiguration is fixed.
+    await supabaseAdmin.from("stripe_webhook_events").delete().eq("id", event.id);
+    return new Response(
+      JSON.stringify({ error: err?.message ?? "Webhook handler failed" }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
   }
 
   return new Response(JSON.stringify({ received: true }), {
