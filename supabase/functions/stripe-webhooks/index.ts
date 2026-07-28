@@ -35,12 +35,30 @@ function initPlanConfig() {
 }
 
 function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan: string; diagramLimit: number } {
-  const productId = subscription.items?.data?.[0]?.price?.product as string;
-  if (productId && PLAN_CONFIG[productId]) {
-    return PLAN_CONFIG[productId];
+  const productId = subscription.items?.data?.[0]?.price?.product as string | undefined;
+  const priceId = subscription.items?.data?.[0]?.price?.id as string | undefined;
+  if (!productId || !PLAN_CONFIG[productId]) {
+    const configuredProducts = Object.keys(PLAN_CONFIG);
+    console.error(
+      `[stripe-webhooks] Unknown Stripe product mapping. subscription_id=${subscription.id} product_id=${productId} price_id=${priceId} configured_products=${JSON.stringify(configuredProducts)}`,
+    );
+    throw new Error(
+      `Unmapped Stripe product ID "${productId}". Configure STRIPE_STARTER_PRODUCT_ID / STRIPE_PRO_PRODUCT_ID to match this product before activating the subscription.`,
+    );
   }
-  console.warn(`Unknown product ID: ${productId}, defaulting to pro`);
-  return { plan: "pro", diagramLimit: 50 };
+  // Validate that the price on the subscription is one of the configured price IDs
+  const knownPriceIds = new Set(
+    Object.values(PRICE_MAP).flatMap((m) => Object.values(m)).filter(Boolean) as string[],
+  );
+  if (priceId && knownPriceIds.size > 0 && !knownPriceIds.has(priceId)) {
+    console.error(
+      `[stripe-webhooks] Unknown Stripe price ID on subscription ${subscription.id}: price_id=${priceId} known_prices=${JSON.stringify([...knownPriceIds])}`,
+    );
+    throw new Error(
+      `Unmapped Stripe price ID "${priceId}". Configure STRIPE_*_PRICE_ID env vars to match this price before activating the subscription.`,
+    );
+  }
+  return PLAN_CONFIG[productId];
 }
 
 async function findTenantByCustomer(supabaseAdmin: any, customerId: string): Promise<string | null> {
