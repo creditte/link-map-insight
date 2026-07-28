@@ -235,7 +235,7 @@ Deno.serve(async (req) => {
         }
 
         await supabaseAdmin.from("tenants").update(updateData).eq("id", tenantId);
-        console.log(`Updated tenant ${tenantId}: plan=${plan}, status=${status}, limit=${accessEnabled ? diagramLimit : 3}`);
+        console.log(`Updated tenant ${tenantId}: plan=${plan}, status=${status}, limit=${diagramLimit}`);
         break;
       }
 
