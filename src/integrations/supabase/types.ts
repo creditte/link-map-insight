@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_config: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       audit_log: {
         Row: {
           action: string
@@ -1470,6 +1488,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_billing_enforcement_enabled: { Args: never; Returns: boolean }
       is_owner: { Args: { _tenant_id: string }; Returns: boolean }
       is_owner_or_admin: { Args: { _tenant_id: string }; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }

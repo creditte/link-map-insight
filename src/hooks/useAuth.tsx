@@ -126,19 +126,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     trace("useAuth", "signOut called");
-    try {
-      const {
-        data: { session: s },
-      } = await supabase.auth.getSession();
-      const uid = s?.user?.id;
-      if (uid) clearTrustedTokensForUser(uid);
-      else clearAllTrustedDeviceTokens();
-    } catch {
-      clearAllTrustedDeviceTokens();
-    }
+    // NOTE: Do NOT clear trusted device tokens on normal sign-out.
+    // Trusted devices are meant to persist across sign-out so the user
+    // can skip MFA on next login from the same browser. Tokens are only
+    // cleared when the user explicitly revokes them or the server marks
+    // them invalid/expired.
     await supabase.auth.signOut();
     setBootStatus("unauthenticated");
   };
+
 
   const loading = bootStatus === "booting";
 

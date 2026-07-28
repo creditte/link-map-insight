@@ -142,8 +142,12 @@ export function useTrustedDevice() {
   }, []);
 
   const listDevices = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const device_token = user?.id ? getStoredTrustedToken(user.id) : null;
     const { data, error } = await supabase.functions.invoke("trusted-device", {
-      body: { action: "list" },
+      body: { action: "list", ...(device_token ? { device_token } : {}) },
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
@@ -154,6 +158,7 @@ export function useTrustedDevice() {
       created_at: string;
       last_used_at: string;
       expires_at: string;
+      is_current?: boolean;
     }>;
   }, []);
 

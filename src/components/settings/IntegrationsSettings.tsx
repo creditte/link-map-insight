@@ -110,10 +110,11 @@ export default function IntegrationsSettings() {
     if (!connection) return;
     setDisconnecting(true);
     try {
-      const { error } = await supabase.rpc("disconnect_xero_connection", {
-        p_connection_id: connection.id,
+      const { data, error } = await supabase.functions.invoke("xero-disconnect", {
+        body: { connection_id: connection.id },
       });
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
       setConnection(null);
       setXeroError(null);
       clearXeroInvalid();

@@ -68,6 +68,13 @@ Deno.serve(async (req) => {
       const deviceLabel = parseUserAgent(userAgent);
       const expiresAt = new Date(Date.now() + THIRTY_DAYS_MS).toISOString();
 
+      // Opportunistic cleanup: drop this user's expired rows so the table stays lean.
+      await supabaseAdmin
+        .from("trusted_devices")
+        .delete()
+        .eq("user_id", user.id)
+        .lt("expires_at", new Date().toISOString());
+
       const { error: insertError } = await supabaseAdmin.from("trusted_devices").insert({
         user_id: user.id,
         token_hash: tokenHash,
@@ -175,13 +182,19 @@ Deno.serve(async (req) => {
     if (action === "list") {
       const { data: devices } = await supabaseAdmin
         .from("trusted_devices")
-        .select("id, device_label, ip_address, created_at, last_used_at, expires_at")
+        .select("id, device_label, ip_address, created_at, last_used_at, expires_at, token_hash")
         .eq("user_id", user.id)
         .gt("expires_at", new Date().toISOString())
         .order("last_used_at", { ascending: false });
 
+      const currentTokenHash = body.device_token ? await sha256(body.device_token) : null;
+      const withCurrent = (devices ?? []).map((d: any) => {
+        const { token_hash, ...rest } = d;
+        return { ...rest, is_current: currentTokenHash ? token_hash === currentTokenHash : false };
+      });
+
       return new Response(
-        JSON.stringify({ devices: devices ?? [] }),
+        JSON.stringify({ devices: withCurrent }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
