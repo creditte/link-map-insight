@@ -35,12 +35,30 @@ function initPlanConfig() {
 }
 
 function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan: string; diagramLimit: number } {
-  const productId = subscription.items?.data?.[0]?.price?.product as string;
-  if (productId && PLAN_CONFIG[productId]) {
-    return PLAN_CONFIG[productId];
+  const productId = subscription.items?.data?.[0]?.price?.product as string | undefined;
+  const priceId = subscription.items?.data?.[0]?.price?.id as string | undefined;
+  if (!productId || !PLAN_CONFIG[productId]) {
+    const configuredProducts = Object.keys(PLAN_CONFIG);
+    console.error(
+      `[stripe-webhooks] Unknown Stripe product mapping. subscription_id=${subscription.id} product_id=${productId} price_id=${priceId} configured_products=${JSON.stringify(configuredProducts)}`,
+    );
+    throw new Error(
+      `Unmapped Stripe product ID "${productId}". Configure STRIPE_STARTER_PRODUCT_ID / STRIPE_PRO_PRODUCT_ID to match this product before activating the subscription.`,
+    );
   }
-  console.warn(`Unknown product ID: ${productId}, defaulting to pro`);
-  return { plan: "pro", diagramLimit: 50 };
+  // Validate that the price on the subscription is one of the configured price IDs
+  const knownPriceIds = new Set(
+    Object.values(PRICE_MAP).flatMap((m) => Object.values(m)).filter(Boolean) as string[],
+  );
+  if (priceId && knownPriceIds.size > 0 && !knownPriceIds.has(priceId)) {
+    console.error(
+      `[stripe-webhooks] Unknown Stripe price ID on subscription ${subscription.id}: price_id=${priceId} known_prices=${JSON.stringify([...knownPriceIds])}`,
+    );
+    throw new Error(
+      `Unmapped Stripe price ID "${priceId}". Configure STRIPE_*_PRICE_ID env vars to match this price before activating the subscription.`,
+    );
+  }
+  return PLAN_CONFIG[productId];
 }
 
 async function findTenantByCustomer(supabaseAdmin: any, customerId: string): Promise<string | null> {
@@ -146,18 +164,17 @@ Deno.serve(async (req) => {
         const workspaceId = session.metadata?.workspace_id;
         if (!workspaceId) break;
 
-        let plan = "pro";
-        let diagramLimit = 100;
-        let periodStart: string | null = null;
-        let periodEnd: string | null = null;
-        if (session.subscription) {
-          const sub = await stripe.subscriptions.retrieve(session.subscription as string);
-          const resolved = resolvePlanFromSubscription(sub);
-          plan = resolved.plan;
-          diagramLimit = resolved.diagramLimit;
-          periodStart = toISO(sub.current_period_start);
-          periodEnd = toISO(sub.current_period_end);
+        if (!session.subscription) {
+          console.error(
+            `[stripe-webhooks] checkout.session.completed without subscription for workspace=${workspaceId} session=${session.id} — refusing to activate.`,
+          );
+          throw new Error("Checkout session has no subscription; cannot activate plan without a mapped product.");
         }
+
+        const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+        const { plan, diagramLimit } = resolvePlanFromSubscription(sub);
+        const periodStart = toISO(sub.current_period_start);
+        const periodEnd = toISO(sub.current_period_end);
 
         await supabaseAdmin
           .from("tenants")
@@ -210,7 +227,7 @@ Deno.serve(async (req) => {
             : null,
           access_enabled: accessEnabled,
           access_locked_reason: accessEnabled ? null : (status === "canceled" ? "subscription_canceled" : `subscription_${status}`),
-          diagram_limit: accessEnabled ? diagramLimit : 50,
+          diagram_limit: diagramLimit,
         };
 
         if (subscription.trial_end) {
@@ -218,7 +235,7 @@ Deno.serve(async (req) => {
         }
 
         await supabaseAdmin.from("tenants").update(updateData).eq("id", tenantId);
-        console.log(`Updated tenant ${tenantId}: plan=${plan}, status=${status}, limit=${accessEnabled ? diagramLimit : 3}`);
+        console.log(`Updated tenant ${tenantId}: plan=${plan}, status=${status}, limit=${diagramLimit}`);
         break;
       }
 
@@ -298,20 +315,21 @@ Deno.serve(async (req) => {
                 const targetPriceId = PRICE_MAP[tenant.selected_plan]?.[currentInterval];
 
                 if (targetPriceId) {
-                  await stripe.subscriptions.update(tenant.stripe_subscription_id, {
+                  const updatedSub = await stripe.subscriptions.update(tenant.stripe_subscription_id, {
                     items: [{ id: currentItem.id, price: targetPriceId }],
                     proration_behavior: "none",
                   });
 
-                  const newLimit = tenant.selected_plan === "starter" ? 15 : 50;
+                  // Resolve the new limit strictly from the updated Stripe subscription's product mapping.
+                  const { plan: resolvedPlan, diagramLimit: newLimit } = resolvePlanFromSubscription(updatedSub);
                   await supabaseAdmin.from("tenants").update({
-                    subscription_plan: tenant.selected_plan,
+                    subscription_plan: resolvedPlan,
                     diagram_limit: newLimit,
                   }).eq("id", tenantId);
 
-                  console.log(`Tenant ${tenantId}: deferred plan change applied to ${tenant.selected_plan}`);
+                  console.log(`Tenant ${tenantId}: deferred plan change applied to ${resolvedPlan} (limit=${newLimit})`);
                 } else {
-                  console.error(`No price ID for plan=${tenant.selected_plan}, interval=${currentInterval}`);
+                  console.error(`No price ID for plan=${tenant.selected_plan}, interval=${currentInterval} — deferred plan change aborted, no benefits granted.`);
                 }
               }
             } catch (e: any) {
@@ -397,7 +415,13 @@ Deno.serve(async (req) => {
       }
     }
   } catch (err: any) {
-    console.error(`Error processing ${event.type}:`, err);
+    console.error(`Error processing ${event.type} (${event.id}):`, err);
+    // Remove the idempotency record so Stripe's retry can reprocess after the misconfiguration is fixed.
+    await supabaseAdmin.from("stripe_webhook_events").delete().eq("id", event.id);
+    return new Response(
+      JSON.stringify({ error: err?.message ?? "Webhook handler failed" }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
   }
 
   return new Response(JSON.stringify({ received: true }), {

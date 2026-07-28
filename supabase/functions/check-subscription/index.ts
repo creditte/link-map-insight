@@ -89,15 +89,26 @@ Deno.serve(async (req) => {
           if (["active", "trialing"].includes(sub.status) && !["active", "trialing"].includes(tenant.subscription_status)) {
             const productId = priceData?.product as string | undefined;
             const starterProductId = Deno.env.get("STRIPE_STARTER_PRODUCT_ID");
-            let resolvedPlan = "pro";
+            const proProductId = Deno.env.get("STRIPE_PRO_PRODUCT_ID");
+
+            let resolvedPlan: string | null = null;
+            let resolvedLimit: number | null = null;
             if (productId && starterProductId && productId === starterProductId) {
               resolvedPlan = "starter";
+              resolvedLimit = sub.status === "active" ? 15 : 3;
+            } else if (productId && proProductId && productId === proProductId) {
+              resolvedPlan = "pro";
+              resolvedLimit = sub.status === "active" ? 50 : 3;
             }
 
-            // Determine limit based on status + plan
-            let resolvedLimit = 3; // default for trialing
-            if (sub.status === "active") {
-              resolvedLimit = resolvedPlan === "starter" ? 15 : 50;
+            if (!resolvedPlan || resolvedLimit === null) {
+              // Refuse to self-heal with an unknown Stripe product — do NOT grant any plan benefits.
+              console.error(
+                `[check-subscription] Refusing to self-heal tenant ${profile.tenant_id}: unmapped Stripe product ${productId} on subscription ${sub.id}. Configure STRIPE_STARTER_PRODUCT_ID / STRIPE_PRO_PRODUCT_ID.`,
+              );
+              throw new Error(
+                `Unmapped Stripe product "${productId}" on active subscription. Cannot activate access without a resolved plan mapping.`,
+              );
             }
 
             const healUpdate: Record<string, any> = {
@@ -149,10 +160,21 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Determine effective diagram_limit based on subscription_status
-    let effectiveDiagramLimit = 3; // default for trialing, trial_expired, canceled
+    // Determine effective diagram_limit strictly from subscription_plan; never fall back to a Pro-sized limit.
+    let effectiveDiagramLimit = 3; // trialing, trial_expired, canceled
     if (["active", "past_due"].includes(tenant.subscription_status)) {
-      effectiveDiagramLimit = tenant.subscription_plan === "starter" ? 15 : 50;
+      if (tenant.subscription_plan === "starter") {
+        effectiveDiagramLimit = 15;
+      } else if (tenant.subscription_plan === "pro") {
+        effectiveDiagramLimit = 50;
+      } else {
+        console.error(
+          `[check-subscription] Tenant ${profile.tenant_id} is ${tenant.subscription_status} with unmapped subscription_plan="${tenant.subscription_plan}". Refusing to grant a plan limit.`,
+        );
+        throw new Error(
+          `Unmapped subscription plan "${tenant.subscription_plan}" for active tenant. Cannot determine diagram limit.`,
+        );
+      }
     }
 
     // Persist corrected limit to DB if it differs
