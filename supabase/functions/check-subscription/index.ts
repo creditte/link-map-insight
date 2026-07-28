@@ -160,10 +160,21 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Determine effective diagram_limit based on subscription_status
-    let effectiveDiagramLimit = 3; // default for trialing, trial_expired, canceled
+    // Determine effective diagram_limit strictly from subscription_plan; never fall back to a Pro-sized limit.
+    let effectiveDiagramLimit = 3; // trialing, trial_expired, canceled
     if (["active", "past_due"].includes(tenant.subscription_status)) {
-      effectiveDiagramLimit = tenant.subscription_plan === "starter" ? 15 : 50;
+      if (tenant.subscription_plan === "starter") {
+        effectiveDiagramLimit = 15;
+      } else if (tenant.subscription_plan === "pro") {
+        effectiveDiagramLimit = 50;
+      } else {
+        console.error(
+          `[check-subscription] Tenant ${profile.tenant_id} is ${tenant.subscription_status} with unmapped subscription_plan="${tenant.subscription_plan}". Refusing to grant a plan limit.`,
+        );
+        throw new Error(
+          `Unmapped subscription plan "${tenant.subscription_plan}" for active tenant. Cannot determine diagram limit.`,
+        );
+      }
     }
 
     // Persist corrected limit to DB if it differs
