@@ -89,15 +89,26 @@ Deno.serve(async (req) => {
           if (["active", "trialing"].includes(sub.status) && !["active", "trialing"].includes(tenant.subscription_status)) {
             const productId = priceData?.product as string | undefined;
             const starterProductId = Deno.env.get("STRIPE_STARTER_PRODUCT_ID");
-            let resolvedPlan = "pro";
+            const proProductId = Deno.env.get("STRIPE_PRO_PRODUCT_ID");
+
+            let resolvedPlan: string | null = null;
+            let resolvedLimit: number | null = null;
             if (productId && starterProductId && productId === starterProductId) {
               resolvedPlan = "starter";
+              resolvedLimit = sub.status === "active" ? 15 : 3;
+            } else if (productId && proProductId && productId === proProductId) {
+              resolvedPlan = "pro";
+              resolvedLimit = sub.status === "active" ? 50 : 3;
             }
 
-            // Determine limit based on status + plan
-            let resolvedLimit = 3; // default for trialing
-            if (sub.status === "active") {
-              resolvedLimit = resolvedPlan === "starter" ? 15 : 50;
+            if (!resolvedPlan || resolvedLimit === null) {
+              // Refuse to self-heal with an unknown Stripe product — do NOT grant any plan benefits.
+              console.error(
+                `[check-subscription] Refusing to self-heal tenant ${profile.tenant_id}: unmapped Stripe product ${productId} on subscription ${sub.id}. Configure STRIPE_STARTER_PRODUCT_ID / STRIPE_PRO_PRODUCT_ID.`,
+              );
+              throw new Error(
+                `Unmapped Stripe product "${productId}" on active subscription. Cannot activate access without a resolved plan mapping.`,
+              );
             }
 
             const healUpdate: Record<string, any> = {
