@@ -166,16 +166,30 @@ Deno.serve(async (req) => {
 
     const hasPendingDowngrade = tenant.selected_plan && tenant.selected_plan !== tenant.subscription_plan;
 
+    // Central kill-switch: when billing enforcement is disabled, expose access as enabled
+    // and remove the diagram cap so every frontend path skips gating uniformly.
+    const { data: flagRow } = await supabaseAdmin
+      .from("app_config")
+      .select("value")
+      .eq("key", "billing_enforcement_enabled")
+      .maybeSingle();
+    const enforcementEnabled = flagRow?.value === true;
+
+    const effectiveAccessEnabled = enforcementEnabled ? tenant.access_enabled : true;
+    const effectiveAccessLockedReason = enforcementEnabled ? tenant.access_locked_reason : null;
+    const exposedDiagramLimit = enforcementEnabled ? effectiveDiagramLimit : Number.MAX_SAFE_INTEGER;
+
     return new Response(JSON.stringify({
+      enforcement_enabled: enforcementEnabled,
       subscription_status: tenant.subscription_status,
       subscription_plan: tenant.subscription_plan,
       selected_plan: tenant.selected_plan,
       pending_downgrade: hasPendingDowngrade ? tenant.selected_plan : null,
-      access_enabled: tenant.access_enabled,
-      access_locked_reason: tenant.access_locked_reason,
+      access_enabled: effectiveAccessEnabled,
+      access_locked_reason: effectiveAccessLockedReason,
       trial_ends_at: tenant.trial_ends_at,
       current_period_end: tenant.current_period_end,
-      diagram_limit: effectiveDiagramLimit,
+      diagram_limit: exposedDiagramLimit,
       diagram_count: tenant.diagram_count,
       cancel_at_period_end: tenant.cancel_at_period_end,
       stripe_customer_id: tenant.stripe_customer_id,
