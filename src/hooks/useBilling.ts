@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
 export interface BillingStatus {
+  enforcement_enabled: boolean;
   subscription_status: string;
   subscription_plan: string | null;
   selected_plan: string | null;
