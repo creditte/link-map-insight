@@ -315,20 +315,21 @@ Deno.serve(async (req) => {
                 const targetPriceId = PRICE_MAP[tenant.selected_plan]?.[currentInterval];
 
                 if (targetPriceId) {
-                  await stripe.subscriptions.update(tenant.stripe_subscription_id, {
+                  const updatedSub = await stripe.subscriptions.update(tenant.stripe_subscription_id, {
                     items: [{ id: currentItem.id, price: targetPriceId }],
                     proration_behavior: "none",
                   });
 
-                  const newLimit = tenant.selected_plan === "starter" ? 15 : 50;
+                  // Resolve the new limit strictly from the updated Stripe subscription's product mapping.
+                  const { plan: resolvedPlan, diagramLimit: newLimit } = resolvePlanFromSubscription(updatedSub);
                   await supabaseAdmin.from("tenants").update({
-                    subscription_plan: tenant.selected_plan,
+                    subscription_plan: resolvedPlan,
                     diagram_limit: newLimit,
                   }).eq("id", tenantId);
 
-                  console.log(`Tenant ${tenantId}: deferred plan change applied to ${tenant.selected_plan}`);
+                  console.log(`Tenant ${tenantId}: deferred plan change applied to ${resolvedPlan} (limit=${newLimit})`);
                 } else {
-                  console.error(`No price ID for plan=${tenant.selected_plan}, interval=${currentInterval}`);
+                  console.error(`No price ID for plan=${tenant.selected_plan}, interval=${currentInterval} — deferred plan change aborted, no benefits granted.`);
                 }
               }
             } catch (e: any) {
