@@ -227,7 +227,7 @@ Deno.serve(async (req) => {
             : null,
           access_enabled: accessEnabled,
           access_locked_reason: accessEnabled ? null : (status === "canceled" ? "subscription_canceled" : `subscription_${status}`),
-          diagram_limit: accessEnabled ? diagramLimit : 50,
+          diagram_limit: diagramLimit,
         };
 
         if (subscription.trial_end) {
