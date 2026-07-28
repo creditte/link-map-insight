@@ -13,6 +13,9 @@ export default function BillingBanner() {
 
   if (loading || !billing) return null;
 
+  // Central kill-switch: hide all billing banners while enforcement is disabled.
+  if (billing.enforcement_enabled === false) return null;
+
   // Only owners and admins with billing access can see billing actions
   if (!canManageBilling) return null;
 
