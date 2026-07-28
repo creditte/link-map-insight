@@ -164,18 +164,17 @@ Deno.serve(async (req) => {
         const workspaceId = session.metadata?.workspace_id;
         if (!workspaceId) break;
 
-        let plan = "pro";
-        let diagramLimit = 100;
-        let periodStart: string | null = null;
-        let periodEnd: string | null = null;
-        if (session.subscription) {
-          const sub = await stripe.subscriptions.retrieve(session.subscription as string);
-          const resolved = resolvePlanFromSubscription(sub);
-          plan = resolved.plan;
-          diagramLimit = resolved.diagramLimit;
-          periodStart = toISO(sub.current_period_start);
-          periodEnd = toISO(sub.current_period_end);
+        if (!session.subscription) {
+          console.error(
+            `[stripe-webhooks] checkout.session.completed without subscription for workspace=${workspaceId} session=${session.id} — refusing to activate.`,
+          );
+          throw new Error("Checkout session has no subscription; cannot activate plan without a mapped product.");
         }
+
+        const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+        const { plan, diagramLimit } = resolvePlanFromSubscription(sub);
+        const periodStart = toISO(sub.current_period_start);
+        const periodEnd = toISO(sub.current_period_end);
 
         await supabaseAdmin
           .from("tenants")
