@@ -17,10 +17,47 @@ const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   },
 };
 
+// Same source of truth as stripe-webhooks: resolve plan + diagram limit from Stripe product ID.
+const PLAN_CONFIG: Record<string, { plan: string; diagramLimit: number }> = {};
+function initPlanConfig() {
+  const starterProductId = Deno.env.get("STRIPE_STARTER_PRODUCT_ID");
+  const proProductId = Deno.env.get("STRIPE_PRO_PRODUCT_ID");
+  if (starterProductId) PLAN_CONFIG[starterProductId] = { plan: "starter", diagramLimit: 15 };
+  if (proProductId) PLAN_CONFIG[proProductId] = { plan: "pro", diagramLimit: 50 };
+}
+
+function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan: string; diagramLimit: number } {
+  const productId = subscription.items?.data?.[0]?.price?.product as string | undefined;
+  const priceId = subscription.items?.data?.[0]?.price?.id as string | undefined;
+  if (!productId || !PLAN_CONFIG[productId]) {
+    const configuredProducts = Object.keys(PLAN_CONFIG);
+    console.error(
+      `[switch-billing-interval] Unknown Stripe product mapping. subscription_id=${subscription.id} product_id=${productId} price_id=${priceId} configured_products=${JSON.stringify(configuredProducts)}`,
+    );
+    throw new Error(
+      `Unmapped Stripe product ID "${productId}". Configure STRIPE_STARTER_PRODUCT_ID / STRIPE_PRO_PRODUCT_ID to match this product before switching billing intervals.`,
+    );
+  }
+  const knownPriceIds = new Set(
+    Object.values(PRICE_MAP).flatMap((m) => Object.values(m)).filter(Boolean) as string[],
+  );
+  if (priceId && knownPriceIds.size > 0 && !knownPriceIds.has(priceId)) {
+    console.error(
+      `[switch-billing-interval] Unknown Stripe price ID on subscription ${subscription.id}: price_id=${priceId} known_prices=${JSON.stringify([...knownPriceIds])}`,
+    );
+    throw new Error(
+      `Unmapped Stripe price ID "${priceId}". Configure STRIPE_*_PRICE_ID env vars to match this price before switching billing intervals.`,
+    );
+  }
+  return PLAN_CONFIG[productId];
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    initPlanConfig();
+
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeKey) throw new Error("STRIPE_SECRET_KEY not set");
 
@@ -76,14 +113,22 @@ Deno.serve(async (req) => {
     const currentItem = subscription.items.data[0];
     if (!currentItem) throw new Error("No subscription item found");
 
-    const currentInterval = currentItem.price.recurring?.interval;
-    const targetInterval = currentInterval === "month" ? "year" : "month";
+    // Resolve the current plan from the Stripe subscription itself — no fallback to the tenant column or "pro".
+    const { plan: currentPlan } = resolvePlanFromSubscription(subscription);
 
-    // Find the target price ID
-    const plan = tenant.subscription_plan || "pro";
-    const targetPriceId = PRICE_MAP[plan]?.[targetInterval];
+    const currentInterval = currentItem.price.recurring?.interval;
+    if (currentInterval !== "month" && currentInterval !== "year") {
+      throw new Error(`Unsupported current billing interval: ${currentInterval}`);
+    }
+    const targetInterval: "month" | "year" = currentInterval === "month" ? "year" : "month";
+
+    // Find the target price ID — must exist in the configured mapping for this plan.
+    const targetPriceId = PRICE_MAP[currentPlan]?.[targetInterval];
     if (!targetPriceId) {
-      throw new Error(`No price configured for plan: ${plan}, interval: ${targetInterval}`);
+      console.error(
+        `[switch-billing-interval] No configured price for plan=${currentPlan} interval=${targetInterval}`,
+      );
+      throw new Error(`No Stripe price configured for plan '${currentPlan}' with interval '${targetInterval}'.`);
     }
 
     // Update subscription: replace current item with new price
@@ -94,8 +139,8 @@ Deno.serve(async (req) => {
       proration_behavior: "create_prorations",
     });
 
-    // Determine new limit based on plan
-    const newLimit = plan === "starter" ? 15 : 50;
+    // Derive plan + diagram limit strictly from the updated Stripe subscription — no hardcoded values.
+    const { plan: resolvedPlan, diagramLimit: newLimit } = resolvePlanFromSubscription(updatedSub);
 
     // Safe date conversion: handle both Unix timestamps and ISO strings
     const toISO = (val: any): string | null => {
@@ -106,7 +151,10 @@ Deno.serve(async (req) => {
     };
 
     // Update tenant record
-    const updatePayload: Record<string, any> = { diagram_limit: newLimit };
+    const updatePayload: Record<string, any> = {
+      subscription_plan: resolvedPlan,
+      diagram_limit: newLimit,
+    };
     const periodStart = toISO(updatedSub.current_period_start);
     const periodEnd = toISO(updatedSub.current_period_end);
     if (periodStart) updatePayload.current_period_start = periodStart;
@@ -118,6 +166,8 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       success: true,
+      plan: resolvedPlan,
+      diagram_limit: newLimit,
       new_interval: newPrice?.recurring?.interval || targetInterval,
       new_price_amount: newPrice?.unit_amount || null,
     }), {
