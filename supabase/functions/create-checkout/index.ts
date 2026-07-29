@@ -57,11 +57,31 @@ Deno.serve(async (req) => {
       throw new Error("Only the firm owner can manage billing");
     }
 
-     const selectedPlan = profile.selected_plan || "pro";
-     const selectedBilling = profile.selected_billing || "monthly";
-     const planPrices = PRICE_MAP[selectedPlan] || PRICE_MAP.pro;
-     const priceId = planPrices?.[selectedBilling] || planPrices?.monthly;
-     if (!priceId) throw new Error(`No Stripe price configured for plan: ${selectedPlan}, billing: ${selectedBilling}`);
+    const selectedPlan = profile.selected_plan;
+    const selectedBilling = profile.selected_billing;
+    if (!selectedPlan || !selectedBilling) {
+      console.error("[create-checkout] Missing plan/billing selection", { tenant_id: profile.tenant_id, selectedPlan, selectedBilling });
+      return new Response(JSON.stringify({ error: "No plan selected. Please choose a plan before checkout." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const planPrices = PRICE_MAP[selectedPlan];
+    if (!planPrices) {
+      console.error("[create-checkout] Unknown plan", { tenant_id: profile.tenant_id, selectedPlan });
+      return new Response(JSON.stringify({ error: `Unknown plan: ${selectedPlan}` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const priceId = planPrices[selectedBilling];
+    if (!priceId) {
+      console.error("[create-checkout] Unknown/unconfigured billing interval", { tenant_id: profile.tenant_id, selectedPlan, selectedBilling });
+      return new Response(JSON.stringify({ error: `No Stripe price configured for plan '${selectedPlan}' with billing interval '${selectedBilling}'.` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Get tenant
     const { data: tenant } = await supabaseAdmin

@@ -106,11 +106,31 @@ Deno.serve(async (req) => {
     // No active subscription → create a Checkout session to start one
     console.log("[customer-portal] No active subscription found, redirecting to checkout");
 
-    const selectedPlan = profile.selected_plan || "pro";
-    const selectedBilling = profile.selected_billing || "monthly";
-    const planPrices = PRICE_MAP[selectedPlan] || PRICE_MAP.pro;
-    const priceId = planPrices?.[selectedBilling] || planPrices?.monthly;
-    if (!priceId) throw new Error(`No Stripe price configured for plan: ${selectedPlan}, billing: ${selectedBilling}`);
+    const selectedPlan = profile.selected_plan;
+    const selectedBilling = profile.selected_billing;
+    if (!selectedPlan || !selectedBilling) {
+      console.error("[customer-portal] Missing plan/billing selection", { tenant_id: profile.tenant_id, selectedPlan, selectedBilling });
+      return new Response(JSON.stringify({ error: "No plan selected. Please choose a plan before starting checkout." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const planPrices = PRICE_MAP[selectedPlan];
+    if (!planPrices) {
+      console.error("[customer-portal] Unknown plan", { tenant_id: profile.tenant_id, selectedPlan });
+      return new Response(JSON.stringify({ error: `Unknown plan: ${selectedPlan}` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const priceId = planPrices[selectedBilling];
+    if (!priceId) {
+      console.error("[customer-portal] Unknown/unconfigured billing interval", { tenant_id: profile.tenant_id, selectedPlan, selectedBilling });
+      return new Response(JSON.stringify({ error: `No Stripe price configured for plan '${selectedPlan}' with billing interval '${selectedBilling}'.` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
