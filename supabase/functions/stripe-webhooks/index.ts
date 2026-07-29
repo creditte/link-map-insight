@@ -175,26 +175,36 @@ Deno.serve(async (req) => {
         const { plan, diagramLimit } = resolvePlanFromSubscription(sub);
         const periodStart = toISO(sub.current_period_start);
         const periodEnd = toISO(sub.current_period_end);
+        const status = sub.status;
+        const accessEnabled = status === "active" || status === "trialing";
+
+        const updateData: Record<string, any> = {
+          stripe_subscription_id: sub.id,
+          stripe_customer_id: session.customer as string,
+          trial_used_at: new Date().toISOString(),
+          subscription_status: status,
+          subscription_plan: plan,
+          selected_plan: plan,
+          access_enabled: accessEnabled,
+          access_locked_reason: accessEnabled
+            ? null
+            : (status === "canceled" ? "subscription_canceled" : `subscription_${status}`),
+          diagram_limit: diagramLimit,
+          current_period_start: periodStart,
+          current_period_end: periodEnd,
+          cancel_at_period_end: sub.cancel_at_period_end,
+          canceled_at: sub.canceled_at ? toISO(sub.canceled_at) : null,
+          trial_ends_at: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
+        };
 
         await supabaseAdmin
           .from("tenants")
-          .update({
-            stripe_subscription_id: session.subscription as string,
-            stripe_customer_id: session.customer as string,
-            trial_used_at: new Date().toISOString(),
-            subscription_status: "active",
-            subscription_plan: plan,
-            selected_plan: plan,
-            access_enabled: true,
-            access_locked_reason: null,
-            diagram_limit: diagramLimit,
-            current_period_start: periodStart,
-            current_period_end: periodEnd,
-          })
+          .update(updateData)
           .eq("id", workspaceId);
-        console.log(`Tenant ${workspaceId} checkout completed: plan=${plan}, limit=${diagramLimit}, period_end=${periodEnd}`);
+        console.log(`Tenant ${workspaceId} checkout completed: plan=${plan}, status=${status}, limit=${diagramLimit}, period_end=${periodEnd}`);
         break;
       }
+
 
       case "customer.subscription.created":
       case "customer.subscription.updated": {
