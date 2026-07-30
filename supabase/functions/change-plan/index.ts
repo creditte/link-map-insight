@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -106,7 +107,7 @@ Deno.serve(async (req) => {
       throw new Error("A downgrade to Starter is already scheduled for the end of your billing period.");
     }
 
-    const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+    const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
 
     if (isUpgrade) {
       // ── UPGRADE: starter → pro (or cancel pending downgrade) ──
@@ -145,13 +146,6 @@ Deno.serve(async (req) => {
         proration_behavior: "create_prorations",
       });
 
-      const toISO = (val: any): string | null => {
-        if (!val) return null;
-        if (typeof val === "number") return new Date(val * 1000).toISOString();
-        if (typeof val === "string") return new Date(val).toISOString();
-        return null;
-      };
-
       const updatePayload: Record<string, any> = {
         subscription_plan: "pro",
         selected_plan: "pro",
@@ -160,8 +154,11 @@ Deno.serve(async (req) => {
         canceled_at: null,
         last_plan_switch_at: new Date().toISOString(),
       };
-      const periodEnd = toISO(updatedSub.current_period_end);
+      const updatedLife = getSubscriptionLifecycle(updatedSub);
+      const periodEnd = updatedLife.currentPeriodEnd;
+      if (updatedLife.currentPeriodStart) updatePayload.current_period_start = updatedLife.currentPeriodStart;
       if (periodEnd) updatePayload.current_period_end = periodEnd;
+      if (updatedLife.trialEnd) updatePayload.trial_ends_at = updatedLife.trialEnd;
 
       await supabaseAdmin.from("tenants").update(updatePayload).eq("id", tenant.id);
 
@@ -188,8 +185,9 @@ Deno.serve(async (req) => {
       let periodEnd = tenant.current_period_end;
       try {
         const subscription = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
-        if (subscription.current_period_end) {
-          periodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+        const life = getSubscriptionLifecycle(subscription);
+        if (life.currentPeriodEnd) {
+          periodEnd = life.currentPeriodEnd;
         }
       } catch (e) {
         console.error("Failed to fetch Stripe subscription for period_end:", e);

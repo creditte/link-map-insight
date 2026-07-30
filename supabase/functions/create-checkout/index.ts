@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -94,7 +95,7 @@ Deno.serve(async (req) => {
     // Only block if there's a real active Stripe subscription
     if (tenant.stripe_subscription_id && ["active"].includes(tenant.subscription_status)) {
       // Double-check with Stripe that the subscription is genuinely active
-      const stripe2 = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+      const stripe2 = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
       try {
         const existingSub = await stripe2.subscriptions.retrieve(tenant.stripe_subscription_id);
         if (existingSub.status === "active" || existingSub.status === "trialing") {
@@ -108,7 +109,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+    const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
 
     // Create or retrieve Stripe customer
     let customerId = tenant.stripe_customer_id;

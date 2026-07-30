@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -106,7 +107,7 @@ Deno.serve(async (req) => {
       throw new Error("No Stripe subscription found");
     }
 
-    const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+    const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
 
     // Retrieve current subscription
     const subscription = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
@@ -142,23 +143,17 @@ Deno.serve(async (req) => {
     // Derive plan + diagram limit strictly from the updated Stripe subscription — no hardcoded values.
     const { plan: resolvedPlan, diagramLimit: newLimit } = resolvePlanFromSubscription(updatedSub);
 
-    // Safe date conversion: handle both Unix timestamps and ISO strings
-    const toISO = (val: any): string | null => {
-      if (!val) return null;
-      if (typeof val === "number") return new Date(val * 1000).toISOString();
-      if (typeof val === "string") return new Date(val).toISOString();
-      return null;
-    };
+    const updatedLife = getSubscriptionLifecycle(updatedSub);
 
     // Update tenant record
     const updatePayload: Record<string, any> = {
       subscription_plan: resolvedPlan,
       diagram_limit: newLimit,
     };
-    const periodStart = toISO(updatedSub.current_period_start);
-    const periodEnd = toISO(updatedSub.current_period_end);
-    if (periodStart) updatePayload.current_period_start = periodStart;
-    if (periodEnd) updatePayload.current_period_end = periodEnd;
+    if (updatedLife.currentPeriodStart) updatePayload.current_period_start = updatedLife.currentPeriodStart;
+    if (updatedLife.currentPeriodEnd) updatePayload.current_period_end = updatedLife.currentPeriodEnd;
+    if (updatedLife.trialEnd) updatePayload.trial_ends_at = updatedLife.trialEnd;
+    updatePayload.cancel_at_period_end = updatedLife.cancelAtPeriodEnd;
 
     await supabaseAdmin.from("tenants").update(updatePayload).eq("id", tenant.id);
 
@@ -168,8 +163,9 @@ Deno.serve(async (req) => {
       success: true,
       plan: resolvedPlan,
       diagram_limit: newLimit,
-      new_interval: newPrice?.recurring?.interval || targetInterval,
-      new_price_amount: newPrice?.unit_amount || null,
+      new_interval: updatedLife.interval || newPrice?.recurring?.interval || targetInterval,
+      new_price_amount: updatedLife.priceAmount ?? newPrice?.unit_amount ?? null,
+      current_period_end: updatedLife.currentPeriodEnd,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

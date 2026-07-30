@@ -5,6 +5,7 @@ import { getTenantBillingRecipients } from "../_shared/tenant-recipients.ts";
 import {
   STRIPE_API_VERSION,
   getInvoicePeriodEnd,
+  getInvoiceSubscriptionId,
   getSubscriptionLifecycle,
   getTrialEndSeconds,
   toISO,
