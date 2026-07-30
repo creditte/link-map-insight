@@ -30,15 +30,38 @@ const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   },
 };
 
-function initPlanConfig() {
-  const starterProductId = Deno.env.get("STRIPE_STARTER_PRODUCT_ID");
-  const proProductId = Deno.env.get("STRIPE_PRO_PRODUCT_ID");
+// Legacy/duplicate Stripe product IDs that must still resolve to a plan for
+// historical subscriptions. Comma-separated env vars; each ID is mapped once.
+function parseIdList(name: string): string[] {
+  return (Deno.env.get(name) ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
-  if (starterProductId) {
-    PLAN_CONFIG[starterProductId] = { plan: "starter", diagramLimit: 15 };
-  }
-  if (proProductId) {
-    PLAN_CONFIG[proProductId] = { plan: "pro", diagramLimit: 50 };
+export function legacyPriceIds(): string[] {
+  return parseIdList("STRIPE_LEGACY_PRICE_IDS");
+}
+
+export function buildPlanConfig(): Record<string, { plan: string; diagramLimit: number }> {
+  const config: Record<string, { plan: string; diagramLimit: number }> = {};
+  const add = (id: string | undefined, plan: string, diagramLimit: number) => {
+    if (!id) return;
+    if (config[id]) return; // never create a duplicate mapping for the same product
+    config[id] = { plan, diagramLimit };
+  };
+
+  add(Deno.env.get("STRIPE_STARTER_PRODUCT_ID"), "starter", 15);
+  add(Deno.env.get("STRIPE_PRO_PRODUCT_ID"), "pro", 50);
+  for (const id of parseIdList("STRIPE_STARTER_LEGACY_PRODUCT_IDS")) add(id, "starter", 15);
+  for (const id of parseIdList("STRIPE_PRO_LEGACY_PRODUCT_IDS")) add(id, "pro", 50);
+
+  return config;
+}
+
+function initPlanConfig() {
+  for (const [id, cfg] of Object.entries(buildPlanConfig())) {
+    PLAN_CONFIG[id] = cfg;
   }
 }
 
