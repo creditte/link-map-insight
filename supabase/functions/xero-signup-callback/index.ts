@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
 import { encryptToken } from "../_shared/crypto.ts";
 import { invokeTransactionalEmail } from "../_shared/invoke-transactional-email.ts";
 import { verifyXeroIdToken } from "../_shared/verify-xero-id-token.ts";
@@ -210,7 +211,7 @@ Deno.serve(async (req) => {
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (stripeKey) {
       try {
-        const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+        const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
         const customer = await stripe.customers.create({
           email,
           metadata: { workspace_id: tenant.id, owner_user_id: userId },

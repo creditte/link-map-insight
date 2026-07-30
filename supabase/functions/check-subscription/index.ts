@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -62,13 +63,12 @@ Deno.serve(async (req) => {
         const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
         if (stripeKey) {
           const { default: Stripe } = await import("https://esm.sh/stripe@18.5.0");
-          const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+          const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
           const sub = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+          const life = getSubscriptionLifecycle(sub);
           const priceData = sub.items?.data?.[0]?.price;
-          if (priceData) {
-            billing_interval = priceData.recurring?.interval || null;
-            price_amount = priceData.unit_amount || null;
-          }
+          if (life.interval) billing_interval = life.interval;
+          if (life.priceAmount !== null) price_amount = life.priceAmount;
 
           // If Stripe subscription is not actually active/trialing, reflect that in app state
           if (!["active", "trialing"].includes(sub.status) && tenant.subscription_status !== "trial_expired") {
@@ -118,14 +118,11 @@ Deno.serve(async (req) => {
               access_locked_reason: null,
               diagram_limit: resolvedLimit,
               stripe_subscription_id: sub.id,
-              current_period_start: sub.current_period_start
-                ? new Date(sub.current_period_start * 1000).toISOString()
-                : null,
-              current_period_end: sub.current_period_end
-                ? new Date(sub.current_period_end * 1000).toISOString()
-                : null,
-              cancel_at_period_end: sub.cancel_at_period_end ?? false,
+              current_period_start: life.currentPeriodStart,
+              current_period_end: life.currentPeriodEnd,
+              cancel_at_period_end: life.cancelAtPeriodEnd,
             };
+            if (life.trialEnd) healUpdate.trial_ends_at = life.trialEnd;
 
             await supabaseAdmin.from("tenants").update(healUpdate).eq("id", profile.tenant_id);
             console.log(`[check-subscription] Self-healed tenant: ${tenant.subscription_status} → ${sub.status}`);
@@ -135,23 +132,29 @@ Deno.serve(async (req) => {
             tenant.access_enabled = true;
             tenant.access_locked_reason = null;
             tenant.diagram_limit = resolvedLimit;
-            tenant.cancel_at_period_end = sub.cancel_at_period_end ?? false;
+            tenant.cancel_at_period_end = life.cancelAtPeriodEnd;
             tenant.current_period_end = healUpdate.current_period_end;
           } else if (["active", "trialing"].includes(sub.status)) {
             // Always sync current_period_end from Stripe even when statuses match
-            const stripePeriodEnd = sub.current_period_end
-              ? new Date(sub.current_period_end * 1000).toISOString()
-              : null;
-            const stripePeriodStart = sub.current_period_start
-              ? new Date(sub.current_period_start * 1000).toISOString()
-              : null;
+            const stripePeriodEnd = life.currentPeriodEnd;
+            const stripePeriodStart = life.currentPeriodStart;
 
+            const drift: Record<string, any> = {};
             if (stripePeriodEnd && stripePeriodEnd !== tenant.current_period_end) {
-              await supabaseAdmin.from("tenants").update({
-                current_period_end: stripePeriodEnd,
-                current_period_start: stripePeriodStart,
-              }).eq("id", profile.tenant_id);
-              tenant.current_period_end = stripePeriodEnd;
+              drift.current_period_end = stripePeriodEnd;
+              if (stripePeriodStart) drift.current_period_start = stripePeriodStart;
+            }
+            if (life.cancelAtPeriodEnd !== tenant.cancel_at_period_end) {
+              drift.cancel_at_period_end = life.cancelAtPeriodEnd;
+            }
+            if (life.trialEnd && life.trialEnd !== tenant.trial_ends_at) {
+              drift.trial_ends_at = life.trialEnd;
+            }
+            if (Object.keys(drift).length > 0) {
+              await supabaseAdmin.from("tenants").update(drift).eq("id", profile.tenant_id);
+              if (drift.current_period_end) tenant.current_period_end = drift.current_period_end;
+              if ("cancel_at_period_end" in drift) tenant.cancel_at_period_end = drift.cancel_at_period_end;
+              if (drift.trial_ends_at) tenant.trial_ends_at = drift.trial_ends_at;
             }
           }
         }

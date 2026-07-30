@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -61,7 +62,7 @@ Deno.serve(async (req) => {
       .single();
     if (!tenant) throw new Error("No tenant found");
 
-    const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+    const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
     const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";
 
     // Ensure Stripe customer exists

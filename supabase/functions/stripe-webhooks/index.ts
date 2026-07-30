@@ -2,6 +2,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { invokeTransactionalEmail } from "../_shared/invoke-transactional-email.ts";
 import { getTenantBillingRecipients } from "../_shared/tenant-recipients.ts";
+import {
+  STRIPE_API_VERSION,
+  getInvoicePeriodEnd,
+  getInvoiceSubscriptionId,
+  getSubscriptionLifecycle,
+  getTrialEndSeconds,
+  toISO,
+} from "../_shared/stripe-subscription.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -99,13 +107,6 @@ async function notifyTenantBilling(
   }
 }
 
-const toISO = (val: any): string | null => {
-  if (!val) return null;
-  if (typeof val === "number") return new Date(val * 1000).toISOString();
-  if (typeof val === "string") return new Date(val).toISOString();
-  return null;
-};
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -118,7 +119,7 @@ Deno.serve(async (req) => {
 
   initPlanConfig();
 
-  const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+  const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
   const supabaseAdmin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -173,9 +174,10 @@ Deno.serve(async (req) => {
 
         const sub = await stripe.subscriptions.retrieve(session.subscription as string);
         const { plan, diagramLimit } = resolvePlanFromSubscription(sub);
-        const periodStart = toISO(sub.current_period_start);
-        const periodEnd = toISO(sub.current_period_end);
-        const status = sub.status;
+        const life = getSubscriptionLifecycle(sub);
+        const periodStart = life.currentPeriodStart;
+        const periodEnd = life.currentPeriodEnd;
+        const status = life.status;
         const accessEnabled = status === "active" || status === "trialing";
 
         const updateData: Record<string, any> = {
@@ -192,9 +194,9 @@ Deno.serve(async (req) => {
           diagram_limit: diagramLimit,
           current_period_start: periodStart,
           current_period_end: periodEnd,
-          cancel_at_period_end: sub.cancel_at_period_end,
-          canceled_at: sub.canceled_at ? toISO(sub.canceled_at) : null,
-          trial_ends_at: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
+          cancel_at_period_end: life.cancelAtPeriodEnd,
+          canceled_at: life.canceledAt,
+          trial_ends_at: life.trialEnd,
         };
 
         await supabaseAdmin
@@ -221,7 +223,8 @@ Deno.serve(async (req) => {
         }
 
         const { plan, diagramLimit } = resolvePlanFromSubscription(subscription);
-        const status = subscription.status;
+        const life = getSubscriptionLifecycle(subscription);
+        const status = life.status;
         const accessEnabled = status === "active" || status === "trialing";
 
         const updateData: Record<string, any> = {
@@ -229,19 +232,17 @@ Deno.serve(async (req) => {
           subscription_plan: plan,
           selected_plan: plan, // Sync selected_plan to actual plan on Stripe changes
           stripe_subscription_id: subscription.id,
-          current_period_start: toISO(subscription.current_period_start),
-          current_period_end: toISO(subscription.current_period_end),
-          cancel_at_period_end: subscription.cancel_at_period_end,
-          canceled_at: subscription.canceled_at
-            ? toISO(subscription.canceled_at)
-            : null,
+          current_period_start: life.currentPeriodStart,
+          current_period_end: life.currentPeriodEnd,
+          cancel_at_period_end: life.cancelAtPeriodEnd,
+          canceled_at: life.canceledAt,
           access_enabled: accessEnabled,
           access_locked_reason: accessEnabled ? null : (status === "canceled" ? "subscription_canceled" : `subscription_${status}`),
           diagram_limit: diagramLimit,
         };
 
-        if (subscription.trial_end) {
-          updateData.trial_ends_at = new Date(subscription.trial_end * 1000).toISOString();
+        if (life.trialEnd) {
+          updateData.trial_ends_at = life.trialEnd;
         }
 
         await supabaseAdmin.from("tenants").update(updateData).eq("id", tenantId);
@@ -268,7 +269,10 @@ Deno.serve(async (req) => {
               subscription_status: "canceled",
               access_enabled: false,
               access_locked_reason: "subscription_canceled",
-              canceled_at: new Date().toISOString(),
+              canceled_at: getSubscriptionLifecycle(subscription).canceledAt ??
+                getSubscriptionLifecycle(subscription).endedAt ??
+                new Date().toISOString(),
+              cancel_at_period_end: false,
             })
             .eq("id", tenantId);
           console.log(`Tenant ${tenantId} subscription deleted, access locked`);
@@ -332,10 +336,15 @@ Deno.serve(async (req) => {
 
                   // Resolve the new limit strictly from the updated Stripe subscription's product mapping.
                   const { plan: resolvedPlan, diagramLimit: newLimit } = resolvePlanFromSubscription(updatedSub);
-                  await supabaseAdmin.from("tenants").update({
+                  const updatedLife = getSubscriptionLifecycle(updatedSub);
+                  const deferredUpdate: Record<string, any> = {
                     subscription_plan: resolvedPlan,
+                    selected_plan: resolvedPlan,
                     diagram_limit: newLimit,
-                  }).eq("id", tenantId);
+                  };
+                  if (updatedLife.currentPeriodStart) deferredUpdate.current_period_start = updatedLife.currentPeriodStart;
+                  if (updatedLife.currentPeriodEnd) deferredUpdate.current_period_end = updatedLife.currentPeriodEnd;
+                  await supabaseAdmin.from("tenants").update(deferredUpdate).eq("id", tenantId);
 
                   console.log(`Tenant ${tenantId}: deferred plan change applied to ${resolvedPlan} (limit=${newLimit})`);
                 } else {
@@ -344,6 +353,26 @@ Deno.serve(async (req) => {
               }
             } catch (e: any) {
               console.error(`Failed to apply deferred plan change for tenant ${tenantId}:`, e.message);
+            }
+          }
+
+          // Re-sync billing period bounds from the subscription (invoice payloads
+          // no longer carry them at the top level in recent API versions).
+          const invoiceSubId = getInvoiceSubscriptionId(invoice) ?? tenant?.stripe_subscription_id;
+          if (invoiceSubId) {
+            try {
+              const paidSub = await stripe.subscriptions.retrieve(invoiceSubId);
+              const paidLife = getSubscriptionLifecycle(paidSub);
+              const periodUpdate: Record<string, any> = {
+                subscription_status: paidLife.status,
+                cancel_at_period_end: paidLife.cancelAtPeriodEnd,
+              };
+              if (paidLife.currentPeriodStart) periodUpdate.current_period_start = paidLife.currentPeriodStart;
+              if (paidLife.currentPeriodEnd) periodUpdate.current_period_end = paidLife.currentPeriodEnd;
+              if (paidLife.trialEnd) periodUpdate.trial_ends_at = paidLife.trialEnd;
+              await supabaseAdmin.from("tenants").update(periodUpdate).eq("id", tenantId);
+            } catch (e: any) {
+              console.error(`[stripe-webhooks] invoice.paid period sync failed for tenant ${tenantId}:`, e.message);
             }
           }
 
@@ -383,12 +412,17 @@ Deno.serve(async (req) => {
         if (!tenantId) {
           tenantId = await findTenantByCustomer(supabaseAdmin, subscription.customer as string) ?? undefined;
         }
-        if (tenantId && subscription.trial_end) {
-          const trialEndIso = new Date(subscription.trial_end * 1000).toISOString();
+        const trialEndSeconds = getTrialEndSeconds(subscription);
+        if (tenantId && trialEndSeconds) {
+          const trialEndIso = toISO(trialEndSeconds)!;
           const daysRemaining = Math.max(
             1,
-            Math.ceil((subscription.trial_end * 1000 - Date.now()) / (24 * 60 * 60 * 1000)),
+            Math.ceil((trialEndSeconds * 1000 - Date.now()) / (24 * 60 * 60 * 1000)),
           );
+          await supabaseAdmin
+            .from("tenants")
+            .update({ trial_ends_at: trialEndIso })
+            .eq("id", tenantId);
           await notifyTenantBilling(
             supabaseAdmin,
             tenantId,
@@ -404,9 +438,7 @@ Deno.serve(async (req) => {
         const invoice = event.data.object as Stripe.Invoice;
         const tenantId = await findTenantByCustomer(supabaseAdmin, invoice.customer as string);
         if (tenantId) {
-          const renewalDate = invoice.period_end
-            ? new Date(invoice.period_end * 1000).toISOString()
-            : undefined;
+          const renewalDate = getInvoicePeriodEnd(invoice) ?? undefined;
           const amount = invoice.amount_due != null
             ? new Intl.NumberFormat("en-AU", {
               style: "currency",

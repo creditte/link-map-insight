@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -110,7 +111,7 @@ Deno.serve(async (req) => {
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (stripeKey) {
       try {
-        const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+        const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
         const customer = await stripe.customers.create({
           email,
           metadata: { workspace_id: tenant.id, owner_user_id: userId },
