@@ -78,9 +78,10 @@ function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan:
     );
   }
   // Validate that the price on the subscription is one of the configured price IDs
-  const knownPriceIds = new Set(
-    Object.values(PRICE_MAP).flatMap((m) => Object.values(m)).filter(Boolean) as string[],
-  );
+  const knownPriceIds = new Set([
+    ...(Object.values(PRICE_MAP).flatMap((m) => Object.values(m)).filter(Boolean) as string[]),
+    ...legacyPriceIds(),
+  ]);
   if (priceId && knownPriceIds.size > 0 && !knownPriceIds.has(priceId)) {
     console.error(
       `[stripe-webhooks] Unknown Stripe price ID on subscription ${subscription.id}: price_id=${priceId} known_prices=${JSON.stringify([...knownPriceIds])}`,
