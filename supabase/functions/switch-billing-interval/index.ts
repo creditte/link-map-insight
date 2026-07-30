@@ -20,11 +20,27 @@ const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
 
 // Same source of truth as stripe-webhooks: resolve plan + diagram limit from Stripe product ID.
 const PLAN_CONFIG: Record<string, { plan: string; diagramLimit: number }> = {};
+
+function parseIdList(name: string): string[] {
+  return (Deno.env.get(name) ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function legacyPriceIds(): string[] {
+  return parseIdList("STRIPE_LEGACY_PRICE_IDS");
+}
+
 function initPlanConfig() {
-  const starterProductId = Deno.env.get("STRIPE_STARTER_PRODUCT_ID");
-  const proProductId = Deno.env.get("STRIPE_PRO_PRODUCT_ID");
-  if (starterProductId) PLAN_CONFIG[starterProductId] = { plan: "starter", diagramLimit: 15 };
-  if (proProductId) PLAN_CONFIG[proProductId] = { plan: "pro", diagramLimit: 50 };
+  const add = (id: string | undefined, plan: string, diagramLimit: number) => {
+    if (!id || PLAN_CONFIG[id]) return; // never create a duplicate mapping
+    PLAN_CONFIG[id] = { plan, diagramLimit };
+  };
+  add(Deno.env.get("STRIPE_STARTER_PRODUCT_ID"), "starter", 15);
+  add(Deno.env.get("STRIPE_PRO_PRODUCT_ID"), "pro", 50);
+  for (const id of parseIdList("STRIPE_STARTER_LEGACY_PRODUCT_IDS")) add(id, "starter", 15);
+  for (const id of parseIdList("STRIPE_PRO_LEGACY_PRODUCT_IDS")) add(id, "pro", 50);
 }
 
 function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan: string; diagramLimit: number } {
@@ -39,9 +55,10 @@ function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan:
       `Unmapped Stripe product ID "${productId}". Configure STRIPE_STARTER_PRODUCT_ID / STRIPE_PRO_PRODUCT_ID to match this product before switching billing intervals.`,
     );
   }
-  const knownPriceIds = new Set(
-    Object.values(PRICE_MAP).flatMap((m) => Object.values(m)).filter(Boolean) as string[],
-  );
+  const knownPriceIds = new Set([
+    ...(Object.values(PRICE_MAP).flatMap((m) => Object.values(m)).filter(Boolean) as string[]),
+    ...legacyPriceIds(),
+  ]);
   if (priceId && knownPriceIds.size > 0 && !knownPriceIds.has(priceId)) {
     console.error(
       `[switch-billing-interval] Unknown Stripe price ID on subscription ${subscription.id}: price_id=${priceId} known_prices=${JSON.stringify([...knownPriceIds])}`,
