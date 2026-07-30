@@ -55,9 +55,10 @@ function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan:
       `Unmapped Stripe product ID "${productId}". Configure STRIPE_STARTER_PRODUCT_ID / STRIPE_PRO_PRODUCT_ID to match this product before switching billing intervals.`,
     );
   }
-  const knownPriceIds = new Set(
-    Object.values(PRICE_MAP).flatMap((m) => Object.values(m)).filter(Boolean) as string[],
-  );
+  const knownPriceIds = new Set([
+    ...(Object.values(PRICE_MAP).flatMap((m) => Object.values(m)).filter(Boolean) as string[]),
+    ...legacyPriceIds(),
+  ]);
   if (priceId && knownPriceIds.size > 0 && !knownPriceIds.has(priceId)) {
     console.error(
       `[switch-billing-interval] Unknown Stripe price ID on subscription ${subscription.id}: price_id=${priceId} known_prices=${JSON.stringify([...knownPriceIds])}`,
