@@ -88,15 +88,23 @@ Deno.serve(async (req) => {
           // If Stripe subscription IS active/trialing but DB disagrees, self-heal
           if (["active", "trialing"].includes(sub.status) && !["active", "trialing"].includes(tenant.subscription_status)) {
             const productId = priceData?.product as string | undefined;
-            const starterProductId = Deno.env.get("STRIPE_STARTER_PRODUCT_ID");
-            const proProductId = Deno.env.get("STRIPE_PRO_PRODUCT_ID");
+            const parseIdList = (name: string) =>
+              (Deno.env.get(name) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+            const starterProductIds = [
+              Deno.env.get("STRIPE_STARTER_PRODUCT_ID"),
+              ...parseIdList("STRIPE_STARTER_LEGACY_PRODUCT_IDS"),
+            ].filter(Boolean) as string[];
+            const proProductIds = [
+              Deno.env.get("STRIPE_PRO_PRODUCT_ID"),
+              ...parseIdList("STRIPE_PRO_LEGACY_PRODUCT_IDS"),
+            ].filter(Boolean) as string[];
 
             let resolvedPlan: string | null = null;
             let resolvedLimit: number | null = null;
-            if (productId && starterProductId && productId === starterProductId) {
+            if (productId && starterProductIds.includes(productId)) {
               resolvedPlan = "starter";
               resolvedLimit = sub.status === "active" ? 15 : 3;
-            } else if (productId && proProductId && productId === proProductId) {
+            } else if (productId && proProductIds.includes(productId)) {
               resolvedPlan = "pro";
               resolvedLimit = sub.status === "active" ? 50 : 3;
             }
