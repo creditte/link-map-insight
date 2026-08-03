@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import BillingReconciliationPanel from "@/components/admin/BillingReconciliationPanel";
 
 interface TenantRow {
   id: string;
