@@ -16,48 +16,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Plan configuration mapped by Stripe Product ID
+// Plan configuration mapped by Stripe Product ID — single source of truth in _shared/stripe-plans.ts
 const PLAN_CONFIG: Record<string, { plan: string; diagramLimit: number }> = {};
 
-const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
-  starter: {
-    month: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
-    year: Deno.env.get("STRIPE_STARTER_ANNUAL_PRICE_ID"),
-  },
-  pro: {
-    month: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
-    year: Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
-  },
-};
-
-// Legacy/duplicate Stripe product IDs that must still resolve to a plan for
-// historical subscriptions. Comma-separated env vars; each ID is mapped once.
-function parseIdList(name: string): string[] {
-  return (Deno.env.get(name) ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-export function legacyPriceIds(): string[] {
-  return parseIdList("STRIPE_LEGACY_PRICE_IDS");
-}
-
-export function buildPlanConfig(): Record<string, { plan: string; diagramLimit: number }> {
-  const config: Record<string, { plan: string; diagramLimit: number }> = {};
-  const add = (id: string | undefined, plan: string, diagramLimit: number) => {
-    if (!id) return;
-    if (config[id]) return; // never create a duplicate mapping for the same product
-    config[id] = { plan, diagramLimit };
-  };
-
-  add(Deno.env.get("STRIPE_STARTER_PRODUCT_ID"), "starter", 15);
-  add(Deno.env.get("STRIPE_PRO_PRODUCT_ID"), "pro", 50);
-  for (const id of parseIdList("STRIPE_STARTER_LEGACY_PRODUCT_IDS")) add(id, "starter", 15);
-  for (const id of parseIdList("STRIPE_PRO_LEGACY_PRODUCT_IDS")) add(id, "pro", 50);
-
-  return config;
-}
+const PRICE_MAP = buildPriceMap();
 
 function initPlanConfig() {
   for (const [id, cfg] of Object.entries(buildPlanConfig())) {
@@ -65,32 +27,10 @@ function initPlanConfig() {
   }
 }
 
-function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan: string; diagramLimit: number } {
-  const productId = subscription.items?.data?.[0]?.price?.product as string | undefined;
-  const priceId = subscription.items?.data?.[0]?.price?.id as string | undefined;
-  if (!productId || !PLAN_CONFIG[productId]) {
-    const configuredProducts = Object.keys(PLAN_CONFIG);
-    console.error(
-      `[stripe-webhooks] Unknown Stripe product mapping. subscription_id=${subscription.id} product_id=${productId} price_id=${priceId} configured_products=${JSON.stringify(configuredProducts)}`,
-    );
-    throw new Error(
-      `Unmapped Stripe product ID "${productId}". Configure STRIPE_STARTER_PRODUCT_ID / STRIPE_PRO_PRODUCT_ID to match this product before activating the subscription.`,
-    );
-  }
-  // Validate that the price on the subscription is one of the configured price IDs
-  const knownPriceIds = new Set([
-    ...(Object.values(PRICE_MAP).flatMap((m) => Object.values(m)).filter(Boolean) as string[]),
-    ...legacyPriceIds(),
-  ]);
-  if (priceId && knownPriceIds.size > 0 && !knownPriceIds.has(priceId)) {
-    console.error(
-      `[stripe-webhooks] Unknown Stripe price ID on subscription ${subscription.id}: price_id=${priceId} known_prices=${JSON.stringify([...knownPriceIds])}`,
-    );
-    throw new Error(
-      `Unmapped Stripe price ID "${priceId}". Configure STRIPE_*_PRICE_ID env vars to match this price before activating the subscription.`,
-    );
-  }
-  return PLAN_CONFIG[productId];
+function resolvePlanFromSubscription(
+  subscription: Stripe.Subscription,
+): { plan: string; diagramLimit: number } {
+  return sharedResolvePlan(subscription, "stripe-webhooks");
 }
 
 async function findTenantByCustomer(supabaseAdmin: any, customerId: string): Promise<string | null> {
