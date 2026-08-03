@@ -156,10 +156,19 @@ Deno.serve(async (req) => {
     const hasActiveSubscription = subscriptions.data.length > 0 || trialingSubs.data.length > 0;
 
     if (hasActiveSubscription) {
-      // Has an active subscription → open the customer portal for management
+      // Has an active subscription → open the customer portal for management.
+      // Ensure the portal allows plan + billing interval changes.
+      let configurationId: string | undefined;
+      try {
+        configurationId = await ensurePortalConfiguration(stripe);
+      } catch (cfgErr: any) {
+        console.error("[customer-portal] Failed to ensure portal configuration:", cfgErr?.message ?? cfgErr);
+      }
+
       const portalSession = await stripe.billingPortal.sessions.create({
         customer: customerId,
         return_url: `${origin}/settings`,
+        ...(configurationId ? { configuration: configurationId } : {}),
       });
       return new Response(JSON.stringify({ url: portalSession.url }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
