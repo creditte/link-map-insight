@@ -432,13 +432,13 @@ export default function Structures() {
   }
 
   async function handleUnarchiveStructure(structure: ManualStructure) {
-    // Check plan limit before unarchiving
-    if (tenant && tenant.diagram_limit > 0) {
-      const activeCount = manualStructures.filter((s) => !s.archived_at && !s.is_scenario).length;
-      if (activeCount >= tenant.diagram_limit) {
-        toast.error(`You've reached your limit of ${tenant.diagram_limit} active structures. Archive an existing structure first to make room.`);
-        return;
-      }
+    // Use the centralized billing state (enforcement-flag aware) — never the raw
+    // tenant row. The DB trigger is the hard backstop for this same rule.
+    if (limitReached) {
+      toast.error(
+        `You've reached your limit of ${billing?.diagram_limit} active structures. Archive an existing structure first to make room.`,
+      );
+      return;
     }
     try {
       const { error } = await supabase
