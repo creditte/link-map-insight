@@ -307,12 +307,25 @@ function MfaGate({ children }: { children: React.ReactNode }) {
   return <BillingGate>{children}</BillingGate>;
 }
 
-/** Check billing access after MFA is resolved */
+/**
+ * Check billing access after MFA is resolved.
+ *
+ * No-op while `billing_enforcement_enabled` is false: check-subscription returns
+ * enforcement_enabled=false with access_enabled forced to true, so this gate
+ * never fires until the flag is switched on.
+ */
 function BillingGate({ children }: { children: React.ReactNode }) {
   const { billing, loading } = useBilling();
 
   if (loading) {
     return <BootLoadingScreen />;
+  }
+
+  // Fail open when billing state can't be read — never lock a firm out on a
+  // transient error; the DB triggers remain the hard backstop.
+  if (billing?.enforcement_enabled === true && billing.access_enabled === false) {
+    trace("ProtectedRoute", `decision: billing locked (${billing.access_locked_reason ?? "unknown"})`);
+    return <Navigate to="/subscription-locked" replace />;
   }
 
   return <>{children}</>;

@@ -86,7 +86,7 @@ export default function SubscriptionLocked() {
         </Button>
 
         <p className="text-xs text-muted-foreground">
-          Need help? Contact support at support@strukcha.app
+          Need help? Contact support at hello@strukcha.app
         </p>
       </div>
     </div>

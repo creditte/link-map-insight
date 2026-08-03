@@ -5,6 +5,7 @@ import {
   wasTenantNotificationSent,
 } from '../_shared/invoke-transactional-email.ts'
 import { getTenantBillingRecipients } from '../_shared/tenant-recipients.ts'
+import { isServiceRoleRequest } from '../_shared/cron-auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -61,9 +62,7 @@ Deno.serve(async (req) => {
   }
 
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  const authHeader = req.headers.get('Authorization')
-  const token = authHeader?.replace(/^Bearer\s+/i, '')
-  if (!serviceKey || token !== serviceKey) {
+  if (!serviceKey || !isServiceRoleRequest(req)) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
