@@ -437,24 +437,79 @@ Deno.serve(async (req) => {
           tenantId = await findTenantByCustomer(supabaseAdmin, subscription.customer as string) ?? undefined;
         }
         const trialEndSeconds = getTrialEndSeconds(subscription);
-        if (tenantId && trialEndSeconds) {
-          const trialEndIso = toISO(trialEndSeconds)!;
-          const daysRemaining = Math.max(
-            1,
-            Math.ceil((trialEndSeconds * 1000 - Date.now()) / (24 * 60 * 60 * 1000)),
+        if (!tenantId) {
+          console.warn(
+            `[stripe-webhooks] trial_will_end: no tenant resolved for subscription=${subscription.id} customer=${subscription.customer}`,
           );
-          await supabaseAdmin
-            .from("tenants")
-            .update({ trial_ends_at: trialEndIso })
-            .eq("id", tenantId);
-          await notifyTenantBilling(
-            supabaseAdmin,
-            tenantId,
-            "trial-ending",
-            { trialEndsAt: trialEndIso, daysRemaining },
-            `stripe:${event.id}:trial-ending`,
-          );
+          break;
         }
+        if (!trialEndSeconds) {
+          console.warn(
+            `[stripe-webhooks] trial_will_end: no trial_end on subscription=${subscription.id} (tenant=${tenantId})`,
+          );
+          break;
+        }
+        const trialEndIso = toISO(trialEndSeconds)!;
+        const daysRemaining = Math.max(
+          1,
+          Math.ceil((trialEndSeconds * 1000 - Date.now()) / (24 * 60 * 60 * 1000)),
+        );
+
+        const { error: trialUpdateError } = await supabaseAdmin
+          .from("tenants")
+          .update({ trial_ends_at: trialEndIso })
+          .eq("id", tenantId);
+        if (trialUpdateError) {
+          throw new Error(`Failed to update trial_ends_at for tenant ${tenantId}: ${trialUpdateError.message}`);
+        }
+
+        await notifyTenantBilling(
+          supabaseAdmin,
+          tenantId,
+          "trial-ending",
+          { trialEndsAt: trialEndIso, daysRemaining },
+          `stripe:${event.id}:trial-ending`,
+        );
+        console.log(
+          `[stripe-webhooks] trial_will_end handled: tenant=${tenantId} subscription=${subscription.id} trial_ends_at=${trialEndIso} days_remaining=${daysRemaining}`,
+        );
+        break;
+      }
+
+      case "checkout.session.async_payment_failed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        let tenantId = session.metadata?.workspace_id as string | undefined;
+        if (!tenantId && session.customer) {
+          tenantId = await findTenantByCustomer(supabaseAdmin, session.customer as string) ?? undefined;
+        }
+        if (!tenantId) {
+          console.warn(
+            `[stripe-webhooks] async_payment_failed: no tenant resolved for session=${session.id} customer=${session.customer}`,
+          );
+          break;
+        }
+
+        const { error: lockError } = await supabaseAdmin
+          .from("tenants")
+          .update({
+            access_enabled: false,
+            access_locked_reason: "payment_failed",
+          })
+          .eq("id", tenantId);
+        if (lockError) {
+          throw new Error(`Failed to lock tenant ${tenantId} after async payment failure: ${lockError.message}`);
+        }
+
+        await notifyTenantBilling(
+          supabaseAdmin,
+          tenantId,
+          "payment-failed",
+          {},
+          `stripe:${event.id}:payment-failed`,
+        );
+        console.log(
+          `[stripe-webhooks] async_payment_failed handled: tenant=${tenantId} session=${session.id}, access locked`,
+        );
         break;
       }
 
@@ -476,10 +531,19 @@ Deno.serve(async (req) => {
             { renewalDate, amount },
             `stripe:${event.id}:renewal-reminder`,
           );
+          console.log(`[stripe-webhooks] invoice.upcoming handled: tenant=${tenantId} renewal=${renewalDate}`);
+        } else {
+          console.warn(`[stripe-webhooks] invoice.upcoming: no tenant for customer=${invoice.customer}`);
         }
         break;
       }
+
+      default: {
+        console.log(`[stripe-webhooks] Unhandled event type ${event.type} (${event.id}) — acknowledged`);
+        break;
+      }
     }
+
   } catch (err: any) {
     console.error(`Error processing ${event.type} (${event.id}):`, err);
     // Remove the idempotency record so Stripe's retry can reprocess after the misconfiguration is fixed.
