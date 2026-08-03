@@ -460,6 +460,10 @@ export default function AdminDashboard() {
           ))}
         </div>
 
+        <BillingReconciliationPanel />
+
+
+
         {/* Search & Filters */}
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
