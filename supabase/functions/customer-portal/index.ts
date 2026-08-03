@@ -18,6 +18,68 @@ const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   },
 };
 
+const PORTAL_CONFIG_VERSION = "strukcha-portal-v1";
+
+/**
+ * Ensures a Stripe Customer Portal configuration exists with subscription updates
+ * (plan switching + billing interval switching) enabled for our configured products.
+ * Reuses/updates the configuration tagged with our metadata marker so we never create duplicates.
+ */
+async function ensurePortalConfiguration(stripe: Stripe): Promise<string | undefined> {
+  // Build the list of switchable products from configured env vars only — no fallbacks.
+  const products: { product: string; prices: string[] }[] = [];
+  const addProduct = (productId: string | undefined, prices: (string | undefined)[]) => {
+    const validPrices = prices.filter(Boolean) as string[];
+    if (!productId || validPrices.length === 0) return;
+    if (products.some((p) => p.product === productId)) return;
+    products.push({ product: productId, prices: validPrices });
+  };
+  addProduct(Deno.env.get("STRIPE_STARTER_PRODUCT_ID"), [
+    PRICE_MAP.starter.monthly,
+    PRICE_MAP.starter.annual,
+  ]);
+  addProduct(Deno.env.get("STRIPE_PRO_PRODUCT_ID"), [
+    PRICE_MAP.pro.monthly,
+    PRICE_MAP.pro.annual,
+  ]);
+
+  if (products.length === 0) {
+    console.warn("[customer-portal] No configured products/prices — using Stripe default portal configuration");
+    return undefined;
+  }
+
+  const features: Stripe.BillingPortal.ConfigurationCreateParams.Features = {
+    customer_update: { enabled: true, allowed_updates: ["name", "email", "address", "phone"] },
+    invoice_history: { enabled: true },
+    payment_method_update: { enabled: true },
+    subscription_cancel: { enabled: true, mode: "at_period_end", proration_behavior: "none" },
+    subscription_update: {
+      enabled: true,
+      default_allowed_updates: ["price", "promotion_code"],
+      proration_behavior: "create_prorations",
+      products,
+    },
+  };
+
+  // Reuse an existing managed configuration if present
+  const existing = await stripe.billingPortal.configurations.list({ limit: 100, active: true });
+  const managed = existing.data.find((c) => c.metadata?.managed_by === PORTAL_CONFIG_VERSION);
+
+  if (managed) {
+    const updated = await stripe.billingPortal.configurations.update(managed.id, { features });
+    console.log("[customer-portal] Updated managed portal configuration", updated.id);
+    return updated.id;
+  }
+
+  const created = await stripe.billingPortal.configurations.create({
+    features,
+    business_profile: {},
+    metadata: { managed_by: PORTAL_CONFIG_VERSION },
+  });
+  console.log("[customer-portal] Created managed portal configuration", created.id);
+  return created.id;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
