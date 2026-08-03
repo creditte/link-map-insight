@@ -10,6 +10,11 @@ import {
   getTrialEndSeconds,
   toISO,
 } from "../_shared/stripe-subscription.ts";
+import {
+  buildPlanConfig,
+  buildPriceMap,
+  resolvePlanFromSubscription as sharedResolvePlan,
+} from "../_shared/stripe-plans.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
