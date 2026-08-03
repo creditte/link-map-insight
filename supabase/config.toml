@@ -47,6 +47,8 @@ project_id = "kdwmetjwxfzovdmarijl"
     verify_jwt = true
   [functions.send-billing-reminders]
     verify_jwt = false
+  [functions.expire-trials]
+    verify_jwt = false
   [functions.preview-transactional-email]
     verify_jwt = false
   [functions.handle-email-unsubscribe]
