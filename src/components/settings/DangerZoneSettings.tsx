@@ -65,7 +65,7 @@ export default function DangerZoneSettings() {
     return () => { cancelled = true; };
   }, [open]);
 
-  const canSubmit = confirmText === "DELETE" && acknowledged && !submitting;
+  const canSubmit = confirmText === "DELETE" && acknowledged && password.length > 0 && !submitting;
 
   const handleDelete = async () => {
     setSubmitting(true);
