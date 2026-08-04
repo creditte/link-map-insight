@@ -6,6 +6,8 @@ import FeedbackSettings from "@/components/settings/FeedbackSettings";
 import MfaSettings from "@/components/settings/MfaSettings";
 import BillingSettings from "@/components/settings/BillingSettings";
 import IntegrationsSettings from "@/components/settings/IntegrationsSettings";
+import DangerZoneSettings from "@/components/settings/DangerZoneSettings";
+
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { Skeleton } from "@/components/ui/skeleton";
 
