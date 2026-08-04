@@ -152,7 +152,7 @@ export default function DangerZoneSettings() {
                 placeholder="Your account password"
               />
               <p className="text-xs text-muted-foreground">
-                If you sign in with Xero and have two-factor authentication enabled, you can leave this blank.
+                Enter your account password to confirm this deletion.
               </p>
             </div>
 
