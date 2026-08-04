@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("subscription_status, subscription_plan, selected_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_limit, diagram_count, cancel_at_period_end, stripe_customer_id, stripe_subscription_id, trial_used_at, last_plan_switch_at")
+      .select("subscription_status, subscription_plan, selected_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_limit, diagram_count, cancel_at_period_end, stripe_customer_id, stripe_subscription_id, trial_used_at, last_plan_switch_at, payment_method_captured")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
@@ -38,6 +38,7 @@ Deno.serve(async (req) => {
     // Mark expired trials and lock access (no subscription = must subscribe)
     if (
       tenant.subscription_status === "trialing" &&
+      !tenant.stripe_subscription_id &&
       tenant.trial_ends_at &&
       new Date(tenant.trial_ends_at) < new Date()
     ) {
@@ -212,8 +213,15 @@ Deno.serve(async (req) => {
     const effectiveAccessLockedReason = enforcementEnabled ? tenant.access_locked_reason : null;
     const exposedDiagramLimit = enforcementEnabled ? effectiveDiagramLimit : Number.MAX_SAFE_INTEGER;
 
+    // Mandatory payment-method capture during registration is enforced
+    // independently of the billing enforcement kill-switch.
+    const paymentMethodRequired =
+      tenant.payment_method_captured !== true && !tenant.stripe_subscription_id;
+
     return new Response(JSON.stringify({
       enforcement_enabled: enforcementEnabled,
+      payment_method_required: paymentMethodRequired,
+      payment_method_captured: tenant.payment_method_captured === true,
       subscription_status: tenant.subscription_status,
       subscription_plan: tenant.subscription_plan,
       selected_plan: tenant.selected_plan,
