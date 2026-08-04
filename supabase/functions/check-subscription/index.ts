@@ -104,11 +104,12 @@ Deno.serve(async (req) => {
             let resolvedLimit: number | null = null;
             if (productId && starterProductIds.includes(productId)) {
               resolvedPlan = "starter";
-              resolvedLimit = sub.status === "active" ? 15 : 3;
+              resolvedLimit = 15;
             } else if (productId && proProductIds.includes(productId)) {
               resolvedPlan = "pro";
-              resolvedLimit = sub.status === "active" ? 50 : 3;
+              resolvedLimit = 50;
             }
+
 
             if (!resolvedPlan || resolvedLimit === null) {
               // Refuse to self-heal with an unknown Stripe product — do NOT grant any plan benefits.
