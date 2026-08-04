@@ -91,9 +91,11 @@ export default function SettingsPage() {
           </TabsContent>
         )}
 
-        <TabsContent value="firm" className="mt-4">
+        <TabsContent value="firm" className="mt-4 space-y-6">
           <TenantSettings isAdmin={isOwnerOrAdmin} />
+          {isOwner && <DangerZoneSettings />}
         </TabsContent>
+
 
         <TabsContent value="integrations" className="mt-4">
           <IntegrationsSettings />
