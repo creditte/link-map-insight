@@ -65,7 +65,7 @@ export default function DangerZoneSettings() {
     return () => { cancelled = true; };
   }, [open]);
 
-  const canSubmit = confirmText === "DELETE" && acknowledged && !submitting;
+  const canSubmit = confirmText === "DELETE" && acknowledged && password.length > 0 && !submitting;
 
   const handleDelete = async () => {
     setSubmitting(true);
@@ -152,7 +152,7 @@ export default function DangerZoneSettings() {
                 placeholder="Your account password"
               />
               <p className="text-xs text-muted-foreground">
-                If you sign in with Xero and have two-factor authentication enabled, you can leave this blank.
+                Enter your account password to confirm this deletion.
               </p>
             </div>
 

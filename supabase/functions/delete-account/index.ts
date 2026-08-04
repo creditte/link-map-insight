@@ -67,30 +67,7 @@ Deno.serve(async (req) => {
 
     const tenantId = tu.tenant_id as string;
 
-    // --- Re-authentication ---------------------------------------------------
-    const { data: mfa } = await admin
-      .from("mfa_settings")
-      .select("user_id")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (mfa) {
-      const { data: verification } = await admin
-        .from("mfa_verifications")
-        .select("id, expires_at")
-        .eq("user_id", user.id)
-        .gt("expires_at", new Date().toISOString())
-        .order("verified_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (!verification) {
-        return json(
-          { error: "Your two-factor verification has expired. Sign in again, then retry the deletion." },
-          403,
-        );
-      }
-    }
-
+    // --- Re-authentication (password only) -----------------------------------
     if (password) {
       const reauth = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
       const { error: pwErr } = await reauth.auth.signInWithPassword({
@@ -98,7 +75,7 @@ Deno.serve(async (req) => {
         password,
       });
       if (pwErr) return json({ error: "Incorrect password. Please try again." }, 403);
-    } else if (!mfa) {
+    } else if (!dryRun) {
       return json({ error: "Enter your password to confirm deletion." }, 400);
     }
 
