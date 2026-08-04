@@ -87,29 +87,31 @@ Deno.serve(async (req) => {
     // Get tenant
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_customer_id, stripe_subscription_id, subscription_status, trial_used_at")
+      .select("id, stripe_customer_id, stripe_subscription_id, subscription_status, trial_used_at, payment_method_captured")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
 
-    // Only block if there's a real active Stripe subscription
-    if (tenant.stripe_subscription_id && ["active"].includes(tenant.subscription_status)) {
-      // Double-check with Stripe that the subscription is genuinely active
-      const stripe2 = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
+    const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
+
+    // ── Duplicate-subscription protection ─────────────────────────────
+    // 1. Check the subscription we already track.
+    if (tenant.stripe_subscription_id) {
       try {
-        const existingSub = await stripe2.subscriptions.retrieve(tenant.stripe_subscription_id);
-        if (existingSub.status === "active" || existingSub.status === "trialing") {
-          return new Response(JSON.stringify({ error: "Workspace already has an active subscription" }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+        const existingSub = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+        if (["active", "trialing", "past_due", "unpaid"].includes(existingSub.status)) {
+          return new Response(
+            JSON.stringify({
+              error: "Workspace already has a subscription. Manage it from the customer portal.",
+              already_subscribed: true,
+            }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
         }
       } catch {
         // Subscription doesn't exist in Stripe, allow checkout
       }
     }
-
-    const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
 
     // Create or retrieve Stripe customer
     let customerId = tenant.stripe_customer_id;
@@ -125,19 +127,53 @@ Deno.serve(async (req) => {
         .eq("id", tenant.id);
     }
 
+    // 2. Authoritative check against Stripe: never create a second subscription
+    // for the same customer (e.g. if the DB lost the subscription id).
+    const customerSubs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 });
+    const liveSub = customerSubs.data.find((s) =>
+      ["active", "trialing", "past_due", "unpaid"].includes(s.status)
+    );
+    if (liveSub) {
+      // Re-link and refuse to create a duplicate.
+      await supabaseAdmin
+        .from("tenants")
+        .update({ stripe_subscription_id: liveSub.id, payment_method_captured: true })
+        .eq("id", tenant.id);
+      return new Response(
+        JSON.stringify({
+          error: "Workspace already has a subscription. Manage it from the customer portal.",
+          already_subscribed: true,
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // The 7-day free trial is granted by Stripe exactly once per workspace.
+    const grantTrial = !tenant.trial_used_at && customerSubs.data.length === 0;
+
     const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";
 
     const sessionParams: any = {
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
+      // Always collect and store a card, even when the trial makes the first
+      // invoice A$0 — Stripe vaults it and charges it when the trial ends.
+      payment_method_collection: "always",
       success_url: `${origin}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/signup`,
+      cancel_url: `${origin}/complete-setup?checkout=cancelled`,
       metadata: { workspace_id: tenant.id, owner_user_id: user.id },
       subscription_data: {
         metadata: { workspace_id: tenant.id },
+        ...(grantTrial
+          ? {
+              trial_period_days: 7,
+              trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
+            }
+          : {}),
       },
     };
+
 
     const session = await stripe.checkout.sessions.create(sessionParams);
 
