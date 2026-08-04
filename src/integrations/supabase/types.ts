@@ -1190,6 +1190,8 @@ export type Database = {
           last_plan_switch_at: string | null
           logo_url: string | null
           name: string
+          payment_method_captured: boolean
+          payment_setup_completed_at: string | null
           selected_plan: string | null
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
@@ -1222,6 +1224,8 @@ export type Database = {
           last_plan_switch_at?: string | null
           logo_url?: string | null
           name: string
+          payment_method_captured?: boolean
+          payment_setup_completed_at?: string | null
           selected_plan?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
@@ -1254,6 +1258,8 @@ export type Database = {
           last_plan_switch_at?: string | null
           logo_url?: string | null
           name?: string
+          payment_method_captured?: boolean
+          payment_setup_completed_at?: string | null
           selected_plan?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null

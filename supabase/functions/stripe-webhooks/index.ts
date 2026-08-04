@@ -152,6 +152,8 @@ Deno.serve(async (req) => {
         const updateData: Record<string, any> = {
           stripe_subscription_id: sub.id,
           stripe_customer_id: session.customer as string,
+          payment_method_captured: true,
+          payment_setup_completed_at: new Date().toISOString(),
           trial_used_at: new Date().toISOString(),
           subscription_status: status,
           subscription_plan: plan,
@@ -208,10 +210,12 @@ Deno.serve(async (req) => {
           access_enabled: accessEnabled,
           access_locked_reason: accessEnabled ? null : (status === "canceled" ? "subscription_canceled" : `subscription_${status}`),
           diagram_limit: diagramLimit,
+          payment_method_captured: true,
         };
 
         if (life.trialEnd) {
           updateData.trial_ends_at = life.trialEnd;
+          updateData.trial_used_at = updateData.trial_used_at ?? new Date().toISOString();
         }
 
         await supabaseAdmin.from("tenants").update(updateData).eq("id", tenantId);
@@ -360,6 +364,7 @@ Deno.serve(async (req) => {
             .update({
               access_enabled: false,
               access_locked_reason: "payment_failed",
+              subscription_status: "past_due",
             })
             .eq("id", tenantId);
           console.log(`Tenant ${tenantId} payment failed, access locked`);
