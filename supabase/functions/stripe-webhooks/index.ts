@@ -513,10 +513,31 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Only now is the event truly handled — mark it completed so retries skip it.
+    const { error: completeError } = await supabaseAdmin
+      .from("stripe_webhook_events")
+      .update({ status: "completed", completed_at: new Date().toISOString(), last_error: null })
+      .eq("id", event.id);
+    if (completeError) {
+      console.error(`[stripe-webhooks] Failed to mark event ${event.id} completed:`, completeError.message);
+      // Ask Stripe to retry: the handler succeeded but the marker did not persist,
+      // and every handler above is idempotent (state is mirrored, not incremented).
+      return new Response(
+        JSON.stringify({ error: "Failed to persist webhook completion" }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
   } catch (err: any) {
     console.error(`Error processing ${event.type} (${event.id}):`, err);
-    // Remove the idempotency record so Stripe's retry can reprocess after the misconfiguration is fixed.
-    await supabaseAdmin.from("stripe_webhook_events").delete().eq("id", event.id);
+    // Keep the row for observability but leave it un-completed so Stripe's retry reprocesses it.
+    await supabaseAdmin
+      .from("stripe_webhook_events")
+      .update({
+        status: "failed",
+        completed_at: null,
+        last_error: String(err?.message ?? err).slice(0, 2000),
+      })
+      .eq("id", event.id);
     return new Response(
       JSON.stringify({ error: err?.message ?? "Webhook handler failed" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
@@ -528,3 +549,4 @@ Deno.serve(async (req) => {
     headers: { "Content-Type": "application/json" },
   });
 });
+
