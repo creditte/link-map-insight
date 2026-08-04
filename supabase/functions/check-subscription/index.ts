@@ -104,11 +104,12 @@ Deno.serve(async (req) => {
             let resolvedLimit: number | null = null;
             if (productId && starterProductIds.includes(productId)) {
               resolvedPlan = "starter";
-              resolvedLimit = sub.status === "active" ? 15 : 3;
+              resolvedLimit = 15;
             } else if (productId && proProductIds.includes(productId)) {
               resolvedPlan = "pro";
-              resolvedLimit = sub.status === "active" ? 50 : 3;
+              resolvedLimit = 50;
             }
+
 
             if (!resolvedPlan || resolvedLimit === null) {
               // Refuse to self-heal with an unknown Stripe product — do NOT grant any plan benefits.
@@ -173,8 +174,14 @@ Deno.serve(async (req) => {
     }
 
     // Determine effective diagram_limit strictly from subscription_plan; never fall back to a Pro-sized limit.
-    let effectiveDiagramLimit = 3; // trialing, trial_expired, canceled
-    if (["active", "past_due"].includes(tenant.subscription_status)) {
+    // A Stripe-backed subscription (including one still in its Stripe-managed trial) keeps its plan limit —
+    // only self-serve trials with no Stripe subscription are capped at 3.
+    const hasStripeSubscription = !!tenant.stripe_subscription_id;
+    let effectiveDiagramLimit = 3; // self-serve trial, trial_expired, canceled
+    if (
+      ["active", "past_due"].includes(tenant.subscription_status) ||
+      (tenant.subscription_status === "trialing" && hasStripeSubscription)
+    ) {
       if (tenant.subscription_plan === "starter") {
         effectiveDiagramLimit = 15;
       } else if (tenant.subscription_plan === "pro") {
@@ -188,6 +195,7 @@ Deno.serve(async (req) => {
         );
       }
     }
+
 
     // Persist corrected limit to DB if it differs
     if (effectiveDiagramLimit !== tenant.diagram_limit) {
