@@ -59,8 +59,22 @@ export default function Login() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    if (params.get("account_deleted") !== "1") return;
+    toast({
+      title: "Account deleted",
+      description:
+        "Your account and all firm data have been permanently deleted. Any active subscription or trial was cancelled.",
+    });
+    params.delete("account_deleted");
+    const q = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${q ? `?${q}` : ""}`);
+  }, [toast]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
     const mode = params.get("xero_login");
     if (!mode) return;
+
 
     if (mode === "no_account") {
       toast({

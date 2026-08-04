@@ -6,6 +6,8 @@ import FeedbackSettings from "@/components/settings/FeedbackSettings";
 import MfaSettings from "@/components/settings/MfaSettings";
 import BillingSettings from "@/components/settings/BillingSettings";
 import IntegrationsSettings from "@/components/settings/IntegrationsSettings";
+import DangerZoneSettings from "@/components/settings/DangerZoneSettings";
+
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -91,9 +93,11 @@ export default function SettingsPage() {
           </TabsContent>
         )}
 
-        <TabsContent value="firm" className="mt-4">
+        <TabsContent value="firm" className="mt-4 space-y-6">
           <TenantSettings isAdmin={isOwnerOrAdmin} />
+          {isOwner && <DangerZoneSettings />}
         </TabsContent>
+
 
         <TabsContent value="integrations" className="mt-4">
           <IntegrationsSettings />
