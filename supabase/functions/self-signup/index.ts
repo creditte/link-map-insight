@@ -82,32 +82,31 @@ Deno.serve(async (req) => {
 
     const userId = authData.user.id;
 
-    // 2. Create the tenant
+    // 2. Create the tenant — no trial yet. The 7-day trial is created and managed
+    // by Stripe once the owner attaches a payment method via Checkout.
     const now = new Date();
-    // 7-day free trial
-    const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-    // Determine plan limits
-    const planLimits: Record<string, number> = { starter: 15, pro: 50 };
-    const diagramLimit = planLimits[plan] || 50;
 
     const { data: tenant, error: tenantError } = await supabaseAdmin
       .from("tenants")
       .insert({
         name: firmName.toLowerCase().replace(/\s+/g, "-"),
         firm_name: firmName,
-        trial_starts_at: now.toISOString(),
-        trial_ends_at: trialEnd.toISOString(),
-        subscription_status: "trialing",
+        subscription_status: "incomplete",
         subscription_plan: plan,
-        diagram_limit: diagramLimit,
+        selected_plan: plan,
+        diagram_limit: 3,
+        payment_method_captured: false,
+        access_enabled: false,
+        access_locked_reason: "payment_method_required",
       })
       .select("id")
       .single();
 
     if (tenantError) throw tenantError;
 
-    // 2b. Create Stripe customer only (NO subscription yet — subscription created via Checkout after trial)
+    // 2b. Create the Stripe customer only. The trialing subscription is created by
+    // Stripe Checkout (mode=subscription, trial_period_days=7) so the card is
+    // authorised and stored by Stripe without an immediate charge.
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (stripeKey) {
       try {
@@ -119,10 +118,9 @@ Deno.serve(async (req) => {
 
         await supabaseAdmin.from("tenants").update({
           stripe_customer_id: customer.id,
-          trial_used_at: now.toISOString(),
         }).eq("id", tenant.id);
 
-        console.log(`[Signup] Stripe customer ${customer.id} created (no subscription — trial only)`);
+        console.log(`[Signup] Stripe customer ${customer.id} created (awaiting payment method)`);
       } catch (stripeErr: any) {
         console.error("[Signup] Stripe setup failed:", stripeErr.message);
       }
