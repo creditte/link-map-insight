@@ -4,6 +4,8 @@ import { useAuth } from "@/hooks/useAuth";
 
 export interface BillingStatus {
   enforcement_enabled: boolean;
+  payment_method_required: boolean;
+  payment_method_captured: boolean;
   subscription_status: string;
   subscription_plan: string | null;
   selected_plan: string | null;

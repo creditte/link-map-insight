@@ -205,10 +205,10 @@ export default function Signup() {
     const handleStartTrial = async () => {
       setStartingCheckout(true);
       try {
-        // Sign in the user — subscription already created during signup
+        // Sign in, then require a payment method before the trial can start.
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
-        navigate("/");
+        navigate("/complete-setup");
       } catch (err: any) {
         toast({ title: "Error", description: err.message, variant: "destructive" });
         navigate("/login");
@@ -224,14 +224,16 @@ export default function Signup() {
             <ShieldCheck className="h-8 w-8 text-primary" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Email verified!</h1>
-          <p className="mt-3 text-muted-foreground">Your 7-day free trial is ready. Let's get started!</p>
+          <p className="mt-3 text-muted-foreground">
+            One last step: add a payment method to start your 7-day free trial. You won't be charged today.
+          </p>
           <Button className="mt-8 w-full h-11 font-semibold" onClick={handleStartTrial} disabled={startingCheckout}>
             {startingCheckout ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Signing in…
               </>
             ) : (
-              "Get Started"
+              "Continue to payment setup"
             )}
           </Button>
         </div>

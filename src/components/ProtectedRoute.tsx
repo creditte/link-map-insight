@@ -323,6 +323,13 @@ function BillingGate({ children }: { children: React.ReactNode }) {
 
   // Fail open when billing state can't be read — never lock a firm out on a
   // transient error; the DB triggers remain the hard backstop.
+  // Mandatory registration payment-method capture — enforced regardless of the
+  // billing enforcement kill-switch, since no Stripe trial exists without a card.
+  if (billing?.payment_method_required === true) {
+    trace("ProtectedRoute", "decision: payment method required → /complete-setup");
+    return <Navigate to="/complete-setup" replace />;
+  }
+
   if (billing?.enforcement_enabled === true && billing.access_enabled === false) {
     trace("ProtectedRoute", `decision: billing locked (${billing.access_locked_reason ?? "unknown"})`);
     return <Navigate to="/subscription-locked" replace />;
