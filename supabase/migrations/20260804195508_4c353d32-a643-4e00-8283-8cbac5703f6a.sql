@@ -1,0 +1,1 @@
+UPDATE public.app_config SET value = 'true'::jsonb WHERE key = 'billing_enforcement_enabled';
