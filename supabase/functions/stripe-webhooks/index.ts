@@ -106,26 +106,45 @@ Deno.serve(async (req) => {
     return new Response(`Webhook Error: ${err.message}`, { status: 400 });
   }
 
-  // Idempotency check
+  // Idempotency: only events that fully completed are skipped. Rows left in
+  // 'processing'/'failed' state are re-processed on Stripe's retry.
   const { data: existing } = await supabaseAdmin
     .from("stripe_webhook_events")
-    .select("id")
+    .select("id, status, attempts")
     .eq("id", event.id)
     .maybeSingle();
 
-  if (existing) {
+  if (existing?.status === "completed") {
     console.log(`Event ${event.id} already processed, skipping`);
     return new Response(JSON.stringify({ received: true }), { status: 200 });
   }
 
-  // Record event
-  await supabaseAdmin.from("stripe_webhook_events").insert({
-    id: event.id,
-    event_type: event.type,
-    payload: event.data.object as any,
-  });
+  const attempts = (existing?.attempts ?? 0) + 1;
 
-  console.log(`Processing webhook: ${event.type} (${event.id})`);
+  // Claim the event: insert on first delivery, or re-claim a previously failed one.
+  const { error: claimError } = await supabaseAdmin
+    .from("stripe_webhook_events")
+    .upsert({
+      id: event.id,
+      event_type: event.type,
+      payload: event.data.object as any,
+      status: "processing",
+      attempts,
+      last_error: null,
+      completed_at: null,
+      processed_at: new Date().toISOString(),
+    }, { onConflict: "id" });
+
+  if (claimError) {
+    console.error(`[stripe-webhooks] Failed to claim event ${event.id}:`, claimError.message);
+    return new Response(
+      JSON.stringify({ error: "Failed to record webhook event" }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  console.log(`Processing webhook: ${event.type} (${event.id}) attempt=${attempts}`);
+
 
   try {
     switch (event.type) {
