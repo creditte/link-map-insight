@@ -185,20 +185,21 @@ Deno.serve(async (req) => {
 
     const userId = authData.user.id;
     const now = new Date();
-    const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const planLimits: Record<string, number> = { starter: 15, pro: 50 };
-    const diagramLimit = planLimits[plan] || 50;
 
+    // No trial here — Stripe creates and manages the 7-day trial once the owner
+    // attaches a payment method through Checkout (/complete-setup).
     const { data: tenant, error: tenantError } = await supabase
       .from("tenants")
       .insert({
         name: firmName.toLowerCase().replace(/\s+/g, "-"),
         firm_name: firmName,
-        trial_starts_at: now.toISOString(),
-        trial_ends_at: trialEnd.toISOString(),
-        subscription_status: "trialing",
+        subscription_status: "incomplete",
         subscription_plan: plan,
-        diagram_limit: diagramLimit,
+        selected_plan: plan,
+        diagram_limit: 3,
+        payment_method_captured: false,
+        access_enabled: false,
+        access_locked_reason: "payment_method_required",
       })
       .select("id")
       .single();
@@ -218,7 +219,6 @@ Deno.serve(async (req) => {
         });
         await supabase.from("tenants").update({
           stripe_customer_id: customer.id,
-          trial_used_at: now.toISOString(),
         }).eq("id", tenant.id);
       } catch (stripeErr: unknown) {
         console.error("[xero-signup-callback] Stripe:", stripeErr);

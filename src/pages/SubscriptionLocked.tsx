@@ -9,6 +9,25 @@ const REASON_MESSAGES: Record<string, { title: string; description: string }> = 
     title: "Your Free Trial Has Ended",
     description: "Your 7-day trial has expired. Subscribe to strukcha Pro to continue using your workspace.",
   },
+  payment_method_required: {
+    title: "Payment Method Required",
+    description:
+      "Add a payment method to start your 7-day free trial. Your card is stored securely by Stripe and won't be charged today.",
+  },
+  subscription_past_due: {
+    title: "Payment Failed",
+    description:
+      "We couldn't charge your saved card. Update your payment method to restore access to your workspace.",
+  },
+  subscription_unpaid: {
+    title: "Payment Failed",
+    description:
+      "Your subscription is unpaid. Update your payment method to restore access to your workspace.",
+  },
+  subscription_incomplete: {
+    title: "Finish Setting Up Billing",
+    description: "Your subscription setup wasn't completed. Add a payment method to continue.",
+  },
   payment_failed: {
     title: "Payment Failed",
     description: "Your last payment didn't go through. Update your payment method to restore access.",
@@ -30,12 +49,13 @@ export default function SubscriptionLocked() {
 
   const reason = billing?.access_locked_reason || "default";
   const msg = REASON_MESSAGES[reason] || REASON_MESSAGES.default;
+  const needsCheckout = reason === "trial_expired" || reason === "payment_method_required" || reason === "subscription_canceled";
   const isTrialExpired = reason === "trial_expired";
 
   const handleAction = async () => {
     setLoading(true);
     try {
-      if (isTrialExpired) {
+      if (needsCheckout) {
         await startCheckout();
       } else {
         await openPortal();
@@ -82,7 +102,11 @@ export default function SubscriptionLocked() {
 
         <Button onClick={handleAction} disabled={loading} className="w-full h-11 font-semibold gap-2">
           <CreditCard className="h-4 w-4" />
-          {isTrialExpired ? "Subscribe Now" : "Manage Billing"}
+          {reason === "payment_method_required"
+            ? "Add Payment Method"
+            : needsCheckout
+              ? "Subscribe Now"
+              : "Update Payment Method"}
         </Button>
 
         <p className="text-xs text-muted-foreground">
