@@ -235,17 +235,19 @@ export default function Signup() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Email verified!</h1>
           <p className="mt-3 text-muted-foreground">
-            One last step: add a payment method to start your 7-day free trial. You won't be charged today.
+            Final step — start your 7-day free trial. Your card is stored securely by Stripe and
+            won't be charged today. Your account becomes active once the trial starts.
           </p>
           <Button className="mt-8 w-full h-11 font-semibold" onClick={handleStartTrial} disabled={startingCheckout}>
             {startingCheckout ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Signing in…
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Opening secure checkout…
               </>
             ) : (
-              "Continue to payment setup"
+              "Start free trial"
             )}
           </Button>
+
         </div>
       </div>
     );
