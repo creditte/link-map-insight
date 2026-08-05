@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { invokeTransactionalEmail } from "../_shared/invoke-transactional-email.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
