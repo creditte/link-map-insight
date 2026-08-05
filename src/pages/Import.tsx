@@ -24,6 +24,7 @@ export default function Import() {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [importError, setImportError] = useState<unknown>(null);
+  const [progress, setProgress] = useState<{ phase: string; rowIndex: number; total: number } | null>(null);
   const [importLogs, setImportLogs] = useState<any[]>([]);
   const [showInstructions, setShowInstructions] = useState(false);
   const { reportError: reportXeroError } = useXeroConnection();
@@ -56,6 +57,7 @@ export default function Import() {
     setImporting(true);
     setResult(null);
     setImportError(null);
+    setProgress(null);
 
     try {
       const text = await file.text();
@@ -64,10 +66,32 @@ export default function Import() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      setResult(data);
+
+      const jobId: string | undefined = data?.jobId;
+      if (!jobId) {
+        // Legacy synchronous response
+        setResult(data);
+        toast({
+          title: "Import complete",
+          description: `${data.entitiesCreated ?? 0} entities, ${data.relationshipsCreated ?? 0} relationships processed.`,
+        });
+        return;
+      }
+
+      toast({
+        title: "Import started",
+        description: "Large files are processed in the background — this page will update automatically.",
+      });
+
+      const final = await pollJob(jobId);
+      if (final.status === "failed") {
+        throw new Error(final.result?.error || "The import failed while processing.");
+      }
+      setResult(final.result);
+      setProgress(null);
       toast({
         title: "Import complete",
-        description: `${data.entitiesCreated ?? 0} entities, ${data.relationshipsCreated ?? 0} relationships processed.`,
+        description: `${final.result?.entitiesCreated ?? 0} entities, ${final.result?.relationshipsCreated ?? 0} relationships processed.`,
       });
     } catch (err: unknown) {
       setImportError(err);
@@ -78,6 +102,33 @@ export default function Import() {
       setImporting(false);
     }
   };
+
+  /** Poll the import_logs row until the background job finishes. */
+  const pollJob = async (jobId: string): Promise<{ status: string; result: any }> => {
+    const started = Date.now();
+    const TIMEOUT_MS = 20 * 60 * 1000;
+    while (Date.now() - started < TIMEOUT_MS) {
+      await new Promise((r) => setTimeout(r, 2500));
+      const { data } = await supabase
+        .from("import_logs")
+        .select("status, result")
+        .eq("id", jobId)
+        .maybeSingle();
+      if (!data) continue;
+      const res = data.result as any;
+      if (data.status === "processing") {
+        setProgress({
+          phase: res?.phase ?? "entities",
+          rowIndex: res?.rowIndex ?? 0,
+          total: res?.totalRowsParsed ?? 0,
+        });
+        continue;
+      }
+      return { status: data.status, result: res };
+    }
+    throw new Error("The import is taking longer than expected. Check Import History for the final result.");
+  };
+
 
   const handleDownloadSample = () => {
     const blob = new Blob([SAMPLE_CSV], { type: "text/csv" });
@@ -183,6 +234,30 @@ export default function Import() {
           <Button onClick={handleImport} disabled={!file || importing} className="w-full">
             {importing ? "Importing..." : "Import"}
           </Button>
+
+          {importing && progress && (
+            <div className="space-y-1.5 rounded-md border bg-muted/40 p-3">
+              <p className="text-xs font-medium text-foreground">
+                {progress.phase === "entities"
+                  ? "Creating entities…"
+                  : progress.phase === "structures"
+                    ? "Building structures…"
+                    : "Linking relationships…"}
+              </p>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{
+                    width: `${progress.total ? Math.min(100, Math.round((progress.rowIndex / progress.total) * 100)) : 5}%`,
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {progress.rowIndex} of {progress.total} rows processed. Large files continue in the background.
+              </p>
+            </div>
+          )}
+
 
           {importError && (
             <XeroErrorAlert

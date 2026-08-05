@@ -6,6 +6,12 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// How many rows a single execution processes per phase before it persists
+// progress and hands off to a fresh worker. Keeps every invocation well
+// inside the Edge Function CPU / wall-clock budget.
+const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "250");
+const MAX_WARNINGS = 200;
+
 // ── Canonical relationship mapping ──────────────────────────────────────
 interface CanonicalRule {
   type: string;
@@ -112,7 +118,6 @@ function parseCSV(text: string): RawRow[] {
     rel: header.findIndex((h) => h.includes("relationship")),
     related: header.findIndex((h) => h.includes("related")),
   };
-  console.log("CSV header indices:", JSON.stringify(idx), "from headers:", JSON.stringify(header));
 
   const rows: RawRow[] = [];
   for (let i = 1; i < lines.length; i++) {
@@ -157,6 +162,400 @@ function parseXML(text: string): RawRow[] {
   return rows;
 }
 
+// ── Job progress shape ──────────────────────────────────────────────────
+
+type Phase = "entities" | "structures" | "relationships" | "done";
+
+interface Progress {
+  phase: Phase;
+  rowIndex: number;
+  totalRowsParsed: number;
+  entitiesCreated: number;
+  entitiesUpdated: number;
+  relationshipsCreated: number;
+  relationshipsSkipped: number;
+  structuresCreated: number;
+  runs: number;
+  warnings: string[];
+}
+
+function emptyProgress(total: number): Progress {
+  return {
+    phase: "entities",
+    rowIndex: 0,
+    totalRowsParsed: total,
+    entitiesCreated: 0,
+    entitiesUpdated: 0,
+    relationshipsCreated: 0,
+    relationshipsSkipped: 0,
+    structuresCreated: 0,
+    runs: 0,
+    warnings: [],
+  };
+}
+
+// ── One bounded slice of work ───────────────────────────────────────────
+
+async function runSlice(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+  logId: string,
+  fileName: string,
+  content: string,
+  progressIn: Progress,
+): Promise<Progress> {
+  const isXml = fileName.toLowerCase().endsWith(".xml");
+  const rows = isXml ? parseXML(content) : parseCSV(content);
+  const p: Progress = { ...progressIn, warnings: [...progressIn.warnings] };
+  p.runs += 1;
+
+  const warn = (msg: string) => {
+    if (p.warnings.length < MAX_WARNINGS) p.warnings.push(msg);
+  };
+
+  const entityIdCache = new Map<string, string>();
+  const structureIdByName = new Map<string, string>();
+
+  async function resolveEntity(
+    name: string,
+    xpmUuid: string | null,
+    entityType: string,
+    rowNum: number,
+  ): Promise<string | null> {
+    if (!name) return null;
+
+    const cacheKey = xpmUuid || name;
+    if (entityIdCache.has(cacheKey)) return entityIdCache.get(cacheKey)!;
+    if (xpmUuid && entityIdCache.has(name)) return entityIdCache.get(name)!;
+
+    let existing: { id: string; entity_type: string; xpm_uuid: string | null } | null = null;
+
+    if (xpmUuid) {
+      const { data } = await supabase
+        .from("entities")
+        .select("id, entity_type, xpm_uuid")
+        .eq("tenant_id", tenantId)
+        .eq("xpm_uuid", xpmUuid)
+        .maybeSingle();
+      existing = data as typeof existing;
+    }
+
+    if (!existing) {
+      const { data } = await supabase
+        .from("entities")
+        .select("id, entity_type, xpm_uuid")
+        .eq("tenant_id", tenantId)
+        .eq("name", name)
+        .maybeSingle();
+      existing = data as typeof existing;
+    }
+
+    if (existing) {
+      const updates: Record<string, string> = {};
+      if (entityType !== "Unclassified" && existing.entity_type === "Unclassified") {
+        updates.entity_type = entityType;
+        updates.source = "imported";
+      }
+      if (xpmUuid && !existing.xpm_uuid) {
+        updates.xpm_uuid = xpmUuid;
+      }
+      if (Object.keys(updates).length > 0) {
+        await supabase.from("entities").update(updates).eq("id", existing.id);
+        p.entitiesUpdated++;
+      }
+
+      entityIdCache.set(cacheKey, existing.id);
+      if (cacheKey !== name) entityIdCache.set(name, existing.id);
+      return existing.id;
+    }
+
+    const { data, error } = await supabase
+      .from("entities")
+      .insert({
+        tenant_id: tenantId,
+        name,
+        xpm_uuid: xpmUuid,
+        entity_type: entityType,
+        source: "imported",
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      warn(`Row ${rowNum}: Failed to create entity "${name}": ${error.message}`);
+      return null;
+    }
+
+    entityIdCache.set(cacheKey, data.id as string);
+    if (cacheKey !== name) entityIdCache.set(name, data.id as string);
+    p.entitiesCreated++;
+    return data.id as string;
+  }
+
+  async function resolveStructure(name: string, rowNum: number): Promise<string | null> {
+    if (structureIdByName.has(name)) return structureIdByName.get(name)!;
+    const { data: existing } = await supabase
+      .from("structures")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("name", name)
+      .maybeSingle();
+    if (existing) {
+      structureIdByName.set(name, existing.id as string);
+      return existing.id as string;
+    }
+    const { data, error } = await supabase
+      .from("structures")
+      .insert({ tenant_id: tenantId, name })
+      .select("id")
+      .single();
+    if (error) {
+      warn(`Row ${rowNum}: Failed to create structure "${name}": ${error.message}`);
+      return null;
+    }
+    structureIdByName.set(name, data.id as string);
+    p.structuresCreated++;
+    return data.id as string;
+  }
+
+  async function linkRelToStructures(relationshipId: string, row: RawRow) {
+    if (!row.groups) return;
+    const groupNames = row.groups.split(";").map((g) => g.trim()).filter(Boolean);
+    for (const gn of groupNames) {
+      const structureId = await resolveStructure(gn, row.rowNum);
+      if (!structureId) continue;
+      await supabase
+        .from("structure_relationships")
+        .upsert(
+          { structure_id: structureId, relationship_id: relationshipId },
+          { onConflict: "structure_id,relationship_id", ignoreDuplicates: true },
+        );
+    }
+  }
+
+  const end = Math.min(rows.length, p.rowIndex + ROWS_PER_RUN);
+
+  // ── Phase 1: entities ────────────────────────────────────────────────
+  if (p.phase === "entities") {
+    for (let i = p.rowIndex; i < end; i++) {
+      const row = rows[i];
+      if (row.client) {
+        const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
+        await resolveEntity(row.client, row.uuid || null, et, row.rowNum);
+      }
+      if (row.relatedClient) {
+        await resolveEntity(row.relatedClient, null, "Unclassified", row.rowNum);
+      }
+    }
+    p.rowIndex = end;
+    if (p.rowIndex >= rows.length) {
+      p.phase = "structures";
+      p.rowIndex = 0;
+    }
+    return p;
+  }
+
+  // ── Phase 2: structures + membership ─────────────────────────────────
+  if (p.phase === "structures") {
+    for (let i = p.rowIndex; i < end; i++) {
+      const row = rows[i];
+      if (!row.groups) continue;
+      const groupNames = row.groups.split(";").map((g) => g.trim()).filter(Boolean);
+      for (const gn of groupNames) {
+        const structureId = await resolveStructure(gn, row.rowNum);
+        if (!structureId) continue;
+
+        const memberIds: string[] = [];
+        if (row.client) {
+          const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
+          const id = await resolveEntity(row.client, row.uuid || null, et, row.rowNum);
+          if (id) memberIds.push(id);
+        }
+        if (row.relatedClient) {
+          const id = await resolveEntity(row.relatedClient, null, "Unclassified", row.rowNum);
+          if (id) memberIds.push(id);
+        }
+        if (memberIds.length > 0) {
+          await supabase
+            .from("structure_entities")
+            .upsert(
+              memberIds.map((entity_id) => ({ structure_id: structureId, entity_id })),
+              { onConflict: "structure_id,entity_id", ignoreDuplicates: true },
+            );
+        }
+      }
+    }
+    p.rowIndex = end;
+    if (p.rowIndex >= rows.length) {
+      p.phase = "relationships";
+      p.rowIndex = 0;
+    }
+    return p;
+  }
+
+  // ── Phase 3: relationships ───────────────────────────────────────────
+  for (let i = p.rowIndex; i < end; i++) {
+    const row = rows[i];
+    if (!row.relationshipType || !row.client || !row.relatedClient) continue;
+
+    const normalizedRelType = row.relationshipType
+      .replace(/^"+|"+$/g, '')
+      .replace(/""+/g, '"')
+      .trim()
+      .toLowerCase();
+    const rule = RELATIONSHIP_MAP[normalizedRelType];
+    if (!rule) {
+      warn(`Row ${row.rowNum}: Unknown relationship type "${row.relationshipType}"`);
+      p.relationshipsSkipped++;
+      continue;
+    }
+
+    const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
+    let fromId = (await resolveEntity(row.client, row.uuid || null, et, row.rowNum)) ?? undefined;
+    let toId = (await resolveEntity(row.relatedClient, null, "Unclassified", row.rowNum)) ?? undefined;
+
+    if (!fromId || !toId) {
+      warn(`Row ${row.rowNum}: Could not resolve entities for "${row.client}" → "${row.relatedClient}"`);
+      p.relationshipsSkipped++;
+      continue;
+    }
+
+    if (rule.reverse) {
+      [fromId, toId] = [toId, fromId];
+    }
+
+    if (rule.type === "spouse" || rule.type === "partner") {
+      if (fromId > toId) [fromId, toId] = [toId, fromId];
+    }
+
+    // Enforce Individual → SMSF direction for member relationships
+    if (rule.type === "member") {
+      const { data: fromEnt } = await supabase.from("entities").select("entity_type").eq("id", fromId).single();
+      const { data: toEnt } = await supabase.from("entities").select("entity_type").eq("id", toId).single();
+      if (fromEnt?.entity_type === "smsf" && toEnt?.entity_type === "Individual") {
+        [fromId, toId] = [toId, fromId];
+      }
+    }
+
+    const { data: existingRel } = await supabase
+      .from("relationships")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("from_entity_id", fromId)
+      .eq("to_entity_id", toId)
+      .eq("relationship_type", rule.type)
+      .maybeSingle();
+
+    if (existingRel) {
+      await linkRelToStructures(existingRel.id as string, row);
+      continue;
+    }
+
+    const { data: relData, error: relErr } = await supabase
+      .from("relationships")
+      .insert({
+        tenant_id: tenantId,
+        from_entity_id: fromId,
+        to_entity_id: toId,
+        relationship_type: rule.type,
+        source: "imported",
+        confidence: "imported",
+      })
+      .select("id")
+      .single();
+
+    if (relErr) {
+      warn(`Row ${row.rowNum}: Failed to create relationship ${rule.type} "${row.client}" → "${row.relatedClient}": ${relErr.message}`);
+      p.relationshipsSkipped++;
+      continue;
+    }
+
+    p.relationshipsCreated++;
+    await linkRelToStructures(relData.id as string, row);
+
+    // Auto-set is_trustee_company for companies acting as trustee for a trust
+    if (rule.type === "trustee") {
+      const { data: trusteeEnt } = await supabase
+        .from("entities")
+        .select("entity_type, is_trustee_company")
+        .eq("id", fromId)
+        .single();
+      if (trusteeEnt && trusteeEnt.entity_type === "Company" && !trusteeEnt.is_trustee_company) {
+        await supabase.from("entities").update({ is_trustee_company: true }).eq("id", fromId);
+      }
+    }
+  }
+
+  p.rowIndex = end;
+  if (p.rowIndex >= rows.length) {
+    p.phase = "done";
+  }
+  return p;
+}
+
+// ── Background driver: one slice, persist, hand off to a fresh worker ──
+
+async function processJob(
+  supabase: ReturnType<typeof createClient>,
+  supabaseUrl: string,
+  serviceKey: string,
+  logId: string,
+) {
+  const { data: log } = await supabase
+    .from("import_logs")
+    .select("id, tenant_id, file_name, raw_payload, result, status")
+    .eq("id", logId)
+    .maybeSingle();
+
+  if (!log || log.status !== "processing") return;
+
+  const fileName = (log.file_name as string) ?? "import.csv";
+  const content = (log.raw_payload as string) ?? "";
+  const progress = (log.result as Progress | null) ?? emptyProgress(0);
+
+  try {
+    const next = await runSlice(
+      supabase,
+      log.tenant_id as string,
+      logId,
+      fileName,
+      content,
+      progress,
+    );
+
+    const done = next.phase === "done";
+    await supabase
+      .from("import_logs")
+      .update({ status: done ? "completed" : "processing", result: next })
+      .eq("id", logId);
+
+    if (!done) {
+      // Chain a fresh worker so no single execution can exhaust its budget.
+      await fetch(`${supabaseUrl}/functions/v1/import-xpm`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${serviceKey}`,
+          apikey: serviceKey,
+        },
+        body: JSON.stringify({ jobId: logId, __continue: true }),
+      });
+    }
+  } catch (err) {
+    console.error("import-xpm slice failed:", err);
+    await supabase
+      .from("import_logs")
+      .update({
+        status: "failed",
+        result: {
+          ...progress,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      })
+      .eq("id", logId);
+  }
+}
+
 // ── Main handler ────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -164,15 +563,35 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const supabase = createClient(supabaseUrl, serviceKey);
+
   try {
     const authHeader = req.headers.get("authorization") ?? "";
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const body = await req.json().catch(() => ({}));
 
-    const supabase = createClient(supabaseUrl, serviceKey);
+    // ── Internal continuation call ──────────────────────────────────────
+    if (body?.__continue && body?.jobId) {
+      if (authHeader !== `Bearer ${serviceKey}`) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const jobId = body.jobId as string;
+      // deno-lint-ignore no-explicit-any
+      const runtime = (globalThis as any).EdgeRuntime;
+      const task = processJob(supabase, supabaseUrl, serviceKey, jobId);
+      if (runtime?.waitUntil) runtime.waitUntil(task); else await task;
+      return new Response(JSON.stringify({ status: "processing", jobId }), {
+        status: 202,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    // Verify caller
+    // ── User-initiated import ───────────────────────────────────────────
     const anonClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -184,7 +603,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get tenant
     const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user.id });
     if (!tenantId) {
       return new Response(JSON.stringify({ error: "No tenant found" }), {
@@ -193,7 +611,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { fileName, content } = await req.json();
+    const { fileName, content } = body ?? {};
     if (!content || !fileName) {
       return new Response(JSON.stringify({ error: "Missing fileName or content" }), {
         status: 400,
@@ -201,8 +619,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Parse
-    const isXml = fileName.toLowerCase().endsWith(".xml");
+    const isXml = String(fileName).toLowerCase().endsWith(".xml");
     const rows = isXml ? parseXML(content) : parseCSV(content);
     if (rows.length === 0) {
       return new Response(JSON.stringify({ error: "No records found in file" }), {
@@ -211,313 +628,38 @@ Deno.serve(async (req) => {
       });
     }
 
-    const warnings: string[] = [];
-    let entitiesCreated = 0;
-    let entitiesUpdated = 0;
-    let relationshipsCreated = 0;
-    let relationshipsSkipped = 0;
-    let structuresCreated = 0;
+    const { data: log, error: logErr } = await supabase
+      .from("import_logs")
+      .insert({
+        tenant_id: tenantId,
+        user_id: user.id,
+        file_name: fileName,
+        raw_payload: content,
+        status: "processing",
+        result: emptyProgress(rows.length),
+      })
+      .select("id")
+      .single();
 
-    // ── Helper: resolve or create an entity by uuid/name ────────────────
-    const entityIdCache = new Map<string, string>();
-
-    async function resolveEntity(
-      name: string,
-      xpmUuid: string | null,
-      entityType: string,
-      rowNum: number,
-    ): Promise<string | null> {
-      if (!name) return null;
-
-      const cacheKey = xpmUuid || name;
-      if (entityIdCache.has(cacheKey)) return entityIdCache.get(cacheKey)!;
-      if (xpmUuid && entityIdCache.has(name)) return entityIdCache.get(name)!;
-
-      let existing: { id: string; entity_type: string; xpm_uuid: string | null } | null = null;
-
-      if (xpmUuid) {
-        const { data } = await supabase
-          .from("entities")
-          .select("id, entity_type, xpm_uuid")
-          .eq("tenant_id", tenantId)
-          .eq("xpm_uuid", xpmUuid)
-          .maybeSingle();
-        existing = data;
-      }
-
-      if (!existing) {
-        const { data } = await supabase
-          .from("entities")
-          .select("id, entity_type, xpm_uuid")
-          .eq("tenant_id", tenantId)
-          .eq("name", name)
-          .maybeSingle();
-        existing = data;
-      }
-
-      if (existing) {
-        const updates: Record<string, string> = {};
-        if (entityType !== "Unclassified" && existing.entity_type === "Unclassified") {
-          updates.entity_type = entityType;
-          updates.source = "imported";
-        }
-        if (xpmUuid && !existing.xpm_uuid) {
-          updates.xpm_uuid = xpmUuid;
-        }
-        if (Object.keys(updates).length > 0) {
-          await supabase.from("entities").update(updates).eq("id", existing.id);
-          entitiesUpdated++;
-        }
-
-        entityIdCache.set(cacheKey, existing.id);
-        if (cacheKey !== name) entityIdCache.set(name, existing.id);
-        return existing.id;
-      }
-
-      const { data, error } = await supabase
-        .from("entities")
-        .insert({
-          tenant_id: tenantId,
-          name,
-          xpm_uuid: xpmUuid,
-          entity_type: entityType,
-          source: "imported",
-        })
-        .select("id")
-        .single();
-
-      if (error) {
-        warnings.push(`Row ${rowNum}: Failed to create entity "${name}": ${error.message}`);
-        return null;
-      }
-
-      entityIdCache.set(cacheKey, data.id);
-      if (cacheKey !== name) entityIdCache.set(name, data.id);
-      entitiesCreated++;
-      return data.id;
+    if (logErr || !log) {
+      return new Response(JSON.stringify({ error: logErr?.message ?? "Failed to start import" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // ── 1. First pass: resolve all entities ─────────────────────────────
-    for (const row of rows) {
-      if (row.client) {
-        const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
-        await resolveEntity(row.client, row.uuid || null, et, row.rowNum);
-      }
-      if (row.relatedClient) {
-        await resolveEntity(row.relatedClient, null, "Unclassified", row.rowNum);
-      }
-    }
+    // deno-lint-ignore no-explicit-any
+    const runtime = (globalThis as any).EdgeRuntime;
+    const task = processJob(supabase, supabaseUrl, serviceKey, log.id as string);
+    if (runtime?.waitUntil) runtime.waitUntil(task); else await task;
 
-    // ── 2. Structures from Group(s) ────────────────────────────────────
-    const structureIdByName = new Map<string, string>();
-    const structureEntityPairs = new Set<string>();
-
-    for (const row of rows) {
-      if (!row.groups) continue;
-      const groupNames = row.groups.split(";").map((g) => g.trim()).filter(Boolean);
-      for (const gn of groupNames) {
-        if (!structureIdByName.has(gn)) {
-          const { data: existing } = await supabase
-            .from("structures")
-            .select("id")
-            .eq("tenant_id", tenantId)
-            .eq("name", gn)
-            .maybeSingle();
-          if (existing) {
-            structureIdByName.set(gn, existing.id);
-          } else {
-            const { data, error } = await supabase
-              .from("structures")
-              .insert({ tenant_id: tenantId, name: gn })
-              .select("id")
-              .single();
-            if (error) {
-              warnings.push(`Row ${row.rowNum}: Failed to create structure "${gn}": ${error.message}`);
-              continue;
-            }
-            structureIdByName.set(gn, data.id);
-            structuresCreated++;
-          }
-        }
-
-        const clientId = entityIdCache.get(row.uuid || row.client);
-        const structureId = structureIdByName.get(gn);
-        if (clientId && structureId) {
-          const pairKey = `${structureId}:${clientId}`;
-          if (!structureEntityPairs.has(pairKey)) {
-            structureEntityPairs.add(pairKey);
-            await supabase
-              .from("structure_entities")
-              .upsert({ structure_id: structureId, entity_id: clientId }, { onConflict: "structure_id,entity_id", ignoreDuplicates: true });
-          }
-        }
-
-        const relatedId = entityIdCache.get(row.relatedClient);
-        if (relatedId && structureId) {
-          const pairKey = `${structureId}:${relatedId}`;
-          if (!structureEntityPairs.has(pairKey)) {
-            structureEntityPairs.add(pairKey);
-            await supabase
-              .from("structure_entities")
-              .upsert({ structure_id: structureId, entity_id: relatedId }, { onConflict: "structure_id,entity_id", ignoreDuplicates: true });
-          }
-        }
-      }
-    }
-
-    // ── 3. Relationships – iterate EVERY row ───────────────────────────
-    const relDedupeSet = new Set<string>();
-
-    for (const row of rows) {
-      if (!row.relationshipType || !row.client || !row.relatedClient) continue;
-
-      const normalizedRelType = row.relationshipType
-        .replace(/^"+|"+$/g, '')
-        .replace(/""+/g, '"')
-        .trim()
-        .toLowerCase();
-      console.log(`Row ${row.rowNum}: relType="${row.relationshipType}" normalized="${normalizedRelType}" client="${row.client}" related="${row.relatedClient}"`);
-      const rule = RELATIONSHIP_MAP[normalizedRelType];
-      if (!rule) {
-        warnings.push(`Row ${row.rowNum}: Unknown relationship type "${row.relationshipType}"`);
-        relationshipsSkipped++;
-        continue;
-      }
-
-      const clientKey = row.uuid || row.client;
-      let fromId = entityIdCache.get(clientKey);
-      let toId = entityIdCache.get(row.relatedClient);
-
-      if (!fromId) {
-        const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
-        fromId = await resolveEntity(row.client, row.uuid || null, et, row.rowNum) ?? undefined;
-      }
-      if (!toId) {
-        toId = await resolveEntity(row.relatedClient, null, "Unclassified", row.rowNum) ?? undefined;
-      }
-
-      if (!fromId || !toId) {
-        warnings.push(`Row ${row.rowNum}: Could not resolve entities for "${row.client}" → "${row.relatedClient}"`);
-        relationshipsSkipped++;
-        continue;
-      }
-
-      if (rule.reverse) {
-        [fromId, toId] = [toId, fromId];
-      }
-
-      if (rule.type === "spouse" || rule.type === "partner") {
-        if (fromId > toId) [fromId, toId] = [toId, fromId];
-      }
-
-      // Enforce Individual → SMSF direction for member relationships
-      if (rule.type === "member") {
-        const fromEntity = entityIdCache.get(row.client) || entityIdCache.get(row.uuid);
-        const toEntity = entityIdCache.get(row.relatedClient);
-        // Look up entity types to check if we need to flip
-        if (fromId && toId) {
-          const { data: fromEnt } = await supabase.from("entities").select("entity_type").eq("id", fromId).single();
-          const { data: toEnt } = await supabase.from("entities").select("entity_type").eq("id", toId).single();
-          if (fromEnt?.entity_type === "smsf" && toEnt?.entity_type === "Individual") {
-            [fromId, toId] = [toId, fromId];
-          }
-        }
-      }
-
-      const dedupeKey = `${rule.type}:${fromId}:${toId}`;
-      if (relDedupeSet.has(dedupeKey)) {
-        continue;
-      }
-      relDedupeSet.add(dedupeKey);
-
-      const { data: existingRel } = await supabase
-        .from("relationships")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("from_entity_id", fromId)
-        .eq("to_entity_id", toId)
-        .eq("relationship_type", rule.type)
-        .maybeSingle();
-
-      if (existingRel) {
-        await linkRelToStructures(existingRel.id, row);
-        continue;
-      }
-
-      const { data: relData, error: relErr } = await supabase
-        .from("relationships")
-        .insert({
-          tenant_id: tenantId,
-          from_entity_id: fromId,
-          to_entity_id: toId,
-          relationship_type: rule.type,
-          source: "imported",
-          confidence: "imported",
-        })
-        .select("id")
-        .single();
-
-      if (relErr) {
-        warnings.push(`Row ${row.rowNum}: Failed to create relationship ${rule.type} "${row.client}" → "${row.relatedClient}": ${relErr.message}`);
-        relationshipsSkipped++;
-        continue;
-      }
-
-      relationshipsCreated++;
-      await linkRelToStructures(relData.id, row);
-
-      // Auto-set is_trustee_company for companies acting as trustee for a trust
-      if (rule.type === "trustee") {
-        // fromId is the trustee entity (person/company acting as trustee)
-        const { data: trusteeEnt } = await supabase.from("entities").select("entity_type, is_trustee_company").eq("id", fromId).single();
-        if (trusteeEnt && trusteeEnt.entity_type === "Company" && !trusteeEnt.is_trustee_company) {
-          await supabase.from("entities").update({ is_trustee_company: true }).eq("id", fromId);
-        }
-      }
-    }
-
-    async function linkRelToStructures(relationshipId: string, row: RawRow) {
-      if (!row.groups) return;
-      const groupNames = row.groups.split(";").map((g) => g.trim()).filter(Boolean);
-      for (const gn of groupNames) {
-        const structureId = structureIdByName.get(gn);
-        if (structureId) {
-          await supabase
-            .from("structure_relationships")
-            .upsert(
-              { structure_id: structureId, relationship_id: relationshipId },
-              { onConflict: "structure_id,relationship_id", ignoreDuplicates: true }
-            );
-        }
-      }
-    }
-
-    // ── 4. Import log ──────────────────────────────────────────────────
-    const result = {
-      entitiesCreated,
-      entitiesUpdated,
-      relationshipsCreated,
-      relationshipsSkipped,
-      structuresCreated,
-      totalRowsParsed: rows.length,
-      warnings,
-    };
-
-    await supabase.from("import_logs").insert({
-      tenant_id: tenantId,
-      user_id: user.id,
-      file_name: fileName,
-      raw_payload: content,
-      status: "completed",
-      result,
-    });
-
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ status: "processing", jobId: log.id, totalRowsParsed: rows.length }),
+      { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (err) {
     console.error("import-xpm error:", err);
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
