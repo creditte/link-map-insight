@@ -24,6 +24,7 @@ export default function Import() {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [importError, setImportError] = useState<unknown>(null);
+  const [progress, setProgress] = useState<{ phase: string; rowIndex: number; total: number } | null>(null);
   const [importLogs, setImportLogs] = useState<any[]>([]);
   const [showInstructions, setShowInstructions] = useState(false);
   const { reportError: reportXeroError } = useXeroConnection();
