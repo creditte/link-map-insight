@@ -205,10 +205,19 @@ export default function Signup() {
     const handleStartTrial = async () => {
       setStartingCheckout(true);
       try {
-        // Sign in, then require a payment method before the trial can start.
+        // Sign in, then go straight to Stripe Checkout — registration is only
+        // complete once the free trial subscription exists.
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
-        navigate("/complete-setup");
+
+        const { data, error } = await supabase.functions.invoke("create-checkout");
+        const url = (data as { url?: string } | null)?.url;
+        if (error || (data as { error?: string } | null)?.error || !url) {
+          // Fall back to the resumable payment step rather than dropping the user.
+          navigate("/complete-setup");
+          return;
+        }
+        window.location.href = url;
       } catch (err: any) {
         toast({ title: "Error", description: err.message, variant: "destructive" });
         navigate("/login");
@@ -216,6 +225,7 @@ export default function Signup() {
         setStartingCheckout(false);
       }
     };
+
 
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
@@ -225,17 +235,19 @@ export default function Signup() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Email verified!</h1>
           <p className="mt-3 text-muted-foreground">
-            One last step: add a payment method to start your 7-day free trial. You won't be charged today.
+            Final step — start your 7-day free trial. Your card is stored securely by Stripe and
+            won't be charged today. Your account becomes active once the trial starts.
           </p>
           <Button className="mt-8 w-full h-11 font-semibold" onClick={handleStartTrial} disabled={startingCheckout}>
             {startingCheckout ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Signing in…
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Opening secure checkout…
               </>
             ) : (
-              "Continue to payment setup"
+              "Start free trial"
             )}
           </Button>
+
         </div>
       </div>
     );

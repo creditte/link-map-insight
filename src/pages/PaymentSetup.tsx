@@ -65,14 +65,15 @@ export default function PaymentSetup() {
 
         <div className="space-y-2">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Add a payment method to start your free trial
+            Final step — start your free trial
           </h1>
           <p className="text-muted-foreground">
-            Your card is securely stored by Stripe and{" "}
-            <span className="font-medium text-foreground">won't be charged today</span>. Your 7-day
-            free trial starts as soon as it's added.
+            Your registration completes once your 7-day free trial starts. Your card is securely
+            stored by Stripe and{" "}
+            <span className="font-medium text-foreground">won't be charged today</span>.
           </p>
         </div>
+
 
         <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-left">
           <p className="text-sm font-medium text-foreground">

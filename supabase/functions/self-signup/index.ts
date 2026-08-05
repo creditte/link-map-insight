@@ -65,6 +65,52 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    const normalisedEmail = String(email).toLowerCase();
+
+    // 0. Registration is only "complete" once a Stripe trial/subscription exists.
+    // If a previous attempt stalled before that point, purge it so the user can
+    // register again instead of being blocked by "email already exists".
+    const { data: priorMembership } = await supabaseAdmin
+      .from("tenant_users")
+      .select("id, tenant_id, auth_user_id")
+      .eq("email", normalisedEmail)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (priorMembership) {
+      const { data: priorTenant } = await supabaseAdmin
+        .from("tenants")
+        .select("id, payment_method_captured, stripe_subscription_id")
+        .eq("id", priorMembership.tenant_id)
+        .maybeSingle();
+
+      const registrationComplete =
+        !!priorTenant?.stripe_subscription_id || priorTenant?.payment_method_captured === true;
+
+      if (registrationComplete) {
+        return json({ error: "An account with this email already exists. Please log in instead." }, 400);
+      }
+
+      // Incomplete registration → clean slate.
+      const staleUserId = priorMembership.auth_user_id;
+      const staleTenantId = priorMembership.tenant_id;
+      console.log(`[Signup] Purging incomplete registration tenant=${staleTenantId} user=${staleUserId}`);
+
+      await supabaseAdmin.from("signup_verifications").delete().eq("email", normalisedEmail);
+      await supabaseAdmin.from("tenant_users").delete().eq("tenant_id", staleTenantId);
+      if (staleUserId) {
+        await supabaseAdmin.from("profiles").delete().eq("user_id", staleUserId);
+        await supabaseAdmin.from("user_roles").delete().eq("user_id", staleUserId);
+      }
+      await supabaseAdmin.from("tenants").delete().eq("id", staleTenantId);
+      if (staleUserId) {
+        await supabaseAdmin.auth.admin.deleteUser(staleUserId).catch((e) =>
+          console.error("[Signup] stale auth user delete failed:", e?.message)
+        );
+      }
+    }
+
     // 1. Create the auth user (NOT confirmed)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
@@ -81,6 +127,7 @@ Deno.serve(async (req) => {
     }
 
     const userId = authData.user.id;
+
 
     // 2. Create the tenant — no trial yet. The 7-day trial is created and managed
     // by Stripe once the owner attaches a payment method via Checkout.
