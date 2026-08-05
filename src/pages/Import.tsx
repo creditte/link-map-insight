@@ -235,6 +235,30 @@ export default function Import() {
             {importing ? "Importing..." : "Import"}
           </Button>
 
+          {importing && progress && (
+            <div className="space-y-1.5 rounded-md border bg-muted/40 p-3">
+              <p className="text-xs font-medium text-foreground">
+                {progress.phase === "entities"
+                  ? "Creating entities…"
+                  : progress.phase === "structures"
+                    ? "Building structures…"
+                    : "Linking relationships…"}
+              </p>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{
+                    width: `${progress.total ? Math.min(100, Math.round((progress.rowIndex / progress.total) * 100)) : 5}%`,
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {progress.rowIndex} of {progress.total} rows processed. Large files continue in the background.
+              </p>
+            </div>
+          )}
+
+
           {importError && (
             <XeroErrorAlert
               error={importError}
