@@ -154,28 +154,11 @@ Deno.serve(async (req) => {
       .update({ onboarding_complete: true, updated_at: new Date().toISOString() })
       .eq("user_id", codeRow.user_id);
 
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("full_name")
-      .eq("user_id", codeRow.user_id)
-      .maybeSingle();
+    // NOTE: the welcome email is intentionally NOT sent here. Registration is only
+    // complete once the Stripe free trial starts, so the welcome email is sent from
+    // the stripe-webhooks checkout.session.completed handler.
+    return json({ ok: true, verified: true, needsPayment: true });
 
-    const displayName =
-      (existingUser.user.user_metadata?.full_name as string | undefined) ||
-      profile?.full_name;
-
-    try {
-      await invokeTransactionalEmail({
-        templateName: "welcome",
-        recipientEmail: email.toLowerCase(),
-        templateData: { name: displayName || undefined },
-        idempotencyKey: `welcome:${codeRow.user_id}`,
-      });
-    } catch (err) {
-      console.error("[VerifySignup] welcome email:", err);
-    }
-
-    return json({ ok: true, verified: true });
   } catch (err: any) {
     console.error("[verify-signup] Error:", err);
     return json({ error: err.message || "Verification failed" }, 500);
