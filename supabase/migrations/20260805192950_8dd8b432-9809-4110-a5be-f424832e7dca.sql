@@ -1,0 +1,2 @@
+ALTER TABLE public.xero_oauth_states DROP CONSTRAINT xero_oauth_states_flow_check;
+ALTER TABLE public.xero_oauth_states ADD CONSTRAINT xero_oauth_states_flow_check CHECK (flow = ANY (ARRAY['link'::text,'login'::text,'signup'::text,'link_select'::text,'login_select'::text,'signup_select'::text]));
