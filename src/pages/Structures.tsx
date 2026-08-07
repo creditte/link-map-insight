@@ -60,18 +60,15 @@ export default function Structures() {
   const { user } = useAuth();
   const { tenant } = useSharedTenantSettings();
   const { billing } = useBilling();
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const tenantId = useTenantId();
 
-  // Fetch current user's tenant role
-  useEffect(() => {
-    supabase.rpc("get_my_tenant_user").then(({ data }) => {
-      if (data && typeof data === "object" && "role" in data) {
-        setUserRole((data as any).role);
-      }
-    });
-  }, []);
+  // Role comes from the shared identity cache (no per-mount RPC).
+  const { data: myTenantUser } = useMyTenantUserQuery();
+  const userRole = (myTenantUser?.role as string | undefined) ?? null;
 
   const canManageStructures = userRole === "owner" || userRole === "admin";
+
 
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = sessionStorage.getItem("structures_active_tab");
