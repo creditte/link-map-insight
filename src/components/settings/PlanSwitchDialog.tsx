@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PLANS } from "@/lib/pricing";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -48,8 +49,8 @@ const PLAN_DETAILS = {
 };
 
 const PRICING = {
-  starter: { monthly: "A$99/month", annual: "A$990/year" },
-  pro: { monthly: "A$249/month", annual: "A$2,490/year" },
+  starter: { monthly: PLANS.starter.monthlyLabel!, annual: PLANS.starter.annualLabel! },
+  pro: { monthly: PLANS.pro.monthlyLabel!, annual: PLANS.pro.annualLabel! },
 };
 
 export default function PlanSwitchDialog({

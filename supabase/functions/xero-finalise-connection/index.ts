@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendXpmWelcomeEmail } from "../_shared/xpm-welcome-email.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -124,6 +125,9 @@ serve(async (req) => {
 
     // Clean up all pending states for this user
     await service.from("xero_oauth_states").delete().eq("user_id", userId);
+
+    // XPM is connected — this is when the firm can actually use strukcha.
+    await sendXpmWelcomeEmail(service, link.tenant_id);
 
     return new Response(
       JSON.stringify({ ok: true, xero_tenant_id: chosen.id, xero_org_name: chosen.name }),

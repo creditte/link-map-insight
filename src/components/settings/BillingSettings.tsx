@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { CreditCard, Network, ArrowRightLeft, Loader2, ArrowUpCircle, ArrowDownCircle, Clock } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
-import { format, addDays } from "date-fns";
+import { format } from "date-fns";
+import { PLANS, TRIAL, planDisplayName, priceLabel, renewalLabel } from "@/lib/pricing";
 import PlanSwitchDialog from "./PlanSwitchDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -101,11 +102,13 @@ export default function BillingSettings() {
   }
 
   const statusLabels: Record<string, string> = {
+    trialing: "Free Trial",
     active: "Active",
     past_due: "Past Due",
     canceled: "Cancelled",
     incomplete: "Incomplete",
     trial_expired: "Trial Expired",
+    free: "No Subscription",
   };
 
   const statusColors: Record<string, string> = {
@@ -121,32 +124,25 @@ export default function BillingSettings() {
   const label = statusLabels[status] || status;
   const colorClass = statusColors[status] || "bg-muted text-muted-foreground border-0";
 
-  const planName = billing?.subscription_plan === "starter" ? "strukcha Starter" : "strukcha Pro";
+  // Never assume Pro: show exactly the plan Stripe reports.
+  const resolvedPlan = billing?.subscription_plan ?? billing?.selected_plan ?? null;
+  const planName = planDisplayName(resolvedPlan);
   const isAnnual = billing?.billing_interval === "year";
 
-  const priceDisplay = (() => {
-    if (billing?.price_amount) {
-      const amount = billing.price_amount / 100;
-      return isAnnual ? `A$${amount.toLocaleString()}/year` : `A$${amount}/month`;
-    }
-    if (billing?.subscription_plan === "starter") {
-      return isAnnual ? "A$990/year" : "A$99/month";
-    }
-    return isAnnual ? "A$2,490/year" : "A$249/month";
-  })();
+  const priceDisplay = renewalLabel(resolvedPlan, billing?.billing_interval, billing?.price_amount);
 
   const targetIntervalLabel = isAnnual ? "Monthly" : "Annual";
   const targetPriceDisplay = (() => {
-    if (billing?.subscription_plan === "starter") {
-      return isAnnual ? "A$99/month" : "A$990/year";
-    }
-    return isAnnual ? "A$249/month" : "A$2,490/year";
+    const plan = resolvedPlan === "starter" ? PLANS.starter : resolvedPlan === "pro" ? PLANS.pro : null;
+    if (!plan) return "the other billing interval";
+    return priceLabel(plan, isAnnual ? "monthly" : "annual");
   })();
 
   const diagramCount = billing?.diagram_count ?? 0;
-  const diagramLimit = billing?.diagram_limit ?? 15;
+  const diagramLimit = billing?.diagram_limit ?? TRIAL.groupLimit;
 
-  const trialEnd = billing?.trial_ends_at ? new Date(billing.trial_ends_at) : addDays(new Date(), 5);
+  const trialEnd = billing?.trial_ends_at ? new Date(billing.trial_ends_at) : null;
+
 
   const isActive = billing?.subscription_status === "active";
 
@@ -255,10 +251,13 @@ export default function BillingSettings() {
           {billing?.subscription_status === "trialing" && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
               <p className="text-sm text-primary font-medium">
-                Trial ends {format(trialEnd, "d MMM yyyy 'at' h:mm a")}
+                {trialEnd
+                  ? `Trial ends ${format(trialEnd, "dd/MM/yyyy 'at' h:mm a")}`
+                  : "Free trial in progress"}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                After your trial, you'll be charged {priceDisplay}.
+                You can create up to {TRIAL.groupLimit} structure groups during your trial. After your
+                trial, you'll be charged {priceDisplay}.
               </p>
             </div>
           )}

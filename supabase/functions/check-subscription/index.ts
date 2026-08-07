@@ -174,14 +174,12 @@ Deno.serve(async (req) => {
     }
 
     // Determine effective diagram_limit strictly from subscription_plan; never fall back to a Pro-sized limit.
-    // A Stripe-backed subscription (including one still in its Stripe-managed trial) keeps its plan limit —
-    // only self-serve trials with no Stripe subscription are capped at 3.
-    const hasStripeSubscription = !!tenant.stripe_subscription_id;
-    let effectiveDiagramLimit = 3; // self-serve trial, trial_expired, canceled
-    if (
-      ["active", "past_due"].includes(tenant.subscription_status) ||
-      (tenant.subscription_status === "trialing" && hasStripeSubscription)
-    ) {
+    // Trials always get the 3-group trial allowance (full Pro features, capped volume), whether the
+    // trial is Stripe-managed or self-serve. Plan limits only apply once the subscription is paying.
+    const TRIAL_GROUP_LIMIT = 3;
+    let effectiveDiagramLimit = TRIAL_GROUP_LIMIT; // trialing, trial_expired, canceled
+    if (["active", "past_due"].includes(tenant.subscription_status)) {
+
       if (tenant.subscription_plan === "starter") {
         effectiveDiagramLimit = 15;
       } else if (tenant.subscription_plan === "pro") {

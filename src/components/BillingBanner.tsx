@@ -3,6 +3,8 @@ import { CreditCard, Sparkles, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
+import { planDisplayName } from "@/lib/pricing";
+
 
 export default function BillingBanner() {
   const { billing, loading, openPortal } = useBilling();
@@ -27,14 +29,28 @@ export default function BillingBanner() {
     }
   };
 
-  // Trial banner
+  // Trial banner — reflects the real Stripe trial window and usage, never "unlimited".
   if (billing.subscription_status === "trialing") {
+    const daysLeft = billing.trial_ends_at
+      ? Math.max(0, Math.ceil((new Date(billing.trial_ends_at).getTime() - Date.now()) / 86_400_000))
+      : null;
+    const endLabel = billing.trial_ends_at
+      ? new Date(billing.trial_ends_at).toLocaleDateString("en-AU", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        })
+      : null;
+
     return (
       <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
           <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
           <p className="text-xs text-muted-foreground">
-            You're on the free trial — upgrade to unlock unlimited structures.
+            {planDisplayName(billing.subscription_plan ?? billing.selected_plan)} trial
+            {daysLeft !== null ? ` — ${daysLeft} day${daysLeft === 1 ? "" : "s"} left` : ""}
+            {endLabel ? ` (ends ${endLabel})` : ""}. Using {billing.diagram_count} of{" "}
+            {billing.diagram_limit} trial structure groups.
           </p>
         </div>
         <Button size="sm" variant="ghost" onClick={handleManage} className="gap-1.5 text-xs shrink-0 h-7">
@@ -44,6 +60,7 @@ export default function BillingBanner() {
       </div>
     );
   }
+
 
   // Payment failed
   if (billing.access_locked_reason === "payment_failed") {
