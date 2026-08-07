@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useBilling } from "@/hooks/useBilling";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
+import { useCacheInvalidation } from "@/hooks/useSharedQueries";
 
 interface Props {
   open: boolean;
@@ -21,6 +22,7 @@ export default function CreateStructureModal({ open, onOpenChange, onImportXpm }
   const { user } = useAuth();
   const { billing, openPortal } = useBilling();
   const { currentUser } = useTenantUsers();
+  const { invalidateStructures } = useCacheInvalidation();
   const [creating, setCreating] = useState(false);
   const canManageBilling = currentUser?.role === "owner" || (currentUser?.role === "admin" && currentUser?.can_manage_billing === true);
 
@@ -44,6 +46,8 @@ export default function CreateStructureModal({ open, onOpenChange, onImportXpm }
 
       if (error || !structure) throw new Error(error?.message || "Failed to create structure");
 
+      // New structure must show up in cached lists / counts on return.
+      invalidateStructures();
       onOpenChange(false);
       navigate(`/structures/${structure.id}?new=manual`);
     } catch (err: any) {

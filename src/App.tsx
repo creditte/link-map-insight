@@ -36,7 +36,20 @@ import SubscriptionLocked from "./pages/SubscriptionLocked";
 
 import Unsubscribe from "./pages/Unsubscribe";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Stale-while-revalidate: cached data renders instantly, and is only
+      // refetched in the background once it is older than its staleTime.
+      staleTime: 60_000,
+      gcTime: 30 * 60_000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: 1,
+    },
+  },
+});
+
 
 const App = () => (
   <ErrorBoundary>

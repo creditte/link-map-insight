@@ -22,14 +22,14 @@ export default function TenantSettings({ isAdmin = false }: Props) {
   const { user } = useAuth();
   const { toast } = useToast();
   const { currentUser } = useTenantUsers();
-  const { reload: reloadTenant } = useSharedTenantSettings();
+  const { tenant, loading: tenantLoading, reload: reloadTenant } = useSharedTenantSettings();
   const isOwner = currentUser?.role === "owner";
-  const [tenantId, setTenantId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const tenantId = tenant?.id ?? null;
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   // Form state
   const [firmName, setFirmName] = useState("");
@@ -50,47 +50,40 @@ export default function TenantSettings({ isAdmin = false }: Props) {
   };
   const isDirty = JSON.stringify(currentState) !== JSON.stringify(initial);
 
+  const loading = tenantLoading && !tenant;
+
+  // Hydrate the form from the shared (cached) tenant row. No extra request on
+  // tab switches; re-hydrates only when a different tenant row arrives.
   useEffect(() => {
-    if (!user?.id) return;
-    async function load() {
-      const { data: profile } = await supabase
-        .from("profiles").select("tenant_id").eq("user_id", user!.id).single();
-      if (!profile) { setLoading(false); return; }
+    if (!tenant || hydrated) return;
+    const raw = tenant.raw ?? {};
+    const fn = tenant.firm_name;
+    const bc = tenant.brand_primary_color ?? "#0F172A";
+    const ef = tenant.export_footer_text ?? "";
+    const ed = tenant.export_disclaimer_text ?? "";
+    const sd = tenant.export_show_disclaimer;
+    const boc = tenant.export_block_on_critical_health;
+    const dvm = tenant.export_default_view_mode;
+    const aai = tenant.allow_admin_integrations;
 
-      const { data: tenant } = await supabase
-        .from("tenants").select("*").eq("id", profile.tenant_id).single();
+    setFirmName(fn);
+    setLogoUrl(tenant.logo_url ?? raw.logo_url ?? null);
+    setBrandColor(bc);
+    setExportFooter(ef);
+    setExportDisclaimer(ed);
+    setShowDisclaimer(sd);
+    setBlockOnCritical(boc);
+    setDefaultViewMode(dvm);
+    setAllowAdminIntegrations(aai);
 
-      if (tenant) {
-        setTenantId(tenant.id);
-        const fn = tenant.firm_name ?? tenant.name;
-        const bc = tenant.brand_primary_color ?? "#0F172A";
-        const ef = tenant.export_footer_text ?? "";
-        const ed = tenant.export_disclaimer_text ?? "";
-        const sd = tenant.export_show_disclaimer ?? false;
-        const boc = tenant.export_block_on_critical_health ?? false;
-        const dvm = tenant.export_default_view_mode ?? "full";
-        const aai = (tenant as any).allow_admin_integrations ?? false;
+    setInitial({
+      firmName: fn, brandColor: bc, exportFooter: ef, exportDisclaimer: ed,
+      showDisclaimer: sd, blockOnCritical: boc, defaultViewMode: dvm,
+      allowAdminIntegrations: aai,
+    });
+    setHydrated(true);
+  }, [tenant, hydrated]);
 
-        setFirmName(fn);
-        setLogoUrl(tenant.logo_url ?? null);
-        setBrandColor(bc);
-        setExportFooter(ef);
-        setExportDisclaimer(ed);
-        setShowDisclaimer(sd);
-        setBlockOnCritical(boc);
-        setDefaultViewMode(dvm);
-        setAllowAdminIntegrations(aai);
-
-        setInitial({
-          firmName: fn, brandColor: bc, exportFooter: ef, exportDisclaimer: ed,
-          showDisclaimer: sd, blockOnCritical: boc, defaultViewMode: dvm,
-          allowAdminIntegrations: aai,
-        });
-      }
-      setLoading(false);
-    }
-    load();
-  }, [user?.id]);
 
   const handleSave = useCallback(async () => {
     if (!tenantId) return;

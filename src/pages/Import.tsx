@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, FileText, CheckCircle, AlertCircle, Download, Info, ChevronDown, ChevronUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useCacheInvalidation } from "@/hooks/useSharedQueries";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
@@ -20,6 +21,8 @@ const SAMPLE_CSV = `Name,Entity Type,ABN,ACN,Relationship Type,Related To
 export default function Import() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { invalidateStructures } = useCacheInvalidation();
+
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -89,6 +92,8 @@ export default function Import() {
       }
       setResult(final.result);
       setProgress(null);
+      // Import created structures/entities — refresh cached lists and counts.
+      invalidateStructures();
       toast({
         title: "Import complete",
         description: `${final.result?.entitiesCreated ?? 0} entities, ${final.result?.relationshipsCreated ?? 0} relationships processed.`,

@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { qk, staleTimes } from "@/lib/queryKeys";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,39 +47,10 @@ import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 
 export default function Dashboard() {
-  const [recentStructures, setRecentStructures] = useState<{ id: string; name: string; updated_at: string }[]>([]);
-  const [structureCount, setStructureCount] = useState(0);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
-  const [importCount, setImportCount] = useState(0);
-  const [entityStats, setEntityStats] = useState<{ type: string; count: number }[]>([]);
-  const [totalEntities, setTotalEntities] = useState(0);
-  const [trusteeCount, setTrusteeCount] = useState(0);
-  const [weeklyTrends, setWeeklyTrends] = useState<{ structures: number; entities: number; imports: number }>({
-    structures: 0,
-    entities: 0,
-    imports: 0,
-  });
-  const [recentEntities, setRecentEntities] = useState<
-    {
-      id: string;
-      name: string;
-      entity_type: string;
-      is_trustee_company: boolean;
-      abn: string | null;
-      created_at: string;
-    }[]
-  >([]);
-  const [xeroConnection, setXeroConnection] = useState<{
-    id: string;
-    connected_at: string | null;
-    expires_at: string;
-    xero_tenant_id: string | null;
-    xero_org_name: string | null;
-    connected_by_email: string | null;
-  } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [xeroLoading, setXeroLoading] = useState(false);
+
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -87,7 +62,11 @@ export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [xeroConnectionType, setXeroConnectionType] = useState<"accounting" | "practice_manager">("practice_manager");
   const { review, loading: healthLoading, runReview } = useClientHealthReview();
+  const { user } = useAuth();
   const {
+    // Shared Xero record — the Dashboard no longer fetches it separately.
+    connection: xeroConnection,
+
     invalid: xeroInvalid,
     reportError: reportXeroError,
     reload: reloadXeroConnection,
@@ -129,10 +108,14 @@ export default function Dashboard() {
     }
   }, [searchParams, setSearchParams, toast]);
 
-  useEffect(() => {
-    async function load() {
-      setDashboardLoading(true);
-      const [sCount, recent, xeroData, entitiesData, recentEnts, impCount] = await Promise.all([
+  // Dashboard metrics live in the shared cache: revisiting the Dashboard shows
+  // the previous data instantly and only revalidates once it goes stale.
+  const { data: dash, isLoading: dashInitialLoading } = useQuery({
+    queryKey: qk.dashboardStats(user?.id ?? null),
+    enabled: !!user?.id,
+    staleTime: staleTimes.stats,
+    queryFn: async () => {
+      const [sCount, recent, entitiesData, recentEnts, impCount] = await Promise.all([
         supabase.from("structures").select("id", { count: "exact", head: true }).is("deleted_at", null),
         supabase
           .from("structures")
@@ -141,7 +124,6 @@ export default function Dashboard() {
           .eq("is_scenario", false)
           .order("updated_at", { ascending: false })
           .limit(5),
-        supabase.rpc("get_xero_connection_info"),
         supabase.from("entities").select("entity_type, is_trustee_company").is("deleted_at", null),
         supabase
           .from("entities")
@@ -151,15 +133,8 @@ export default function Dashboard() {
           .limit(8),
         supabase.from("import_logs").select("id", { count: "exact", head: true }),
       ]);
-      setStructureCount(sCount.count ?? 0);
-      setRecentStructures((recent.data as any) ?? []);
-      setXeroConnection(xeroData.data && xeroData.data !== "null" ? (xeroData.data as any) : null);
-      setImportCount(impCount.count ?? 0);
 
-      // Process entity stats
       const entities = entitiesData.data ?? [];
-      setTotalEntities(entities.length);
-      setTrusteeCount(entities.filter((e: any) => e.is_trustee_company).length);
       const typeCounts: Record<string, number> = {};
       entities.forEach((e: any) => {
         const t = e.entity_type || "Unclassified";
@@ -168,10 +143,7 @@ export default function Dashboard() {
       const stats = Object.entries(typeCounts)
         .map(([type, count]) => ({ type, count }))
         .sort((a, b) => b.count - a.count);
-      setEntityStats(stats);
-      setRecentEntities((recentEnts.data as any) ?? []);
 
-      // Fetch weekly trends
       const oneWeekAgo = subDays(new Date(), 7).toISOString();
       const [weekStructures, weekEntities, weekImports] = await Promise.all([
         supabase
@@ -186,16 +158,36 @@ export default function Dashboard() {
           .gte("created_at", oneWeekAgo),
         supabase.from("import_logs").select("id", { count: "exact", head: true }).gte("created_at", oneWeekAgo),
       ]);
-      setWeeklyTrends({
-        structures: weekStructures.count ?? 0,
-        entities: weekEntities.count ?? 0,
-        imports: weekImports.count ?? 0,
-      });
 
-      setDashboardLoading(false);
-    }
-    load();
-  }, []);
+      return {
+        structureCount: sCount.count ?? 0,
+        recentStructures: (recent.data as any) ?? [],
+        importCount: impCount.count ?? 0,
+        totalEntities: entities.length,
+        trusteeCount: entities.filter((e: any) => e.is_trustee_company).length,
+        entityStats: stats,
+        recentEntities: (recentEnts.data as any) ?? [],
+        weeklyTrends: {
+          structures: weekStructures.count ?? 0,
+          entities: weekEntities.count ?? 0,
+          imports: weekImports.count ?? 0,
+        },
+      };
+    },
+  });
+
+  const structureCount = dash?.structureCount ?? 0;
+  const recentStructures = dash?.recentStructures ?? [];
+  const importCount = dash?.importCount ?? 0;
+  const totalEntities = dash?.totalEntities ?? 0;
+  const trusteeCount = dash?.trusteeCount ?? 0;
+  const entityStats = dash?.entityStats ?? [];
+  const recentEntities = dash?.recentEntities ?? [];
+  const weeklyTrends = dash?.weeklyTrends ?? { structures: 0, entities: 0, imports: 0 };
+  // Only show skeletons on the very first load, never on a background refresh.
+  const dashboardLoading = dashInitialLoading && !dash;
+
+
 
   const handleConnectXero = async () => {
     setXeroLoading(true);
@@ -278,7 +270,6 @@ export default function Dashboard() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      setXeroConnection(null);
       clearXeroInvalid();
       await reloadXeroConnection();
       toast({ title: "Xero Disconnected", description: "You can reconnect at any time." });

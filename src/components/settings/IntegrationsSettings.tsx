@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,29 +19,22 @@ interface XeroConnection {
 }
 
 export default function IntegrationsSettings() {
-  const [loading, setLoading] = useState(true);
-  const [connection, setConnection] = useState<XeroConnection | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [xeroError, setXeroError] = useState<unknown>(null);
   const {
+    connection: sharedConnection,
+    loading,
     invalid: xeroInvalid,
     reportError: reportXeroError,
     reload: reloadXeroConnection,
     clearInvalid: clearXeroInvalid,
   } = useXeroConnection();
 
-  async function load() {
-    setLoading(true);
-    const { data } = await supabase.rpc("get_xero_connection_info");
-    setConnection(data && data !== "null" ? (data as any) : null);
-    setLoading(false);
-  }
+  // Reuse the shared connection record — no separate fetch on tab open.
+  const connection = sharedConnection as XeroConnection | null;
 
-  useEffect(() => {
-    load();
-  }, []);
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -115,7 +108,7 @@ export default function IntegrationsSettings() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      setConnection(null);
+      // The shared cache is refreshed below, which clears the connection.
       setXeroError(null);
       clearXeroInvalid();
       await reloadXeroConnection();
