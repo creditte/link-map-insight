@@ -156,12 +156,21 @@ export default function PlanSwitchDialog({
           {/* Billing impact */}
           <div className="rounded-lg border p-3 space-y-1">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              {isUpgrade ? "Billing impact" : "When will this take effect?"}
+              {isImmediate ? "Billing impact" : "When will this take effect?"}
             </p>
-            {isUpgrade ? (
+            {isImmediate ? (
               <p className="text-sm text-muted-foreground">
-                The price difference will be prorated and added to your next invoice. 
-                Your new rate of <span className="font-medium text-foreground">{targetPrice}</span> applies immediately.
+                {isTrialing ? (
+                  <>
+                    Nothing is charged during your trial. Your new rate of{" "}
+                    <span className="font-medium text-foreground">{targetPrice}</span> starts when the trial ends.
+                  </>
+                ) : (
+                  <>
+                    The price difference will be prorated and added to your next invoice. Your new rate of{" "}
+                    <span className="font-medium text-foreground">{targetPrice}</span> applies immediately.
+                  </>
+                )}
               </p>
             ) : (
               <div className="flex items-start gap-2">
