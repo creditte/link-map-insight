@@ -146,17 +146,19 @@ Deno.serve(async (req) => {
 
       const updatedSub = await stripe.subscriptions.update(tenant.stripe_subscription_id, {
         items: [{ id: currentItem.id, price: targetPriceId }],
-        proration_behavior: "create_prorations",
+        proration_behavior: isTrialing ? "none" : "create_prorations",
       });
 
       const updatePayload: Record<string, any> = {
         subscription_plan: "pro",
         selected_plan: "pro",
-        diagram_limit: PLAN_LIMITS.pro,
         cancel_at_period_end: false,
         canceled_at: null,
         last_plan_switch_at: new Date().toISOString(),
       };
+      // Trials stay capped at the trial group allowance; paid plans get the plan limit.
+      if (!isTrialing) updatePayload.diagram_limit = PLAN_LIMITS.pro;
+
       const updatedLife = getSubscriptionLifecycle(updatedSub);
       const periodEnd = updatedLife.currentPeriodEnd;
       if (updatedLife.currentPeriodStart) updatePayload.current_period_start = updatedLife.currentPeriodStart;
