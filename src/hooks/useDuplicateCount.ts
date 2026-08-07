@@ -1,62 +1,36 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { qk, staleTimes } from "@/lib/queryKeys";
+import { useTenantId } from "@/hooks/useSharedQueries";
 
+/**
+ * Duplicate-entity badge count. Cached — the sidebar/Review page no longer
+ * re-runs the two duplicate RPCs on every mount.
+ */
 export function useDuplicateCount() {
   const { session } = useAuth();
-  const [count, setCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const tenantId = useTenantId();
 
-  useEffect(() => {
-    if (!session?.user) {
-      setLoading(false);
-      return;
-    }
+  const query = useQuery({
+    queryKey: qk.duplicateCount(session?.user?.id ?? null),
+    enabled: !!session?.user && !!tenantId,
+    staleTime: staleTimes.stats,
+    queryFn: async () => {
+      const [{ data: exact }, { data: fuzzy }] = await Promise.all([
+        supabase.rpc("find_duplicate_entities", { _tenant_id: tenantId! }),
+        supabase.rpc("find_fuzzy_duplicate_entities", { _tenant_id: tenantId!, _threshold: 0.8 }),
+      ]);
 
-    async function fetch() {
-      try {
-        // Get tenant_id
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("tenant_id")
-          .eq("user_id", session!.user.id)
-          .maybeSingle();
+      const seen = new Set<string>();
+      const addPair = (a: string, b: string) => {
+        seen.add(a < b ? `${a}:${b}` : `${b}:${a}`);
+      };
+      for (const row of exact ?? []) addPair(row.entity_id_a, row.entity_id_b);
+      for (const row of fuzzy ?? []) addPair(row.entity_id_a, row.entity_id_b);
+      return seen.size;
+    },
+  });
 
-        if (!profile?.tenant_id) {
-          setLoading(false);
-          return;
-        }
-
-        // Use exact match first, then fuzzy
-        const { data: exact } = await supabase.rpc("find_duplicate_entities", {
-          _tenant_id: profile.tenant_id,
-        });
-
-        const { data: fuzzy } = await supabase.rpc("find_fuzzy_duplicate_entities", {
-          _tenant_id: profile.tenant_id,
-          _threshold: 0.8,
-        });
-
-        // Deduplicate pairs by sorting IDs
-        const seen = new Set<string>();
-        const addPair = (a: string, b: string) => {
-          const key = a < b ? `${a}:${b}` : `${b}:${a}`;
-          seen.add(key);
-        };
-
-        for (const row of exact ?? []) addPair(row.entity_id_a, row.entity_id_b);
-        for (const row of fuzzy ?? []) addPair(row.entity_id_a, row.entity_id_b);
-
-        setCount(seen.size);
-      } catch {
-        // Silent fail — badge just won't show
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetch();
-  }, [session?.user?.id]);
-
-  return { duplicateCount: count, loading };
+  return { duplicateCount: query.data ?? 0, loading: query.isLoading && query.data === undefined };
 }
