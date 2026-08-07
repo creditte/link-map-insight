@@ -179,104 +179,105 @@ export default function Structures() {
     }
   }, [groups.length, reportXeroError]);
 
-  // ── Load groups: cache first, then refresh from XPM in background ──
-  useEffect(() => {
-    async function init() {
-      setLoading(true);
-      let connected = false;
-      let cachedGroups: XpmGroup[] = [];
-      try {
-        const [{ data: connInfo }, cached] = await Promise.all([
-          supabase.rpc("get_xero_connection_info"),
-          loadCachedGroups(),
-        ]);
-        cachedGroups = cached;
-        connected = connInfo !== null && connInfo !== "null";
-        setXpmConnected(connected);
-        setGroups(cached);
-      } catch {
-        setXpmConnected(false);
-      } finally {
-        setLoading(false);
-      }
+  // ── Cached XPM group list + connection state ──
+  const { data: xeroConn, isLoading: xeroConnLoading } = useXeroConnectionQuery();
+  const xpmConnected = xeroConnLoading ? null : !!xeroConn;
 
-      if (connected) {
-        void refreshXpmGroups({ silent: cachedGroups.length > 0 });
-      }
-    }
-    init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
-  }, []);
+  const cachedGroupsQuery = useQuery({
+    queryKey: qk.xpmGroupsCached(),
+    staleTime: staleTimes.list,
+    queryFn: loadCachedGroups,
+  });
 
-  // ── Load favourites ──
+  // Hydrate the visible list from cache, then refresh from XPM once per session
+  // (or whenever the cached list has actually gone stale).
+  const refreshedOnce = useRef(false);
   useEffect(() => {
-    if (!user?.id) return;
-    supabase
-      .from("favourite_groups")
-      .select("group_xpm_uuid, group_name")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(MAX_FAVOURITES)
-      .then(({ data }) => {
-        if (data) {
-          const favs = data.map((d: any) => ({ xpm_uuid: d.group_xpm_uuid, name: d.group_name }));
-          setFavourites(favs);
-          setFavouriteIds(new Set(favs.map((f: XpmGroup) => f.xpm_uuid)));
-        }
-      });
-  }, [user?.id]);
+    if (cachedGroupsQuery.data) setGroups(cachedGroupsQuery.data);
+  }, [cachedGroupsQuery.data]);
 
-  // ── Load recent structures (most recently updated) ──
   useEffect(() => {
-    if (!user?.id) return;
-    async function loadRecent() {
-      try {
-        const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user!.id });
-        if (!tenantId) return;
-        const { data: structures } = await supabase
-          .from("structures")
-          .select("id, name, created_at, updated_at")
-          .eq("tenant_id", tenantId)
-          .eq("is_scenario", false)
-          .neq("source", "manual")
-          .is("deleted_at", null)
-          .order("updated_at", { ascending: false })
-          .limit(10);
-        if (!structures || structures.length === 0) return;
-        const structureIds = structures.map((s) => s.id);
-        const { data: entityLinks } = await supabase
-          .from("structure_entities")
-          .select("structure_id")
-          .in("structure_id", structureIds);
-        const countMap: Record<string, number> = {};
-        for (const link of entityLinks ?? []) {
-          countMap[link.structure_id] = (countMap[link.structure_id] || 0) + 1;
-        }
-        setRecentStructures(
-          structures.map((s) => ({
-            id: s.id,
-            name: s.name,
-            created_at: s.created_at,
-            entity_count: countMap[s.id] || 0,
-          }))
-        );
-      } catch (err) {
-        console.error("[Structures] Failed to load recent structures:", err);
+    if (!xpmConnected || cachedGroupsQuery.isLoading || refreshedOnce.current) return;
+    refreshedOnce.current = true;
+    void refreshXpmGroups({ silent: (cachedGroupsQuery.data?.length ?? 0) > 0 });
+  }, [xpmConnected, cachedGroupsQuery.isLoading, cachedGroupsQuery.data, refreshXpmGroups]);
+
+  const loading = cachedGroupsQuery.isLoading && !cachedGroupsQuery.data;
+
+  // ── Favourites (cached) ──
+  const favouritesQuery = useQuery({
+    queryKey: qk.favouriteGroups(user?.id ?? null),
+    enabled: !!user?.id,
+    staleTime: staleTimes.list,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("favourite_groups")
+        .select("group_xpm_uuid, group_name")
+        .eq("user_id", user!.id)
+        .order("created_at", { ascending: false })
+        .limit(MAX_FAVOURITES);
+      return (data ?? []).map((d: any) => ({ xpm_uuid: d.group_xpm_uuid, name: d.group_name })) as XpmGroup[];
+    },
+  });
+
+  useEffect(() => {
+    if (!favouritesQuery.data) return;
+    setFavourites(favouritesQuery.data);
+    setFavouriteIds(new Set(favouritesQuery.data.map((f) => f.xpm_uuid)));
+  }, [favouritesQuery.data]);
+
+  // ── Recent structures (cached) ──
+  const recentQuery = useQuery({
+    queryKey: qk.recentStructures(user?.id ?? null),
+    enabled: !!user?.id && !!tenantId,
+    staleTime: staleTimes.list,
+    queryFn: async () => {
+      const { data: structures } = await supabase
+        .from("structures")
+        .select("id, name, created_at, updated_at")
+        .eq("tenant_id", tenantId!)
+        .eq("is_scenario", false)
+        .neq("source", "manual")
+        .is("deleted_at", null)
+        .order("updated_at", { ascending: false })
+        .limit(10);
+      if (!structures || structures.length === 0) return [] as ManualStructure[];
+      const { data: entityLinks } = await supabase
+        .from("structure_entities")
+        .select("structure_id")
+        .in("structure_id", structures.map((s) => s.id));
+      const countMap: Record<string, number> = {};
+      for (const link of entityLinks ?? []) {
+        countMap[link.structure_id] = (countMap[link.structure_id] || 0) + 1;
       }
-    }
-    loadRecent();
-  }, [user?.id]);
+      return structures.map((s) => ({
+        id: s.id,
+        name: s.name,
+        created_at: s.created_at,
+        entity_count: countMap[s.id] || 0,
+      })) as ManualStructure[];
+    },
+  });
+
+  const recentStructures = recentQuery.data ?? [];
 
   // Persist tab
   useEffect(() => {
     sessionStorage.setItem("structures_active_tab", activeTab);
   }, [activeTab]);
 
-  // Load manual structures
-  useEffect(() => {
-    if (activeTab !== "manual" || !user?.id) return;
-    loadManualStructures();
-  }, [activeTab, user?.id]);
+  // ── Manual structures + scenarios (cached; tab switches reuse the data) ──
+  const manualQuery = useQuery({
+    queryKey: qk.manualStructures(user?.id ?? null),
+    enabled: !!user?.id && !!tenantId,
+    staleTime: staleTimes.list,
+    queryFn: loadManualStructures,
+  });
+
+  const manualStructures = manualQuery.data ?? [];
+  const manualLoading = manualQuery.isLoading && !manualQuery.data;
+
+
 
   async function loadManualStructures() {
     if (!user?.id) return;
