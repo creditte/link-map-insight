@@ -85,8 +85,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (tenant.subscription_status !== "active") {
-      throw new Error("Plan can only be changed on active subscriptions");
+    // Plans can be changed on active subscriptions and during the Stripe-managed
+    // trial (the subscription already exists, so swapping the item is free).
+    const isTrialing = tenant.subscription_status === "trialing";
+    if (!["active", "trialing"].includes(tenant.subscription_status ?? "")) {
+      throw new Error("Plan can only be changed while your subscription is active or on trial");
     }
     if (!tenant.stripe_subscription_id) {
       throw new Error("No Stripe subscription found");
@@ -143,17 +146,19 @@ Deno.serve(async (req) => {
 
       const updatedSub = await stripe.subscriptions.update(tenant.stripe_subscription_id, {
         items: [{ id: currentItem.id, price: targetPriceId }],
-        proration_behavior: "create_prorations",
+        proration_behavior: isTrialing ? "none" : "create_prorations",
       });
 
       const updatePayload: Record<string, any> = {
         subscription_plan: "pro",
         selected_plan: "pro",
-        diagram_limit: PLAN_LIMITS.pro,
         cancel_at_period_end: false,
         canceled_at: null,
         last_plan_switch_at: new Date().toISOString(),
       };
+      // Trials stay capped at the trial group allowance; paid plans get the plan limit.
+      if (!isTrialing) updatePayload.diagram_limit = PLAN_LIMITS.pro;
+
       const updatedLife = getSubscriptionLifecycle(updatedSub);
       const periodEnd = updatedLife.currentPeriodEnd;
       if (updatedLife.currentPeriodStart) updatePayload.current_period_start = updatedLife.currentPeriodStart;
@@ -171,7 +176,9 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     } else {
-      // ── DOWNGRADE: pro → starter (scheduled at period end) ──
+      // ── DOWNGRADE: pro → starter ──
+      // During a trial nothing has been billed, so apply it immediately in Stripe.
+      // On a paid period, schedule it for period end so the firm keeps what it paid for.
 
       // Check if current usage exceeds target limit
       const targetLimit = PLAN_LIMITS.starter;
@@ -183,14 +190,45 @@ Deno.serve(async (req) => {
 
       // Fetch current_period_end from Stripe (DB may be stale/null)
       let periodEnd = tenant.current_period_end;
+      let subscription: any = null;
       try {
-        const subscription = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+        subscription = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
         const life = getSubscriptionLifecycle(subscription);
         if (life.currentPeriodEnd) {
           periodEnd = life.currentPeriodEnd;
         }
       } catch (e) {
         console.error("Failed to fetch Stripe subscription for period_end:", e);
+      }
+
+      if (isTrialing) {
+        const currentItem = subscription?.items?.data?.[0];
+        if (!currentItem) throw new Error("No subscription item found");
+        const currentInterval = currentItem.price.recurring?.interval || "month";
+        const targetPriceId = PRICE_MAP.starter?.[currentInterval];
+        if (!targetPriceId) {
+          throw new Error(`No price configured for plan: starter, interval: ${currentInterval}`);
+        }
+
+        await stripe.subscriptions.update(tenant.stripe_subscription_id, {
+          items: [{ id: currentItem.id, price: targetPriceId }],
+          proration_behavior: "none",
+        });
+
+        await supabaseAdmin.from("tenants").update({
+          subscription_plan: "starter",
+          selected_plan: "starter",
+          last_plan_switch_at: new Date().toISOString(),
+        }).eq("id", tenant.id);
+
+        return new Response(JSON.stringify({
+          success: true,
+          new_plan: "starter",
+          effective: "immediate",
+          new_limit: PLAN_LIMITS.starter,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       // Do NOT touch Stripe subscription — just record intent in DB

@@ -18,6 +18,8 @@ interface PlanSwitchDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentPlan: "starter" | "pro";
+  targetPlan: "starter" | "pro";
+  isTrialing?: boolean;
   isAnnual: boolean;
   diagramCount: number;
   currentPeriodEnd: string | null;
@@ -57,6 +59,8 @@ export default function PlanSwitchDialog({
   open,
   onOpenChange,
   currentPlan,
+  targetPlan,
+  isTrialing = false,
   isAnnual,
   diagramCount,
   currentPeriodEnd,
@@ -64,8 +68,9 @@ export default function PlanSwitchDialog({
 }: PlanSwitchDialogProps) {
   const [loading, setLoading] = useState(false);
 
-  const targetPlan = currentPlan === "starter" ? "pro" : "starter";
   const isUpgrade = targetPlan === "pro";
+  // During the trial nothing has been billed yet, so both directions apply at once.
+  const isImmediate = isUpgrade || isTrialing;
   const target = PLAN_DETAILS[targetPlan];
   const targetPrice = isAnnual ? PRICING[targetPlan].annual : PRICING[targetPlan].monthly;
   const currentPrice = isAnnual ? PRICING[currentPlan].annual : PRICING[currentPlan].monthly;
@@ -78,14 +83,16 @@ export default function PlanSwitchDialog({
   const handleConfirm = async () => {
     setLoading(true);
     try {
-      const result = await onConfirm();
-      if (isUpgrade) {
-        toast.success(`Upgraded to ${target.name}`, {
-          description: `Your plan has been updated immediately. New rate: ${targetPrice}.`,
+      await onConfirm();
+      if (isImmediate) {
+        toast.success(`Switched to ${target.name}`, {
+          description: isTrialing
+            ? `Your trial now follows ${target.name}. You'll be charged ${targetPrice} when the trial ends.`
+            : `Your plan has been updated immediately. New rate: ${targetPrice}.`,
         });
       } else {
         toast.success(`Downgrade to ${target.name} scheduled`, {
-          description: `Your plan will switch to Starter on ${periodEndFormatted}. You'll keep Pro features until then.`,
+          description: `Your plan will switch to ${target.name} on ${periodEndFormatted}. You'll keep Pro features until then.`,
         });
       }
       onOpenChange(false);
@@ -108,7 +115,7 @@ export default function PlanSwitchDialog({
             ) : (
               <ArrowDownCircle className="h-5 w-5 text-warning" />
             )}
-            {isUpgrade ? "Upgrade to Pro" : "Switch to Starter"}
+            {isUpgrade ? `Upgrade to ${target.name.replace("strukcha ", "")}` : `Switch to ${target.name.replace("strukcha ", "")}`}
           </DialogTitle>
           <DialogDescription>
             Review the changes below before confirming.
@@ -149,12 +156,21 @@ export default function PlanSwitchDialog({
           {/* Billing impact */}
           <div className="rounded-lg border p-3 space-y-1">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              {isUpgrade ? "Billing impact" : "When will this take effect?"}
+              {isImmediate ? "Billing impact" : "When will this take effect?"}
             </p>
-            {isUpgrade ? (
+            {isImmediate ? (
               <p className="text-sm text-muted-foreground">
-                The price difference will be prorated and added to your next invoice. 
-                Your new rate of <span className="font-medium text-foreground">{targetPrice}</span> applies immediately.
+                {isTrialing ? (
+                  <>
+                    Nothing is charged during your trial. Your new rate of{" "}
+                    <span className="font-medium text-foreground">{targetPrice}</span> starts when the trial ends.
+                  </>
+                ) : (
+                  <>
+                    The price difference will be prorated and added to your next invoice. Your new rate of{" "}
+                    <span className="font-medium text-foreground">{targetPrice}</span> applies immediately.
+                  </>
+                )}
               </p>
             ) : (
               <div className="flex items-start gap-2">
@@ -195,11 +211,11 @@ export default function PlanSwitchDialog({
             {loading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                {isUpgrade ? "Upgrading…" : "Scheduling…"}
+                {isImmediate ? "Switching…" : "Scheduling…"}
               </>
             ) : (
               <>
-                {isUpgrade ? "Confirm Upgrade" : "Schedule Downgrade"}
+                {isImmediate ? (isUpgrade ? "Confirm Upgrade" : "Confirm Switch") : "Schedule Downgrade"}
               </>
             )}
           </Button>
