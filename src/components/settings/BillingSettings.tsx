@@ -230,23 +230,26 @@ export default function BillingSettings() {
             </div>
           )}
 
-          {/* Plan switch button — only show if no pending downgrade and not cancelling */}
-          {isActive && !billing?.cancel_at_period_end && !hasPendingDowngrade && (
-            <div className="flex items-center justify-between rounded-lg border px-4 py-3">
-              <div>
-                <p className="text-sm font-medium">Current Plan: {currentPlan === "starter" ? "Starter" : "Pro"}</p>
-                <p className="text-xs text-muted-foreground">
-                  {isOnCooldown
-                    ? "Plan switching is temporarily unavailable"
-                    : isUpgrade ? "Upgrade to Pro for more structures and features" : " "}
-                </p>
-              </div>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowPlanDialog(true)} disabled={isBusy || isOnCooldown}>
-                {isUpgrade ? <ArrowUpCircle className="h-4 w-4" /> : <ArrowDownCircle className="h-4 w-4" />}
-                {isUpgrade ? "Upgrade to Pro" : "Switch to Starter"}
-              </Button>
-            </div>
+          {canManagePlan && !billing?.cancel_at_period_end && (
+            <PlanComparison
+              currentPlan={currentPlan}
+              scheduledPlan={hasPendingDowngrade ? "starter" : null}
+              interval={isAnnual ? "annual" : "monthly"}
+              canSwitch={!isBusy && !isOnCooldown}
+              disabledReason={
+                isOnCooldown
+                  ? `You recently switched plans. You can switch again after ${
+                      cooldownUntil ? format(cooldownUntil, "d MMM yyyy 'at' h:mm a") : "24 hours"
+                    }.`
+                  : null
+              }
+              onSelectPlan={(plan) => {
+                setPendingTarget(plan);
+                setShowPlanDialog(true);
+              }}
+            />
           )}
+
 
           {billing?.subscription_status === "trialing" && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
