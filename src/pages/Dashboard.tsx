@@ -58,7 +58,11 @@ export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [xeroConnectionType, setXeroConnectionType] = useState<"accounting" | "practice_manager">("practice_manager");
   const { review, loading: healthLoading, runReview } = useClientHealthReview();
+  const { user } = useAuth();
   const {
+    // Shared Xero record — the Dashboard no longer fetches it separately.
+    connection: xeroConnection,
+
     invalid: xeroInvalid,
     reportError: reportXeroError,
     reload: reloadXeroConnection,
