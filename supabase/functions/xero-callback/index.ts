@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encryptToken } from "../_shared/crypto.ts";
+import { sendXpmWelcomeEmail } from "../_shared/xpm-welcome-email.ts";
 
 serve(async (req) => {
   try {
@@ -199,6 +200,9 @@ serve(async (req) => {
       .from("xero_oauth_states")
       .delete()
       .eq("user_id", userId);
+
+    // XPM is connected — this is when the firm can actually use strukcha.
+    await sendXpmWelcomeEmail(supabase, profile.tenant_id);
 
     return Response.redirect(`${frontendUrl}/?xero=connected`, 302);
   } catch (err) {
