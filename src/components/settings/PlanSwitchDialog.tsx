@@ -115,7 +115,7 @@ export default function PlanSwitchDialog({
             ) : (
               <ArrowDownCircle className="h-5 w-5 text-warning" />
             )}
-            {isUpgrade ? "Upgrade to Pro" : "Switch to Starter"}
+            {isUpgrade ? `Upgrade to ${target.name.replace("strukcha ", "")}` : `Switch to ${target.name.replace("strukcha ", "")}`}
           </DialogTitle>
           <DialogDescription>
             Review the changes below before confirming.
