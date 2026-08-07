@@ -1,5 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { qk, staleTimes } from "@/lib/queryKeys";
 import { supabase } from "@/integrations/supabase/client";
+
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
