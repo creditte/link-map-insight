@@ -75,7 +75,8 @@ export default function BillingSettings() {
     }
   };
 
-  const currentPlan = billing?.subscription_plan || "pro";
+  // Never assume a plan — show exactly what Stripe reports.
+  const currentPlan = billing?.subscription_plan ?? billing?.selected_plan ?? null;
   const hasPendingDowngrade = !!billing?.pending_downgrade;
 
   const cooldownUntil = billing?.last_plan_switch_at
