@@ -211,11 +211,11 @@ export default function PlanSwitchDialog({
             {loading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                {isUpgrade ? "Upgrading…" : "Scheduling…"}
+                {isImmediate ? "Switching…" : "Scheduling…"}
               </>
             ) : (
               <>
-                {isUpgrade ? "Confirm Upgrade" : "Schedule Downgrade"}
+                {isImmediate ? (isUpgrade ? "Confirm Upgrade" : "Confirm Switch") : "Schedule Downgrade"}
               </>
             )}
           </Button>
