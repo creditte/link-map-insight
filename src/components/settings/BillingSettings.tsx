@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { CreditCard, Network, ArrowRightLeft, Loader2, ArrowUpCircle, ArrowDownCircle, Clock } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
-import { format, addDays } from "date-fns";
+import { format } from "date-fns";
+import { PLANS, TRIAL, planDisplayName, priceLabel, renewalLabel } from "@/lib/pricing";
 import PlanSwitchDialog from "./PlanSwitchDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -250,10 +251,13 @@ export default function BillingSettings() {
           {billing?.subscription_status === "trialing" && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
               <p className="text-sm text-primary font-medium">
-                Trial ends {format(trialEnd, "d MMM yyyy 'at' h:mm a")}
+                {trialEnd
+                  ? `Trial ends ${format(trialEnd, "dd/MM/yyyy 'at' h:mm a")}`
+                  : "Free trial in progress"}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                After your trial, you'll be charged {priceDisplay}.
+                You can create up to {TRIAL.groupLimit} structure groups during your trial. After your
+                trial, you'll be charged {priceDisplay}.
               </p>
             </div>
           )}
