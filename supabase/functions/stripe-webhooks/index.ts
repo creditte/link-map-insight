@@ -22,6 +22,10 @@ const corsHeaders = {
 };
 
 // Plan configuration mapped by Stripe Product ID — single source of truth in _shared/stripe-plans.ts
+// Trials always get the capped trial allowance (full Pro features, 3 structure groups);
+// plan limits apply once the subscription is paying.
+const TRIAL_GROUP_LIMIT = 3;
+
 const PLAN_CONFIG: Record<string, { plan: string; diagramLimit: number }> = {};
 
 const PRICE_MAP = buildPriceMap();
@@ -181,7 +185,7 @@ Deno.serve(async (req) => {
           access_locked_reason: accessEnabled
             ? null
             : (status === "canceled" ? "subscription_canceled" : `subscription_${status}`),
-          diagram_limit: diagramLimit,
+          diagram_limit: status === "trialing" ? TRIAL_GROUP_LIMIT : diagramLimit,
           current_period_start: periodStart,
           current_period_end: periodEnd,
           cancel_at_period_end: life.cancelAtPeriodEnd,
@@ -234,7 +238,7 @@ Deno.serve(async (req) => {
           canceled_at: life.canceledAt,
           access_enabled: accessEnabled,
           access_locked_reason: accessEnabled ? null : (status === "canceled" ? "subscription_canceled" : `subscription_${status}`),
-          diagram_limit: diagramLimit,
+          diagram_limit: status === "trialing" ? TRIAL_GROUP_LIMIT : diagramLimit,
           payment_method_captured: true,
         };
 
