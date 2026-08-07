@@ -111,7 +111,7 @@ export default function PlanComparison({
                       size="sm"
                       className="w-full gap-2"
                       disabled={!canSwitch}
-                      onClick={() => onSelectPlan(id)}
+                      onClick={() => onSelectPlan(id as "starter" | "pro")}
                     >
                       {isUpgrade ? (
                         <ArrowUpCircle className="h-4 w-4" />
