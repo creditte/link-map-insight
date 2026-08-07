@@ -363,10 +363,12 @@ export default function BillingSettings() {
         open={showPlanDialog}
         onOpenChange={setShowPlanDialog}
         currentPlan={currentPlan as "starter" | "pro"}
+        targetPlan={pendingTarget}
+        isTrialing={isTrialing}
         isAnnual={isAnnual}
         diagramCount={diagramCount}
         currentPeriodEnd={billing?.current_period_end || null}
-        onConfirm={() => changePlan(targetPlan as "starter" | "pro")}
+        onConfirm={() => changePlan(pendingTarget)}
       />
     </div>
   );
