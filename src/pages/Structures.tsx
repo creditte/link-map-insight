@@ -1,6 +1,9 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { qk, staleTimes } from "@/lib/queryKeys";
+import { useTenantId, useMyTenantUserQuery, useXeroConnectionQuery } from "@/hooks/useSharedQueries";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -78,7 +81,6 @@ export default function Structures() {
 
   // Groups state
   const [groups, setGroups] = useState<XpmGroup[]>([]);
-  const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [groupsSyncedAt, setGroupsSyncedAt] = useState<string | null>(null);
 
@@ -88,12 +90,6 @@ export default function Structures() {
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
   const [xpmSearch, setXpmSearch] = useState("");
 
-  // Recent structures (persisted, most recently updated)
-  const [recentStructures, setRecentStructures] = useState<ManualStructure[]>([]);
-
-  // Manual structures state
-  const [manualStructures, setManualStructures] = useState<ManualStructure[]>([]);
-  const [manualLoading, setManualLoading] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLimitDialog, setShowLimitDialog] = useState(false);
@@ -112,8 +108,6 @@ export default function Structures() {
     }
   };
 
-  // XPM connected check
-  const [xpmConnected, setXpmConnected] = useState<boolean | null>(null);
   const { invalid: xeroInvalid, reportError: reportXeroError } = useXeroConnection();
 
   const loadCachedGroups = useCallback(async (): Promise<XpmGroup[]> => {
