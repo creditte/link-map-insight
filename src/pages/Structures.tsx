@@ -3,7 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { qk, staleTimes } from "@/lib/queryKeys";
-import { useTenantId, useMyTenantUserQuery, useXeroConnectionQuery } from "@/hooks/useSharedQueries";
+import {
+  useTenantId,
+  useMyTenantUserQuery,
+  useXeroConnectionQuery,
+  useCacheInvalidation,
+} from "@/hooks/useSharedQueries";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -65,6 +70,7 @@ export default function Structures() {
   const { billing } = useBilling();
   const queryClient = useQueryClient();
   const tenantId = useTenantId();
+  const { invalidateStructures } = useCacheInvalidation();
 
   // Role comes from the shared identity cache (no per-mount RPC).
   const { data: myTenantUser } = useMyTenantUserQuery();
@@ -461,6 +467,8 @@ export default function Structures() {
       } else {
         toast.success(`Imported ${data.entities_count} entities and ${relCount} relationships`);
       }
+      // Imported group adds structures/entities — refresh cached lists.
+      invalidateStructures();
       navigate(`/structures/${data.structure_id}`);
     } catch (err: unknown) {
       reportXeroError(err);
@@ -469,7 +477,7 @@ export default function Structures() {
     } finally {
       setImportingId(null);
     }
-  }, [navigate, reportXeroError]);
+  }, [navigate, reportXeroError, invalidateStructures]);
 
   // ── Tab Bar ──
   const TabBar = () => (
