@@ -3,6 +3,8 @@ import { CreditCard, Sparkles, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
+import { planDisplayName } from "@/lib/pricing";
+
 
 export default function BillingBanner() {
   const { billing, loading, openPortal } = useBilling();
