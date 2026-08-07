@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { qk, staleTimes } from "@/lib/queryKeys";
 
 export interface BillingStatus {
   enforcement_enabled: boolean;
@@ -22,59 +24,36 @@ export interface BillingStatus {
   last_plan_switch_at: string | null;
 }
 
+/**
+ * Subscription status. Shared through the query cache so opening the Billing
+ * tab (or the Dashboard/Structures limit checks) reuses one check-subscription
+ * call per freshness window instead of one per mount.
+ *
+ * Stripe billing logic itself is untouched — only the fetch caching changed.
+ */
 export function useBilling() {
   const { user, bootStatus } = useAuth();
   const userId = user?.id ?? null;
-  const [billing, setBilling] = useState<BillingStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const hasLoadedRef = useRef(false);
+  const queryClient = useQueryClient();
 
-  const load = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
-    if (bootStatus !== "authenticated" || !userId) {
-      hasLoadedRef.current = false;
-      setBilling(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-
-    const shouldShowBlockingLoader = !hasLoadedRef.current && !background;
-
-    try {
-      if (shouldShowBlockingLoader) {
-        setLoading(true);
-      }
-
+  const query = useQuery<BillingStatus | null>({
+    queryKey: qk.billing(userId),
+    enabled: bootStatus === "authenticated" && !!userId,
+    staleTime: staleTimes.billing,
+    queryFn: async () => {
       const { data, error: fnError } = await supabase.functions.invoke("check-subscription");
       if (fnError) throw fnError;
       if (data?.error) throw new Error(data.error);
+      return data as BillingStatus;
+    },
+  });
 
-      setBilling(data);
-      setError(null);
-      hasLoadedRef.current = true;
-    } catch (err: any) {
-      console.error("[useBilling]", err.message);
-      setError(err.message);
-    } finally {
-      if (shouldShowBlockingLoader || !hasLoadedRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [bootStatus, userId]);
-
-  useEffect(() => {
-    if (bootStatus !== "authenticated" || !userId) {
-      hasLoadedRef.current = false;
-      setBilling(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-
-    void load();
-  }, [bootStatus, userId, load]);
-
+  const reload = useCallback(
+    async (_opts?: { background?: boolean }) => {
+      await queryClient.invalidateQueries({ queryKey: qk.billing(userId) });
+    },
+    [queryClient, userId]
+  );
 
   const openPortal = async () => {
     const { data, error } = await supabase.functions.invoke("customer-portal");
@@ -91,7 +70,7 @@ export function useBilling() {
   const switchBillingInterval = async () => {
     const { data, error } = await supabase.functions.invoke("switch-billing-interval");
     if (error || data?.error) throw new Error(data?.error || error?.message);
-    await load({ background: true });
+    await reload();
     return data;
   };
 
@@ -100,9 +79,19 @@ export function useBilling() {
       body: { target_plan: targetPlan },
     });
     if (error || data?.error) throw new Error(data?.error || error?.message);
-    await load({ background: true });
+    await reload();
     return data;
   };
 
-  return { billing, loading, error, reload: load, openPortal, startCheckout, switchBillingInterval, changePlan };
+  return {
+    billing: query.data ?? null,
+    // Only block on the very first load; later revalidations stay in the background.
+    loading: query.isLoading && !query.data,
+    error: query.error ? (query.error as Error).message : null,
+    reload,
+    openPortal,
+    startCheckout,
+    switchBillingInterval,
+    changePlan,
+  };
 }
