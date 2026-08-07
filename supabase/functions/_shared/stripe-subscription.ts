@@ -107,9 +107,11 @@ export function getSubscriptionLifecycle(subscription: Stripe.Subscription): {
     currentPeriodEnd: end,
     trialStart: trial.start,
     trialEnd: trial.end,
-    cancelAtPeriodEnd: Boolean(
-      sub.cancel_at_period_end ?? (sub.cancel_at ? true : false),
-    ),
+    // Newer API versions (clover / flexible billing_mode) express a scheduled
+    // cancellation via `cancel_at` while leaving `cancel_at_period_end` false.
+    // Treat either signal as "cancelling" so the app mirrors Stripe correctly.
+    cancelAtPeriodEnd: Boolean(sub.cancel_at_period_end) || Boolean(sub.cancel_at),
+
     cancelAt: toISO(sub.cancel_at),
     canceledAt: toISO(sub.canceled_at),
     endedAt: toISO(sub.ended_at),
