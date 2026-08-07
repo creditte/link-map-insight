@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { PLAN_GROUP_LIMITS, planDisplayName, renewalLabel } from "@/lib/pricing";
 import { Lock, AlertTriangle, CreditCard, Clock } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
@@ -88,14 +89,11 @@ export default function SubscriptionLocked() {
         {isTrialExpired && billing && (
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-left">
             <p className="text-sm font-medium text-foreground">
-              {billing.subscription_plan === "starter" ? "strukcha Starter" : "strukcha Pro"} — {
-                billing.subscription_plan === "starter"
-                  ? (billing.billing_interval === "year" ? "A$990/year" : "A$99/month")
-                  : (billing.billing_interval === "year" ? "A$2,490/year" : "A$249/month")
-              }
+              {planDisplayName(billing.subscription_plan)} —{" "}
+              {renewalLabel(billing.subscription_plan, billing.billing_interval, billing.price_amount)}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Up to {billing.subscription_plan === "starter" ? "15" : "50"} client groups, full access to all features.
+              Up to {billing.subscription_plan === "starter" ? PLAN_GROUP_LIMITS.starter : PLAN_GROUP_LIMITS.pro} client groups, full access to all features.
             </p>
           </div>
         )}

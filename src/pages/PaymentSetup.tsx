@@ -5,10 +5,21 @@ import { CreditCard, Loader2, ShieldCheck, Lock } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { PLANS, TRIAL, planDisplayName } from "@/lib/pricing";
 
 const PLAN_COPY: Record<string, { name: string; monthly: string; annual: string; groups: string }> = {
-  starter: { name: "strukcha Starter", monthly: "A$99/month", annual: "A$990/year", groups: "15" },
-  pro: { name: "strukcha Pro", monthly: "A$249/month", annual: "A$2,490/year", groups: "50" },
+  starter: {
+    name: planDisplayName("starter"),
+    monthly: PLANS.starter.monthlyLabel!,
+    annual: PLANS.starter.annualLabel!,
+    groups: String(PLANS.starter.groupLimit),
+  },
+  pro: {
+    name: planDisplayName("pro"),
+    monthly: PLANS.pro.monthlyLabel!,
+    annual: PLANS.pro.annualLabel!,
+    groups: String(PLANS.pro.groupLimit),
+  },
 };
 
 export default function PaymentSetup() {
@@ -68,7 +79,7 @@ export default function PaymentSetup() {
             Final step — start your free trial
           </h1>
           <p className="text-muted-foreground">
-            Your registration completes once your 7-day free trial starts. Your card is securely
+            Your registration completes once your {TRIAL.days}-day free trial starts. You can create up to {TRIAL.groupLimit} structure groups during the trial. Your card is securely
             stored by Stripe and{" "}
             <span className="font-medium text-foreground">won't be charged today</span>.
           </p>
