@@ -18,6 +18,8 @@ interface PlanSwitchDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentPlan: "starter" | "pro";
+  targetPlan: "starter" | "pro";
+  isTrialing?: boolean;
   isAnnual: boolean;
   diagramCount: number;
   currentPeriodEnd: string | null;
