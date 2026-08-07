@@ -108,7 +108,7 @@ export default function IntegrationsSettings() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      setConnection(null);
+      // The shared cache is refreshed below, which clears the connection.
       setXeroError(null);
       clearXeroInvalid();
       await reloadXeroConnection();
