@@ -19,29 +19,22 @@ interface XeroConnection {
 }
 
 export default function IntegrationsSettings() {
-  const [loading, setLoading] = useState(true);
-  const [connection, setConnection] = useState<XeroConnection | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [xeroError, setXeroError] = useState<unknown>(null);
   const {
+    connection: sharedConnection,
+    loading,
     invalid: xeroInvalid,
     reportError: reportXeroError,
     reload: reloadXeroConnection,
     clearInvalid: clearXeroInvalid,
   } = useXeroConnection();
 
-  async function load() {
-    setLoading(true);
-    const { data } = await supabase.rpc("get_xero_connection_info");
-    setConnection(data && data !== "null" ? (data as any) : null);
-    setLoading(false);
-  }
+  // Reuse the shared connection record — no separate fetch on tab open.
+  const connection = sharedConnection as XeroConnection | null;
 
-  useEffect(() => {
-    load();
-  }, []);
 
   const handleConnect = async () => {
     setConnecting(true);
