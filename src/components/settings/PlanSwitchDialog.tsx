@@ -59,6 +59,8 @@ export default function PlanSwitchDialog({
   open,
   onOpenChange,
   currentPlan,
+  targetPlan,
+  isTrialing = false,
   isAnnual,
   diagramCount,
   currentPeriodEnd,
@@ -66,8 +68,9 @@ export default function PlanSwitchDialog({
 }: PlanSwitchDialogProps) {
   const [loading, setLoading] = useState(false);
 
-  const targetPlan = currentPlan === "starter" ? "pro" : "starter";
   const isUpgrade = targetPlan === "pro";
+  // During the trial nothing has been billed yet, so both directions apply at once.
+  const isImmediate = isUpgrade || isTrialing;
   const target = PLAN_DETAILS[targetPlan];
   const targetPrice = isAnnual ? PRICING[targetPlan].annual : PRICING[targetPlan].monthly;
   const currentPrice = isAnnual ? PRICING[currentPlan].annual : PRICING[currentPlan].monthly;
@@ -80,16 +83,27 @@ export default function PlanSwitchDialog({
   const handleConfirm = async () => {
     setLoading(true);
     try {
-      const result = await onConfirm();
-      if (isUpgrade) {
-        toast.success(`Upgraded to ${target.name}`, {
-          description: `Your plan has been updated immediately. New rate: ${targetPrice}.`,
+      await onConfirm();
+      if (isImmediate) {
+        toast.success(`Switched to ${target.name}`, {
+          description: isTrialing
+            ? `Your trial now follows ${target.name}. You'll be charged ${targetPrice} when the trial ends.`
+            : `Your plan has been updated immediately. New rate: ${targetPrice}.`,
         });
       } else {
         toast.success(`Downgrade to ${target.name} scheduled`, {
-          description: `Your plan will switch to Starter on ${periodEndFormatted}. You'll keep Pro features until then.`,
+          description: `Your plan will switch to ${target.name} on ${periodEndFormatted}. You'll keep Pro features until then.`,
         });
       }
+      onOpenChange(false);
+    } catch (err: any) {
+      toast.error("Plan switch failed", {
+        description: err.message || "Please try again or contact support.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
       onOpenChange(false);
     } catch (err: any) {
       toast.error("Plan switch failed", {
