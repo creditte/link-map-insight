@@ -104,15 +104,6 @@ export default function PlanSwitchDialog({
       setLoading(false);
     }
   };
-      onOpenChange(false);
-    } catch (err: any) {
-      toast.error("Plan switch failed", {
-        description: err.message || "Please try again or contact support.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
