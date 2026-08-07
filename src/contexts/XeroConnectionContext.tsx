@@ -9,6 +9,8 @@ import {
 } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { translateXeroError } from "@/lib/xeroErrors";
+import { useXeroConnectionQuery } from "@/hooks/useSharedQueries";
+
 
 export interface XeroConnectionInfo {
   id: string;
