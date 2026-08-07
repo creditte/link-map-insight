@@ -85,8 +85,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (tenant.subscription_status !== "active") {
-      throw new Error("Plan can only be changed on active subscriptions");
+    // Plans can be changed on active subscriptions and during the Stripe-managed
+    // trial (the subscription already exists, so swapping the item is free).
+    const isTrialing = tenant.subscription_status === "trialing";
+    if (!["active", "trialing"].includes(tenant.subscription_status ?? "")) {
+      throw new Error("Plan can only be changed while your subscription is active or on trial");
     }
     if (!tenant.stripe_subscription_id) {
       throw new Error("No Stripe subscription found");
