@@ -111,7 +111,7 @@ export default function Dashboard() {
   // Dashboard metrics live in the shared cache: revisiting the Dashboard shows
   // the previous data instantly and only revalidates once it goes stale.
   const { data: dash, isLoading: dashInitialLoading } = useQuery({
-    queryKey: qk.dashboard(user?.id ?? null),
+    queryKey: qk.dashboardStats(user?.id ?? null),
     enabled: !!user?.id,
     staleTime: staleTimes.stats,
     queryFn: async () => {
@@ -270,7 +270,6 @@ export default function Dashboard() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      setXeroConnection(null);
       clearXeroInvalid();
       await reloadXeroConnection();
       toast({ title: "Xero Disconnected", description: "You can reconnect at any time." });
