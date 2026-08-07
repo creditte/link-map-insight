@@ -147,7 +147,10 @@ export default function BillingSuccess() {
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
         // Return to this activation screen after Xero completes.
-        body: JSON.stringify({ origin: `${window.location.origin}/billing/success` }),
+        body: JSON.stringify({
+          origin: `${window.location.origin}/billing/success`,
+          connection_type: "practice_manager",
+        }),
       });
       let data: any = null;
       try {
