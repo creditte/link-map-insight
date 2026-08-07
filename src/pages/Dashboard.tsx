@@ -100,10 +100,14 @@ export default function Dashboard() {
     }
   }, [searchParams, setSearchParams, toast]);
 
-  useEffect(() => {
-    async function load() {
-      setDashboardLoading(true);
-      const [sCount, recent, xeroData, entitiesData, recentEnts, impCount] = await Promise.all([
+  // Dashboard metrics live in the shared cache: revisiting the Dashboard shows
+  // the previous data instantly and only revalidates once it goes stale.
+  const { data: dash, isLoading: dashInitialLoading } = useQuery({
+    queryKey: qk.dashboard(user?.id ?? null),
+    enabled: !!user?.id,
+    staleTime: staleTimes.stats,
+    queryFn: async () => {
+      const [sCount, recent, entitiesData, recentEnts, impCount] = await Promise.all([
         supabase.from("structures").select("id", { count: "exact", head: true }).is("deleted_at", null),
         supabase
           .from("structures")
@@ -112,7 +116,6 @@ export default function Dashboard() {
           .eq("is_scenario", false)
           .order("updated_at", { ascending: false })
           .limit(5),
-        supabase.rpc("get_xero_connection_info"),
         supabase.from("entities").select("entity_type, is_trustee_company").is("deleted_at", null),
         supabase
           .from("entities")
@@ -122,15 +125,8 @@ export default function Dashboard() {
           .limit(8),
         supabase.from("import_logs").select("id", { count: "exact", head: true }),
       ]);
-      setStructureCount(sCount.count ?? 0);
-      setRecentStructures((recent.data as any) ?? []);
-      setXeroConnection(xeroData.data && xeroData.data !== "null" ? (xeroData.data as any) : null);
-      setImportCount(impCount.count ?? 0);
 
-      // Process entity stats
       const entities = entitiesData.data ?? [];
-      setTotalEntities(entities.length);
-      setTrusteeCount(entities.filter((e: any) => e.is_trustee_company).length);
       const typeCounts: Record<string, number> = {};
       entities.forEach((e: any) => {
         const t = e.entity_type || "Unclassified";
@@ -139,10 +135,7 @@ export default function Dashboard() {
       const stats = Object.entries(typeCounts)
         .map(([type, count]) => ({ type, count }))
         .sort((a, b) => b.count - a.count);
-      setEntityStats(stats);
-      setRecentEntities((recentEnts.data as any) ?? []);
 
-      // Fetch weekly trends
       const oneWeekAgo = subDays(new Date(), 7).toISOString();
       const [weekStructures, weekEntities, weekImports] = await Promise.all([
         supabase
@@ -157,16 +150,36 @@ export default function Dashboard() {
           .gte("created_at", oneWeekAgo),
         supabase.from("import_logs").select("id", { count: "exact", head: true }).gte("created_at", oneWeekAgo),
       ]);
-      setWeeklyTrends({
-        structures: weekStructures.count ?? 0,
-        entities: weekEntities.count ?? 0,
-        imports: weekImports.count ?? 0,
-      });
 
-      setDashboardLoading(false);
-    }
-    load();
-  }, []);
+      return {
+        structureCount: sCount.count ?? 0,
+        recentStructures: (recent.data as any) ?? [],
+        importCount: impCount.count ?? 0,
+        totalEntities: entities.length,
+        trusteeCount: entities.filter((e: any) => e.is_trustee_company).length,
+        entityStats: stats,
+        recentEntities: (recentEnts.data as any) ?? [],
+        weeklyTrends: {
+          structures: weekStructures.count ?? 0,
+          entities: weekEntities.count ?? 0,
+          imports: weekImports.count ?? 0,
+        },
+      };
+    },
+  });
+
+  const structureCount = dash?.structureCount ?? 0;
+  const recentStructures = dash?.recentStructures ?? [];
+  const importCount = dash?.importCount ?? 0;
+  const totalEntities = dash?.totalEntities ?? 0;
+  const trusteeCount = dash?.trusteeCount ?? 0;
+  const entityStats = dash?.entityStats ?? [];
+  const recentEntities = dash?.recentEntities ?? [];
+  const weeklyTrends = dash?.weeklyTrends ?? { structures: 0, entities: 0, imports: 0 };
+  // Only show skeletons on the very first load, never on a background refresh.
+  const dashboardLoading = dashInitialLoading && !dash;
+
+
 
   const handleConnectXero = async () => {
     setXeroLoading(true);
