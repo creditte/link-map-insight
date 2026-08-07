@@ -273,62 +273,59 @@ export default function Structures() {
 
 
 
-  async function loadManualStructures() {
-    if (!user?.id) return;
-    setManualLoading(true);
-    try {
-      const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user.id });
-      if (!tenantId) return;
-      // Load manual structures + all scenarios
-      const [manualRes, scenarioRes] = await Promise.all([
-        supabase
-          .from("structures")
-          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id, archived_at")
-          .eq("tenant_id", tenantId)
-          .eq("is_scenario", false)
-          .eq("source", "manual")
-          .is("deleted_at", null)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("structures")
-          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id, archived_at")
-          .eq("tenant_id", tenantId)
-          .eq("is_scenario", true)
-          .is("deleted_at", null)
-          .order("created_at", { ascending: false }),
-      ]);
-      const allStructures = [...(manualRes.data ?? []), ...(scenarioRes.data ?? [])];
-      if (allStructures.length === 0) {
-        setManualStructures([]);
-        return;
-      }
-      const structureIds = allStructures.map((s) => s.id);
-      const { data: entityLinks } = await supabase
-        .from("structure_entities")
-        .select("structure_id")
-        .in("structure_id", structureIds);
-      const countMap: Record<string, number> = {};
-      for (const link of entityLinks ?? []) {
-        countMap[link.structure_id] = (countMap[link.structure_id] || 0) + 1;
-      }
-      setManualStructures(
-        allStructures.map((s) => ({
-          id: s.id,
-          name: s.name,
-          created_at: s.created_at,
-          entity_count: countMap[s.id] || 0,
-          is_scenario: s.is_scenario,
-          scenario_label: s.scenario_label,
-          parent_structure_id: s.parent_structure_id,
-          archived_at: s.archived_at,
-        }))
-      );
-    } catch (err) {
-      console.error("[Structures] Failed to load manual structures:", err);
-    } finally {
-      setManualLoading(false);
+  /** Fetch manual structures + scenarios. Result is cached by React Query. */
+  async function loadManualStructures(): Promise<ManualStructure[]> {
+    if (!tenantId) return [];
+    const [manualRes, scenarioRes] = await Promise.all([
+      supabase
+        .from("structures")
+        .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id, archived_at")
+        .eq("tenant_id", tenantId)
+        .eq("is_scenario", false)
+        .eq("source", "manual")
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("structures")
+        .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id, archived_at")
+        .eq("tenant_id", tenantId)
+        .eq("is_scenario", true)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false }),
+    ]);
+    const allStructures = [...(manualRes.data ?? []), ...(scenarioRes.data ?? [])];
+    if (allStructures.length === 0) return [];
+
+    const { data: entityLinks } = await supabase
+      .from("structure_entities")
+      .select("structure_id")
+      .in("structure_id", allStructures.map((s) => s.id));
+    const countMap: Record<string, number> = {};
+    for (const link of entityLinks ?? []) {
+      countMap[link.structure_id] = (countMap[link.structure_id] || 0) + 1;
     }
+    return allStructures.map((s) => ({
+      id: s.id,
+      name: s.name,
+      created_at: s.created_at,
+      entity_count: countMap[s.id] || 0,
+      is_scenario: s.is_scenario,
+      scenario_label: s.scenario_label,
+      parent_structure_id: s.parent_structure_id,
+      archived_at: s.archived_at,
+    })) as ManualStructure[];
   }
+
+  /** Apply a local change to the cached manual list so the UI stays correct. */
+  const patchManualCache = useCallback(
+    (fn: (prev: ManualStructure[]) => ManualStructure[]) => {
+      queryClient.setQueryData(qk.manualStructures(user?.id ?? null), (prev: ManualStructure[] | undefined) =>
+        fn(prev ?? []),
+      );
+      queryClient.invalidateQueries({ queryKey: qk.dashboardStats(user?.id ?? null) });
+    },
+    [queryClient, user?.id],
+  );
 
   const activeManualStructures = useMemo(
     () => manualStructures.filter((s) => !s.archived_at),
@@ -397,7 +394,7 @@ export default function Structures() {
         .update({ deleted_at: new Date().toISOString() })
         .eq("id", deleteTarget.id);
       if (error) throw error;
-      setManualStructures((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+      patchManualCache((prev) => prev.filter((s) => s.id !== deleteTarget.id));
       toast.success("Structure deleted");
     } catch (err: any) {
       toast.error(err.message || "Failed to delete structure");
@@ -414,8 +411,8 @@ export default function Structures() {
         .update({ archived_at: new Date().toISOString() } as any)
         .eq("id", structure.id);
       if (error) throw error;
-      setManualStructures((prev) =>
-        prev.map((s) => s.id === structure.id ? { ...s, archived_at: new Date().toISOString() } : s)
+      patchManualCache((prev) =>
+        prev.map((s) => (s.id === structure.id ? { ...s, archived_at: new Date().toISOString() } : s)),
       );
       toast.success("Structure archived");
     } catch (err: any) {
@@ -438,8 +435,8 @@ export default function Structures() {
         .update({ archived_at: null } as any)
         .eq("id", structure.id);
       if (error) throw error;
-      setManualStructures((prev) =>
-        prev.map((s) => s.id === structure.id ? { ...s, archived_at: null } : s)
+      patchManualCache((prev) =>
+        prev.map((s) => (s.id === structure.id ? { ...s, archived_at: null } : s)),
       );
       toast.success("Structure unarchived");
     } catch (err: any) {
