@@ -51,27 +51,36 @@ function formatPageLabel(page: string | null): { label: string; full: string | n
 export default function FeedbackSettings() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [rows, setRows] = useState<FeedbackRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("feedback")
-      .select("id, user_id, page, structure_id, message, created_at, status")
-      .order("created_at", { ascending: false })
-      .limit(100);
-
-    if (error) {
-      toast({ title: "Failed to load feedback", description: error.message, variant: "destructive" });
-    }
-    setRows(data ?? []);
-    setLoading(false);
-  }, [toast]);
+  // Cached list: switching away from the Feedback tab and back reuses this.
+  const { data, isLoading, error } = useQuery({
+    queryKey: qk.feedback(user?.id ?? null),
+    enabled: !!user?.id,
+    staleTime: staleTimes.list,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("feedback")
+        .select("id, user_id, page, structure_id, message, created_at, status")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return (data ?? []) as FeedbackRow[];
+    },
+  });
 
   useEffect(() => {
-    if (user?.id) load();
-  }, [user?.id, load]);
+    if (error) {
+      toast({
+        title: "Failed to load feedback",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    }
+  }, [error, toast]);
+
+  const rows = data ?? [];
+  const loading = isLoading && !data;
 
   const updateStatus = async (id: string, newStatus: string) => {
     const { error } = await supabase
@@ -84,9 +93,14 @@ export default function FeedbackSettings() {
       return;
     }
 
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r)));
+    // Update the cache in place so the change survives tab switches.
+    queryClient.setQueryData(qk.feedback(user?.id ?? null), (prev: FeedbackRow[] | undefined) =>
+      (prev ?? []).map((r) => (r.id === id ? { ...r, status: newStatus } : r))
+    );
     toast({ title: "Status updated" });
   };
+
+
 
   return (
     <div className="space-y-4">
