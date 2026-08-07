@@ -21,6 +21,8 @@ const SAMPLE_CSV = `Name,Entity Type,ABN,ACN,Relationship Type,Related To
 export default function Import() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { invalidateStructures } = useCacheInvalidation();
+
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
