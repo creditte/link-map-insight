@@ -195,30 +195,10 @@ Deno.serve(async (req) => {
           .eq("id", workspaceId);
         console.log(`Tenant ${workspaceId} checkout completed: plan=${plan}, status=${status}, limit=${diagramLimit}, period_end=${periodEnd}`);
 
-        // Registration is only complete now that the trial/subscription exists —
-        // send the welcome email here (idempotent per owner).
-        if (accessEnabled) {
-          try {
-            const { data: owner } = await supabaseAdmin
-              .from("tenant_users")
-              .select("email, display_name, auth_user_id")
-              .eq("tenant_id", workspaceId)
-              .eq("role", "owner")
-              .eq("status", "active")
-              .maybeSingle();
+        // The welcome email is deliberately NOT sent here. It is sent once the firm has
+        // connected Xero Practice Manager (see xero-callback / xero-finalise-connection),
+        // because that is when the product is actually usable.
 
-            if (owner?.email) {
-              await invokeTransactionalEmail({
-                templateName: "welcome",
-                recipientEmail: owner.email,
-                templateData: { name: owner.display_name || undefined },
-                idempotencyKey: `welcome:${owner.auth_user_id ?? workspaceId}`,
-              });
-            }
-          } catch (err) {
-            console.error("[stripe-webhooks] welcome email failed:", err);
-          }
-        }
         break;
       }
 
