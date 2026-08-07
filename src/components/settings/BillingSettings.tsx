@@ -29,6 +29,7 @@ export default function BillingSettings() {
   const [switching, setSwitching] = useState(false);
   const [navigating, setNavigating] = useState(false);
   const [planSwitching, setPlanSwitching] = useState(false);
+  const [pendingTarget, setPendingTarget] = useState<"starter" | "pro">("pro");
 
   const isBusy = switching || planSwitching;
 
