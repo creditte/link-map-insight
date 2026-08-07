@@ -83,9 +83,10 @@ export default function BillingSettings() {
     : null;
   const isOnCooldown = cooldownUntil ? new Date() < cooldownUntil : false;
 
-  // If downgrade is pending, the only action is to cancel it (upgrade back to pro)
-  const targetPlan = hasPendingDowngrade ? "pro" : (currentPlan === "starter" ? "pro" : "starter");
-  const isUpgrade = targetPlan === "pro";
+  // Plans can be switched while active or on the Stripe-managed trial.
+  const isTrialing = billing?.subscription_status === "trialing";
+  const canManagePlan = billing?.subscription_status === "active" || isTrialing;
+
 
   if (loading) {
     return (
