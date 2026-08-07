@@ -1,33 +1,29 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { qk } from "@/lib/queryKeys";
+import { useProfileQuery } from "@/hooks/useSharedQueries";
 
+/**
+ * Onboarding walkthrough visibility. Reads the cached profile row instead of
+ * issuing its own profile fetch on every mount.
+ */
 export function useOnboarding() {
   const { user } = useAuth();
-  const [complete, setComplete] = useState(true); // default true to avoid flash
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useProfileQuery();
 
-  useEffect(() => {
-    if (!user?.id) return;
-    supabase
-      .from("profiles")
-      .select("onboarding_complete")
-      .eq("user_id", user.id)
-      .single()
-      .then(({ data }) => {
-        setComplete(data?.onboarding_complete ?? true);
-        setLoading(false);
-      });
-  }, [user?.id]);
+  const complete = data?.onboarding_complete ?? true;
 
   const dismiss = useCallback(async () => {
-    setComplete(true);
     if (!user?.id) return;
-    await supabase
-      .from("profiles")
-      .update({ onboarding_complete: true })
-      .eq("user_id", user.id);
-  }, [user?.id]);
+    // Optimistic: hide immediately, then persist.
+    queryClient.setQueryData(qk.profile(user.id), (prev: any) =>
+      prev ? { ...prev, onboarding_complete: true } : prev
+    );
+    await supabase.from("profiles").update({ onboarding_complete: true }).eq("user_id", user.id);
+  }, [user?.id, queryClient]);
 
-  return { showOnboarding: !loading && !complete, dismiss };
+  return { showOnboarding: !isLoading && !complete, dismiss };
 }
