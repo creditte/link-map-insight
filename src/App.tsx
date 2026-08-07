@@ -9,6 +9,8 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import Signup from "./pages/Signup";
+import Pricing from "./pages/Pricing";
+
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
@@ -48,7 +50,9 @@ const App = () => (
             <Routes>
               <Route path="/auth" element={<Navigate to="/login" replace />} />
               <Route path="/signup" element={<Signup />} />
+              <Route path="/pricing" element={<Pricing />} />
               <Route path="/login" element={<Login />} />
+
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/mfa-setup" element={<MfaSetup />} />
