@@ -43,39 +43,10 @@ import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 
 export default function Dashboard() {
-  const [recentStructures, setRecentStructures] = useState<{ id: string; name: string; updated_at: string }[]>([]);
-  const [structureCount, setStructureCount] = useState(0);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
-  const [importCount, setImportCount] = useState(0);
-  const [entityStats, setEntityStats] = useState<{ type: string; count: number }[]>([]);
-  const [totalEntities, setTotalEntities] = useState(0);
-  const [trusteeCount, setTrusteeCount] = useState(0);
-  const [weeklyTrends, setWeeklyTrends] = useState<{ structures: number; entities: number; imports: number }>({
-    structures: 0,
-    entities: 0,
-    imports: 0,
-  });
-  const [recentEntities, setRecentEntities] = useState<
-    {
-      id: string;
-      name: string;
-      entity_type: string;
-      is_trustee_company: boolean;
-      abn: string | null;
-      created_at: string;
-    }[]
-  >([]);
-  const [xeroConnection, setXeroConnection] = useState<{
-    id: string;
-    connected_at: string | null;
-    expires_at: string;
-    xero_tenant_id: string | null;
-    xero_org_name: string | null;
-    connected_by_email: string | null;
-  } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [xeroLoading, setXeroLoading] = useState(false);
+
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const navigate = useNavigate();
