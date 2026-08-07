@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { PLANS, TRIAL, planDisplayName, priceLabel, renewalLabel } from "@/lib/pricing";
 import PlanSwitchDialog from "./PlanSwitchDialog";
+import PlanComparison from "./PlanComparison";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
