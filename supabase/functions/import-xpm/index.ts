@@ -583,9 +583,15 @@ async function runSlice(
       const e = entityIdFor(row.relatedClient, null);
       if (e) ids.push(e.id);
     }
+    let blocked = false;
     for (const gn of gs) {
       const sid = structureIdByName.get(gn);
-      if (!sid) continue;
+      if (!sid) {
+        // The group's structure could not be created (plan limit) — the
+        // entities themselves are still imported, only the grouping is lost.
+        blocked = true;
+        continue;
+      }
       for (const entity_id of ids) {
         const key = `${sid}|${entity_id}`;
         if (memberKeys.has(key)) continue;
@@ -593,7 +599,9 @@ async function runSlice(
         memberRows.push({ structure_id: sid, entity_id });
       }
     }
+    if (blocked) p.rowsSkippedLimit++;
   });
+
 
   await mapLimit(chunk(memberRows, DB_BATCH_SIZE), DB_CONCURRENCY, async (batch) => {
     const { error } = await supabase
