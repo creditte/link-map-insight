@@ -328,7 +328,7 @@ export default function Import() {
         <Card className="w-full max-w-lg">
           <CardHeader>
             <CardTitle className="flex items-start gap-2 text-base sm:items-center">
-              {result.warnings?.length > 0 ? (
+              {result.warnings?.length > 0 || (result.structuresSkippedLimit ?? 0) > 0 ? (
                 <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive sm:mt-0" />
               ) : (
                 <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-primary sm:mt-0" />
