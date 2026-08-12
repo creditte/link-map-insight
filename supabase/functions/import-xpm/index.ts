@@ -162,9 +162,14 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
-function parseCSV(text: string): RawRow[] {
+/**
+ * Parse ONLY the requested window of data rows. Earlier implementations parsed
+ * every row of the file on every slice (O(n²) field parsing for large files);
+ * splitting lines is cheap, so we skip straight to the window we need.
+ */
+function parseCSVRange(text: string, start: number, count: number): { rows: RawRow[]; total: number } {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return [];
+  if (lines.length < 2) return { rows: [], total: 0 };
 
   const header = parseCSVLine(lines[0]).map((h) => stripQuotes(h).toLowerCase());
   const idx = {
@@ -176,8 +181,12 @@ function parseCSV(text: string): RawRow[] {
     related: header.findIndex((h) => h.includes("related")),
   };
 
+  const total = lines.length - 1;
+  const from = 1 + Math.max(0, start);
+  const to = Math.min(lines.length, from + Math.max(0, count));
+
   const rows: RawRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = from; i < to; i++) {
     const cols = parseCSVLine(lines[i]).map((c) => stripQuotes(c));
     if (cols.length < 3) continue;
     rows.push({
@@ -190,7 +199,7 @@ function parseCSV(text: string): RawRow[] {
       relatedClient: cols[idx.related] ?? "",
     });
   }
-  return rows;
+  return { rows, total };
 }
 
 function getTagText(record: string, tag: string): string {
@@ -199,15 +208,19 @@ function getTagText(record: string, tag: string): string {
   return m ? m[1].trim() : "";
 }
 
-function parseXML(text: string): RawRow[] {
+/** XML equivalent of parseCSVRange — records before the window are skipped. */
+function parseXMLRange(text: string, start: number, count: number): { rows: RawRow[]; total: number } {
   const rows: RawRow[] = [];
   const recordRe = /<Record>([\s\S]*?)<\/Record>/gi;
   let m: RegExpExecArray | null;
-  let rowNum = 1;
+  let index = 0;
+  const end = start + count;
   while ((m = recordRe.exec(text)) !== null) {
+    const i = index++;
+    if (i < start || i >= end) continue;
     const rec = m[1];
     rows.push({
-      rowNum: rowNum++,
+      rowNum: i + 1,
       groups: getTagText(rec, "Client-Groups"),
       client: getTagText(rec, "Client-Client"),
       uuid: getTagText(rec, "Client-UUID"),
@@ -216,7 +229,7 @@ function parseXML(text: string): RawRow[] {
       relatedClient: getTagText(rec, "ClientRelationship-RelatedClient"),
     });
   }
-  return rows;
+  return { rows, total: index };
 }
 
 /**
@@ -228,6 +241,7 @@ function countRows(text: string, isXml: boolean): number {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   return Math.max(0, lines.length - 1);
 }
+
 
 // ── Job progress shape ──────────────────────────────────────────────────
 
