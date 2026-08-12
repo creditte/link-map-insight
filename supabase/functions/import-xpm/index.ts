@@ -84,6 +84,31 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+/**
+ * Retry a DB call on transient transport failures (HTTP/2 stream errors,
+ * connection resets, timeouts). Deterministic errors are re-thrown at once.
+ */
+async function withRetry<T>(label: string, fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const msg = String((e as Error)?.message ?? e).toLowerCase();
+      const transient = msg.includes("http2") || msg.includes("sendrequest") ||
+        msg.includes("connection") || msg.includes("stream error") ||
+        msg.includes("error sending request") || msg.includes("timed out") ||
+        msg.includes("timeout") || msg.includes("reset");
+      if (!transient || attempt === attempts) break;
+      console.warn(`[import-xpm] transient failure in ${label} (attempt ${attempt}), retrying`);
+      await new Promise((r) => setTimeout(r, 400 * 2 ** (attempt - 1)));
+    }
+  }
+  throw lastErr;
+}
+
+
 /** Run `fn` over `items` with at most `limit` promises in flight. */
 async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
   let cursor = 0;
