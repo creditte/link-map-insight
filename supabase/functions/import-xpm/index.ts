@@ -677,8 +677,9 @@ async function runSlice(
       ),
     ];
 
-    for (const batch of chunk(trusteeIds, DB_BATCH_SIZE)) {
-      const { error } = await supabase.from("entities").update({ is_trustee_company: true }).in("id", batch);
+    for (const batch of chunk(trusteeIds, FILTER_BATCH_SIZE)) {
+      const { error } = await withRetry("trustee flag update", () =>
+        supabase.from("entities").update({ is_trustee_company: true }).in("id", batch));
       if (error) warn(`Failed to flag ${batch.length} trustee companies: ${error.message}`);
     }
   }
