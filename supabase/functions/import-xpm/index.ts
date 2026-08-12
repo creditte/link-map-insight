@@ -342,7 +342,7 @@ async function runSlice(
   const structureIdByName = new Map<string, string>();
   const groupList = [...groupNames];
   if (groupList.length > 0) {
-    for (const names of chunk(groupList, FILTER_BATCH_SIZE)) {
+    await mapLimit(chunk(groupList, FILTER_BATCH_SIZE), LOOKUP_CONCURRENCY, async (names) => {
       const { data, error } = await withRetry("structure lookup", () =>
         supabase
           .from("structures")
@@ -351,7 +351,8 @@ async function runSlice(
           .in("name", names));
       if (error) throw new Error(`Structure lookup failed: ${error.message}`);
       for (const s of data ?? []) structureIdByName.set(s.name as string, s.id as string);
-    }
+    });
+
 
     const missingStructures = groupList.filter((n) => !structureIdByName.has(n));
     for (const batch of chunk(missingStructures, DB_BATCH_SIZE)) {
