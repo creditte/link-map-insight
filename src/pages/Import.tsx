@@ -114,10 +114,14 @@ export default function Import() {
       setResult(final.result);
       // Import created structures/entities — refresh cached lists and counts.
       invalidateStructures();
+      const limited = (final.result?.structuresSkippedLimit ?? 0) > 0;
       toast({
-        title: "Import complete",
-        description: `${final.result?.entitiesCreated ?? 0} entities, ${final.result?.relationshipsCreated ?? 0} relationships processed.`,
+        title: limited ? "Import completed with limitations" : "Import complete",
+        description: limited
+          ? `${final.result?.entitiesCreated ?? 0} entities imported. ${final.result.structuresSkippedLimit} group(s) skipped — structure limit reached.`
+          : `${final.result?.entitiesCreated ?? 0} entities, ${final.result?.relationshipsCreated ?? 0} relationships processed.`,
       });
+
     } catch (err: unknown) {
       setImportError(err);
       reportXeroError(err);
@@ -324,7 +328,7 @@ export default function Import() {
         <Card className="w-full max-w-lg">
           <CardHeader>
             <CardTitle className="flex items-start gap-2 text-base sm:items-center">
-              {result.warnings?.length > 0 ? (
+              {result.warnings?.length > 0 || (result.structuresSkippedLimit ?? 0) > 0 ? (
                 <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive sm:mt-0" />
               ) : (
                 <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-primary sm:mt-0" />
@@ -361,6 +365,22 @@ export default function Import() {
                 Structures created: <strong>{result.structuresCreated ?? 0}</strong>
               </span>
             </div>
+            {(result.structuresSkippedLimit ?? 0) > 0 && (
+              <div className="mt-3 space-y-1 rounded-md bg-destructive/10 p-3">
+                <p className="font-medium text-destructive">Import completed with limitations</p>
+                <p className="text-xs text-destructive">
+                  {result.structuresSkippedLimit} client group
+                  {result.structuresSkippedLimit === 1 ? "" : "s"} could not be created because your
+                  workspace has reached its{" "}
+                  {result.structureLimit ? `${result.structureLimit}-structure` : "structure"} limit
+                  {(result.rowsSkippedLimit ?? 0) > 0
+                    ? `, affecting ${result.rowsSkippedLimit.toLocaleString()} record${result.rowsSkippedLimit === 1 ? "" : "s"}`
+                    : ""}
+                  . Entities and relationships were still imported — archive or delete structures, or
+                  upgrade your plan, then re-run this import to group them.
+                </p>
+              </div>
+            )}
             {result.warnings?.length > 0 && (
               <div className="mt-3 space-y-1 rounded-md bg-destructive/10 p-3">
                 <p className="font-medium text-destructive">Warnings:</p>
@@ -371,6 +391,7 @@ export default function Import() {
                 ))}
               </div>
             )}
+
           </CardContent>
         </Card>
       )}

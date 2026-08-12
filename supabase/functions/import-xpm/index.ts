@@ -259,6 +259,12 @@ interface Progress {
   relationshipsCreated: number;
   relationshipsSkipped: number;
   structuresCreated: number;
+  /** Groups that could not be created because the plan's structure limit was hit. */
+  structuresSkippedLimit: number;
+  /** Rows that referenced a group which could not be created due to the limit. */
+  rowsSkippedLimit: number;
+  structureLimit: number;
+  limitReached: boolean;
   runs: number;
   warnings: string[];
 }
@@ -273,10 +279,15 @@ function emptyProgress(total: number): Progress {
     relationshipsCreated: 0,
     relationshipsSkipped: 0,
     structuresCreated: 0,
+    structuresSkippedLimit: 0,
+    rowsSkippedLimit: 0,
+    structureLimit: 0,
+    limitReached: false,
     runs: 0,
     warnings: [],
   };
 }
+
 
 // ── One bounded slice of work, fully batched ────────────────────────────
 
@@ -296,7 +307,16 @@ async function runSlice(
   progressIn: Progress,
 ): Promise<Progress> {
   const isXml = fileName.toLowerCase().endsWith(".xml");
-  const p: Progress = { ...progressIn, warnings: [...progressIn.warnings] };
+  const p: Progress = {
+    ...progressIn,
+    // Jobs created before these counters existed resume without them.
+    structuresSkippedLimit: progressIn.structuresSkippedLimit ?? 0,
+    rowsSkippedLimit: progressIn.rowsSkippedLimit ?? 0,
+    structureLimit: progressIn.structureLimit ?? 0,
+    limitReached: progressIn.limitReached ?? false,
+    warnings: [...(progressIn.warnings ?? [])],
+  };
+
   p.runs += 1;
 
   const parsed = isXml
@@ -342,6 +362,10 @@ async function runSlice(
   }
 
   // ── Pass 2: batch-resolve structures ──────────────────────────────────
+  // Structure creation is capped by the workspace's plan limit. We read the
+  // tenant's remaining capacity ONCE per slice and only attempt to create as
+  // many structures as are actually allowed — instead of letting the database
+  // trigger reject each one and emitting a warning per rejected group.
   const structureIdByName = new Map<string, string>();
   const groupList = [...groupNames];
   if (groupList.length > 0) {
@@ -356,37 +380,71 @@ async function runSlice(
       for (const s of data ?? []) structureIdByName.set(s.name as string, s.id as string);
     });
 
-
     const missingStructures = groupList.filter((n) => !structureIdByName.has(n));
-    for (const batch of chunk(missingStructures, DB_BATCH_SIZE)) {
-      const { data, error } = await supabase
-        .from("structures")
-        .insert(batch.map((name) => ({ tenant_id: tenantId, name })))
-        .select("id, name");
-      if (error) {
-        // Fall back per-row so one rejected structure (e.g. diagram limit)
-        // doesn't abort the whole import.
-        for (const name of batch) {
-          const { data: one, error: e1 } = await supabase
-            .from("structures")
-            .insert({ tenant_id: tenantId, name })
-            .select("id, name")
-            .single();
-          if (e1 || !one) {
-            warn(`Failed to create structure "${name}": ${e1?.message ?? "unknown error"}`);
-            continue;
-          }
-          structureIdByName.set(one.name as string, one.id as string);
-          p.structuresCreated++;
-        }
-        continue;
+
+    if (missingStructures.length > 0) {
+      const { data: tenantRow } = await withRetry("tenant capacity", () =>
+        supabase
+          .from("tenants")
+          .select("diagram_limit, diagram_count")
+          .eq("id", tenantId)
+          .maybeSingle());
+      const limit = Number((tenantRow as any)?.diagram_limit ?? 0);
+      const used = Number((tenantRow as any)?.diagram_count ?? 0);
+      let capacity = limit > 0 ? Math.max(0, limit - used) : Number.MAX_SAFE_INTEGER;
+      p.structureLimit = limit;
+
+      const creatable = missingStructures.slice(0, capacity);
+      const rejected = missingStructures.length - creatable.length;
+      if (rejected > 0) {
+        p.structuresSkippedLimit += rejected;
+        p.limitReached = true;
       }
-      for (const s of data ?? []) {
-        structureIdByName.set(s.name as string, s.id as string);
-        p.structuresCreated++;
+
+      for (const batch of chunk(creatable, DB_BATCH_SIZE)) {
+        const { data, error } = await supabase
+          .from("structures")
+          .insert(batch.map((name) => ({ tenant_id: tenantId, name })))
+          .select("id, name");
+        if (error) {
+          // Fall back per-row so one rejected structure doesn't abort the
+          // import. Limit rejections are aggregated, never repeated per row.
+          for (const name of batch) {
+            if (capacity <= 0) {
+              p.structuresSkippedLimit++;
+              p.limitReached = true;
+              continue;
+            }
+            const { data: one, error: e1 } = await supabase
+              .from("structures")
+              .insert({ tenant_id: tenantId, name })
+              .select("id, name")
+              .single();
+            if (e1 || !one) {
+              if (/limit reached/i.test(e1?.message ?? "")) {
+                capacity = 0;
+                p.structuresSkippedLimit++;
+                p.limitReached = true;
+              } else {
+                warn(`Failed to create structure "${name}": ${e1?.message ?? "unknown error"}`);
+              }
+              continue;
+            }
+            capacity--;
+            structureIdByName.set(one.name as string, one.id as string);
+            p.structuresCreated++;
+          }
+          continue;
+        }
+        for (const s of data ?? []) {
+          structureIdByName.set(s.name as string, s.id as string);
+          p.structuresCreated++;
+          capacity--;
+        }
       }
     }
   }
+
 
   // ── Pass 3: batch-resolve entities ────────────────────────────────────
   const byName = new Map<string, EntityRec>();
@@ -525,9 +583,15 @@ async function runSlice(
       const e = entityIdFor(row.relatedClient, null);
       if (e) ids.push(e.id);
     }
+    let blocked = false;
     for (const gn of gs) {
       const sid = structureIdByName.get(gn);
-      if (!sid) continue;
+      if (!sid) {
+        // The group's structure could not be created (plan limit) — the
+        // entities themselves are still imported, only the grouping is lost.
+        blocked = true;
+        continue;
+      }
       for (const entity_id of ids) {
         const key = `${sid}|${entity_id}`;
         if (memberKeys.has(key)) continue;
@@ -535,7 +599,9 @@ async function runSlice(
         memberRows.push({ structure_id: sid, entity_id });
       }
     }
+    if (blocked) p.rowsSkippedLimit++;
   });
+
 
   await mapLimit(chunk(memberRows, DB_BATCH_SIZE), DB_CONCURRENCY, async (batch) => {
     const { error } = await supabase
