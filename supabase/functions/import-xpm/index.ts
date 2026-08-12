@@ -307,7 +307,16 @@ async function runSlice(
   progressIn: Progress,
 ): Promise<Progress> {
   const isXml = fileName.toLowerCase().endsWith(".xml");
-  const p: Progress = { ...progressIn, warnings: [...progressIn.warnings] };
+  const p: Progress = {
+    ...progressIn,
+    // Jobs created before these counters existed resume without them.
+    structuresSkippedLimit: progressIn.structuresSkippedLimit ?? 0,
+    rowsSkippedLimit: progressIn.rowsSkippedLimit ?? 0,
+    structureLimit: progressIn.structureLimit ?? 0,
+    limitReached: progressIn.limitReached ?? false,
+    warnings: [...(progressIn.warnings ?? [])],
+  };
+
   p.runs += 1;
 
   const parsed = isXml
