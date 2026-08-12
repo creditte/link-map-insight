@@ -114,7 +114,7 @@ async function resolveExisting(
   tenantId: string,
   uuids: string[],
   names: string[],
-  batchSize: number,
+  filterBatchSize: number,
 ): Promise<{ byUuid: Map<string, EntityRow>; byName: Map<string, EntityRow> }> {
   const byUuid = new Map<string, EntityRow>();
   const byName = new Map<string, EntityRow>();
@@ -276,7 +276,7 @@ async function processClientPage(
     tenantId,
     [...uuids],
     [...names],
-    t.dbBatchSize,
+    t.filterBatchSize,
   );
 
   const idByUuid = new Map<string, string>();
