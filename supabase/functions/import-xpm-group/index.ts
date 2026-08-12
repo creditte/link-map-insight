@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { decryptToken } from "../_shared/crypto.ts";
-import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
+import { parse as parseXml } from "https://esm.sh/jsr/@libs/xml@6.0.1";
 import { parseXpmRelationshipType, resolveRelationshipEndpoints } from "../_shared/xpm-relationships.ts";
 
 const corsHeaders = {
