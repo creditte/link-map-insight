@@ -4,7 +4,9 @@ import {
   corsHeaders,
   discoverPmTenantId,
   extractTrustName,
+  FatalXpmError,
   isCorporateTrustee,
+  mapLimit,
   refreshAccessToken,
   REL_TYPE_MAP,
   resolveEntityType,
@@ -18,10 +20,17 @@ import {
  * Chunked, resumable XPM sync.
  *
  * A sync is a job row in `import_logs`. Each execution processes a bounded
- * slice of work (a few XPM client pages OR a few client groups), persists
+ * slice of work (a few XPM client pages OR a batch of client groups), persists
  * progress on the job row, then self-invokes to continue in a fresh worker.
- * Nothing large is ever held in memory across the whole practice, so large
- * XPM orgs no longer hit WORKER_RESOURCE_LIMIT.
+ *
+ * Memory discipline:
+ * - client XML is parsed one page at a time and dropped immediately;
+ * - the group catalogue lives in `xpm_groups`, not in the job row — the job row
+ *   only stores a cursor, so it stays a few hundred bytes regardless of whether
+ *   the practice has 10 or 10,000 groups.
+ *
+ * Concurrency is bounded (`mapLimit`) so a large practice never fires hundreds
+ * of XPM or DB calls at once.
  */
 
 const JOB_FILE_NAME = "xpm-sync-3.1";
@@ -36,6 +45,7 @@ interface Stats {
   relationshipsSkipped: number;
   groupsFound: number;
   groupsCreated: number;
+  groupsProcessed: number;
   trusteesDetected: number;
   staffFetched: number;
   typeCounts: Record<string, number>;
@@ -44,8 +54,10 @@ interface Stats {
 interface Progress {
   phase: Phase;
   clientPage: number;
-  groupIndex: number;
-  groups: { uuid: string; name: string }[];
+  /** Last processed group `xpm_uuid` — the resume cursor for the group phase. */
+  groupCursor: string;
+  /** True once the group catalogue has been pulled from XPM into `xpm_groups`. */
+  groupsLoaded: boolean;
   runs: number;
   started_at: string;
   updated_at: string;
@@ -57,8 +69,8 @@ function emptyProgress(): Progress {
   return {
     phase: "clients",
     clientPage: 1,
-    groupIndex: 0,
-    groups: [],
+    groupCursor: "",
+    groupsLoaded: false,
     runs: 0,
     started_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -70,6 +82,7 @@ function emptyProgress(): Progress {
       relationshipsSkipped: 0,
       groupsFound: 0,
       groupsCreated: 0,
+      groupsProcessed: 0,
       trusteesDetected: 0,
       staffFetched: 0,
       typeCounts: {},
@@ -77,6 +90,7 @@ function emptyProgress(): Progress {
     warnings: [],
   };
 }
+
 
 /** Warnings are capped so the job row can't grow unbounded. */
 function warn(p: Progress, msg: string) {
@@ -231,7 +245,7 @@ async function processClientPage(
   p: Progress,
 ): Promise<boolean> {
   const t = tuning();
-  const pageXml = await xpmGetXml(
+  let pageXml: any = await xpmGetXml(
     `/client.api/list?detailed=true&page=${page}&pagesize=${t.clientPageSize}`,
     accessToken,
     xeroTenantId,
@@ -239,8 +253,11 @@ async function processClientPage(
   if (!pageXml) return false;
 
   const parsed = parseClientPage(pageXml, p);
+  // Release the parsed XML tree (the biggest allocation in the run) immediately.
+  pageXml = null;
   if (parsed.length === 0) return false;
   p.stats.clientsFetched += parsed.length;
+
 
   // Everything referenced by this page (clients + their related clients).
   const uuids = new Set<string>();
@@ -265,6 +282,9 @@ async function processClientPage(
   const idByUuid = new Map<string, string>();
   const toInsert: Record<string, unknown>[] = [];
   const trusteePairs: { entityId?: string; uuid: string; trustName: string }[] = [];
+  // Collected first, then issued with bounded concurrency — unchanged records
+  // produce no write at all.
+  const pendingUpdates: { id: string; updates: Record<string, unknown> }[] = [];
 
   for (const c of parsed) {
     const isTrustee = isCorporateTrustee(c.name, c.entityType);
@@ -284,9 +304,9 @@ async function processClientPage(
       if (isTrustee && !existing.is_trustee_company) updates.is_trustee_company = true;
       if (Object.keys(updates).length > 0) {
         updates.source = "imported";
-        const { error } = await supabase.from("entities").update(updates).eq("id", existing.id);
-        if (!error) p.stats.entitiesUpdated++;
+        pendingUpdates.push({ id: existing.id, updates });
       }
+
     } else {
       toInsert.push({
         tenant_id: tenantId,
@@ -330,7 +350,16 @@ async function processClientPage(
     }
   }
 
+  if (pendingUpdates.length > 0) {
+    await mapLimit(pendingUpdates, t.dbConcurrency, async (u) => {
+      const { error } = await supabase.from("entities").update(u.updates).eq("id", u.id);
+      if (!error) p.stats.entitiesUpdated++;
+      else warn(p, `Failed to update entity ${u.id}: ${error.message}`);
+    });
+  }
+
   const createdKeys = await bulkInsertEntities(supabase, toInsert, t.dbBatchSize, p);
+
   for (const row of toInsert) {
     const id = createdKeys.get(row.xpm_uuid as string) ?? createdKeys.get(row.name as string);
     if (id) idByUuid.set(row.xpm_uuid as string, id);
@@ -354,10 +383,10 @@ async function processClientPage(
     }
   }
 
-  // Trustee-by-name pairs (bounded per page).
-  for (const pair of trusteePairs) {
-    const trusteeId = idByUuid.get(pair.uuid);
-    if (!trusteeId) continue;
+  // Trustee-by-name pairs (bounded per page, bounded concurrency).
+  const trusteeLookups = trusteePairs.filter((pair) => idByUuid.has(pair.uuid));
+  await mapLimit(trusteeLookups, t.dbConcurrency, async (pair) => {
+    const trusteeId = idByUuid.get(pair.uuid)!;
     const { data: trust } = await supabase
       .from("entities")
       .select("id")
@@ -367,7 +396,8 @@ async function processClientPage(
       .limit(1)
       .maybeSingle();
     if (trust) wanted.set(`trustee:${trusteeId}:${trust.id}`, { from: trusteeId, to: trust.id, type: "trustee" });
-  }
+  });
+
 
   if (wanted.size > 0) {
     const fromIds = [...new Set([...wanted.values()].map((w) => w.from))];
@@ -418,6 +448,11 @@ async function processClientPage(
 }
 
 // ── Phase: groups ──────────────────────────────────────────────────
+/**
+ * Pull the group catalogue from XPM once and persist it to `xpm_groups`.
+ * The list is never kept on the job row: the group phase pages through the
+ * table by `xpm_uuid` cursor instead, so job-row size is O(1).
+ */
 async function loadGroupList(
   supabase: any,
   tenantId: string,
@@ -425,25 +460,46 @@ async function loadGroupList(
   xeroTenantId: string,
   p: Progress,
 ) {
-  const groupXml = await xpmGetXml("/clientgroup.api/list", accessToken, xeroTenantId);
+  let groupXml: any = await xpmGetXml("/clientgroup.api/list", accessToken, xeroTenantId);
   const groups = xmlArray(groupXml?.Response?.Groups, "Group")
     .map((g: any) => ({ uuid: xmlText(g, "UUID"), name: xmlText(g, "Name") }))
     .filter((g) => g.uuid && g.name);
+  groupXml = null;
 
-  p.groups = groups;
   p.stats.groupsFound = groups.length;
 
-  // Persist the group catalogue in bulk up-front — cheap and keeps the
-  // per-group work in the loop to structure building only.
   const t = tuning();
   const now = new Date().toISOString();
   for (const part of chunk(groups, t.dbBatchSize)) {
-    await supabase.from("xpm_groups").upsert(
+    const { error } = await supabase.from("xpm_groups").upsert(
       part.map((g) => ({ tenant_id: tenantId, xpm_uuid: g.uuid, name: g.name, updated_at: now })),
       { onConflict: "tenant_id,xpm_uuid" },
     );
+    if (error) warn(p, `Failed to persist group batch: ${error.message}`);
   }
+
+  p.groupsLoaded = true;
 }
+
+/** Next slice of groups to process, ordered by `xpm_uuid` after the cursor. */
+async function fetchGroupSlice(
+  supabase: any,
+  tenantId: string,
+  cursor: string,
+  limit: number,
+): Promise<{ uuid: string; name: string }[]> {
+  let q = supabase
+    .from("xpm_groups")
+    .select("xpm_uuid, name")
+    .eq("tenant_id", tenantId)
+    .order("xpm_uuid", { ascending: true })
+    .limit(limit);
+  if (cursor) q = q.gt("xpm_uuid", cursor);
+  const { data, error } = await q;
+  if (error) throw new Error(`Failed to read group slice: ${error.message}`);
+  return (data ?? []).map((r: any) => ({ uuid: r.xpm_uuid, name: r.name }));
+}
+
 
 async function processGroup(
   supabase: any,
@@ -646,7 +702,18 @@ async function runSlice(
   if (!connections?.length) throw new Error("No Xero connection found");
 
   const accessToken = await refreshAccessToken(supabase, connections[0]);
-  const xeroTenantId = await discoverPmTenantId(accessToken, connections[0].xero_tenant_id);
+  // Discover the Practice Manager tenant once, then persist it so later slices
+  // skip the extra /connections round-trip entirely.
+  let xeroTenantId = connections[0].xero_tenant_id as string | null;
+  if (!xeroTenantId) {
+    xeroTenantId = await discoverPmTenantId(accessToken, null);
+    if (xeroTenantId) {
+      await supabase
+        .from("xero_connections")
+        .update({ xero_tenant_id: xeroTenantId, updated_at: new Date().toISOString() })
+        .eq("id", connections[0].id);
+    }
+  }
   if (!xeroTenantId) throw new Error("Xero tenant ID not available");
 
   if (p.phase === "clients") {
@@ -661,14 +728,21 @@ async function runSlice(
       p.clientPage++;
     }
   } else if (p.phase === "groups") {
-    if (p.groups.length === 0 && p.groupIndex === 0) {
+    if (!p.groupsLoaded) {
       await loadGroupList(supabase, tenantId, accessToken, xeroTenantId, p);
     }
-    const end = Math.min(p.groupIndex + t.groupsPerRun, p.groups.length);
-    for (; p.groupIndex < end; p.groupIndex++) {
-      await processGroup(supabase, tenantId, accessToken, xeroTenantId, p.groups[p.groupIndex], p);
+    const slice = await fetchGroupSlice(supabase, tenantId, p.groupCursor, t.groupsPerRun);
+    if (slice.length === 0) {
+      p.phase = "staff";
+    } else {
+      // Bounded concurrency: several groups in flight, never all of them.
+      await mapLimit(slice, t.groupConcurrency, (group) =>
+        processGroup(supabase, tenantId, accessToken, xeroTenantId!, group, p)
+      );
+      p.stats.groupsProcessed += slice.length;
+      p.groupCursor = slice[slice.length - 1].uuid;
+      if (slice.length < t.groupsPerRun) p.phase = "staff";
     }
-    if (p.groupIndex >= p.groups.length) p.phase = "staff";
   } else if (p.phase === "staff") {
     await processStaff(supabase, tenantId, accessToken, xeroTenantId, p);
     await ensureFallbackStructure(supabase, tenantId, p);
@@ -681,8 +755,6 @@ async function runSlice(
 
 async function saveProgress(supabase: any, jobId: string, p: Progress) {
   const done = p.phase === "done";
-  // Group catalogue isn't needed once groups are processed — drop it to keep the row small.
-  const stored: Progress = done ? { ...p, groups: [] } : p;
   await supabase
     .from("import_logs")
     .update({
@@ -693,19 +765,22 @@ async function saveProgress(supabase: any, jobId: string, p: Progress) {
         phase: p.phase,
         progress: {
           clientPage: p.clientPage,
-          groupIndex: p.groupIndex,
+          groupCursor: p.groupCursor,
+          groupsLoaded: p.groupsLoaded,
+          groupsProcessed: p.stats.groupsProcessed,
           groupsTotal: p.stats.groupsFound,
           runs: p.runs,
         },
         ...p.stats,
-        warnings: p.warnings,
+        // Keep the row bounded: only the most recent warnings are retained.
+        warnings: p.warnings.slice(-50),
         started_at: p.started_at,
         updated_at: p.updated_at,
-        groups: stored.groups,
       },
     })
     .eq("id", jobId);
 }
+
 
 /** Kick a fresh worker to continue the same job. */
 async function continueJob(jobId: string) {
@@ -729,8 +804,9 @@ function loadProgress(result: any): Progress {
     ...base,
     phase: (result.phase as Phase) ?? base.phase,
     clientPage: result.progress?.clientPage ?? base.clientPage,
-    groupIndex: result.progress?.groupIndex ?? base.groupIndex,
-    groups: Array.isArray(result.groups) ? result.groups : [],
+    groupCursor: result.progress?.groupCursor ?? base.groupCursor,
+    groupsLoaded: result.progress?.groupsLoaded ?? base.groupsLoaded,
+
     runs: result.progress?.runs ?? 0,
     started_at: result.started_at ?? base.started_at,
     stats: {
@@ -742,7 +818,9 @@ function loadProgress(result: any): Progress {
       relationshipsSkipped: result.relationshipsSkipped ?? 0,
       groupsFound: result.groupsFound ?? 0,
       groupsCreated: result.groupsCreated ?? 0,
+      groupsProcessed: result.groupsProcessed ?? result.progress?.groupsProcessed ?? 0,
       trusteesDetected: result.trusteesDetected ?? 0,
+
       staffFetched: result.staffFetched ?? 0,
       typeCounts: result.typeCounts ?? {},
     },
@@ -759,7 +837,8 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
       if (next.phase !== "done") await continueJob(jobId);
       else console.log(`[sync-xpm] job ${jobId} completed in ${next.runs} runs`);
     } catch (e) {
-      console.error("[sync-xpm] slice error:", e);
+      const fatal = e instanceof FatalXpmError;
+      console.error(`[sync-xpm] slice error${fatal ? " (fatal)" : ""}:`, e);
       await supabase
         .from("import_logs")
         .update({
@@ -767,13 +846,23 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
           result: {
             success: false,
             phase: progress.phase,
+            requiresReconnect: fatal,
             error: e instanceof Error ? e.message : String(e),
             ...progress.stats,
-            warnings: progress.warnings,
+            progress: {
+              clientPage: progress.clientPage,
+              groupCursor: progress.groupCursor,
+              groupsLoaded: progress.groupsLoaded,
+              groupsProcessed: progress.stats.groupsProcessed,
+              groupsTotal: progress.stats.groupsFound,
+              runs: progress.runs,
+            },
+            warnings: progress.warnings.slice(-50),
           },
         })
         .eq("id", jobId);
     }
+
   })();
   // @ts-ignore EdgeRuntime is provided by the Supabase edge runtime
   EdgeRuntime.waitUntil(task);
