@@ -114,10 +114,14 @@ export default function Import() {
       setResult(final.result);
       // Import created structures/entities — refresh cached lists and counts.
       invalidateStructures();
+      const limited = (final.result?.structuresSkippedLimit ?? 0) > 0;
       toast({
-        title: "Import complete",
-        description: `${final.result?.entitiesCreated ?? 0} entities, ${final.result?.relationshipsCreated ?? 0} relationships processed.`,
+        title: limited ? "Import completed with limitations" : "Import complete",
+        description: limited
+          ? `${final.result?.entitiesCreated ?? 0} entities imported. ${final.result.structuresSkippedLimit} group(s) skipped — structure limit reached.`
+          : `${final.result?.entitiesCreated ?? 0} entities, ${final.result?.relationshipsCreated ?? 0} relationships processed.`,
       });
+
     } catch (err: unknown) {
       setImportError(err);
       reportXeroError(err);
