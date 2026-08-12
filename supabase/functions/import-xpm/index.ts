@@ -324,12 +324,13 @@ async function runSlice(
   const structureIdByName = new Map<string, string>();
   const groupList = [...groupNames];
   if (groupList.length > 0) {
-    for (const names of chunk(groupList, DB_BATCH_SIZE)) {
-      const { data, error } = await supabase
-        .from("structures")
-        .select("id, name")
-        .eq("tenant_id", tenantId)
-        .in("name", names);
+    for (const names of chunk(groupList, FILTER_BATCH_SIZE)) {
+      const { data, error } = await withRetry("structure lookup", () =>
+        supabase
+          .from("structures")
+          .select("id, name")
+          .eq("tenant_id", tenantId)
+          .in("name", names));
       if (error) throw new Error(`Structure lookup failed: ${error.message}`);
       for (const s of data ?? []) structureIdByName.set(s.name as string, s.id as string);
     }
