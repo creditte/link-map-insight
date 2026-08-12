@@ -10,7 +10,7 @@ const corsHeaders = {
 // and hands off to a fresh worker. Every row is now handled in ONE pass with
 // batched DB statements, so a slice can be far larger than the old row-by-row
 // implementation allowed while staying inside the CPU / wall-clock budget.
-const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "1500");
+const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "4000");
 /** Rows per bulk INSERT / UPSERT statement. */
 const DB_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_DB_BATCH_SIZE") ?? "500");
 /**
@@ -21,6 +21,9 @@ const DB_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_DB_BATCH_SIZE") ?? "500");
 const FILTER_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_FILTER_BATCH_SIZE") ?? "80");
 /** Max independent DB statements in flight at once. */
 const DB_CONCURRENCY = Number(Deno.env.get("XPM_IMPORT_DB_CONCURRENCY") ?? "4");
+/** Max read-only lookups in flight at once (cheap, so higher than writes). */
+const LOOKUP_CONCURRENCY = Number(Deno.env.get("XPM_IMPORT_LOOKUP_CONCURRENCY") ?? "8");
+
 const MAX_WARNINGS = 200;
 
 // ── Canonical relationship mapping ──────────────────────────────────────
