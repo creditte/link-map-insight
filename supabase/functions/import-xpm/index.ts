@@ -746,13 +746,23 @@ async function processJob(
   const progress = (log.result as Progress | null) ?? emptyProgress(0);
 
   try {
-    const next = await runSlice(supabase, log.tenant_id as string, fileName, content, progress);
+    // Keep working inside THIS worker until the wall-clock budget is spent, so
+    // medium files finish in a single execution with no extra cold-start hops.
+    // Progress is persisted after every slice so the UI keeps moving.
+    const started = Date.now();
+    const BUDGET_MS = 45_000;
+    let current = progress;
+    let done = false;
 
-    const done = next.phase === "done";
-    await supabase
-      .from("import_logs")
-      .update({ status: done ? "completed" : "processing", result: next })
-      .eq("id", logId);
+    for (;;) {
+      current = await runSlice(supabase, log.tenant_id as string, fileName, content, current);
+      done = current.phase === "done";
+      await supabase
+        .from("import_logs")
+        .update({ status: done ? "completed" : "processing", result: current })
+        .eq("id", logId);
+      if (done || Date.now() - started > BUDGET_MS) break;
+    }
 
     if (!done) {
       // Chain a fresh worker so no single execution can exhaust its budget.
@@ -766,6 +776,7 @@ async function processJob(
         body: JSON.stringify({ jobId: logId, __continue: true }),
       });
     }
+
   } catch (err) {
     console.error("import-xpm slice failed:", err);
     // rowIndex is only advanced on success, so a retry resumes at the start of
