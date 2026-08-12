@@ -578,12 +578,13 @@ async function runSlice(
   if (candidates.length > 0) {
     // One batched superset lookup instead of a query per candidate.
     const fromIds = [...new Set(candidates.map((c) => c.from))];
-    for (const batch of chunk(fromIds, DB_BATCH_SIZE)) {
-      const { data, error } = await supabase
-        .from("relationships")
-        .select("id, from_entity_id, to_entity_id, relationship_type")
-        .eq("tenant_id", tenantId)
-        .in("from_entity_id", batch);
+    for (const batch of chunk(fromIds, FILTER_BATCH_SIZE)) {
+      const { data, error } = await withRetry("relationship lookup", () =>
+        supabase
+          .from("relationships")
+          .select("id, from_entity_id, to_entity_id, relationship_type")
+          .eq("tenant_id", tenantId)
+          .in("from_entity_id", batch));
       if (error) throw new Error(`Relationship lookup failed: ${error.message}`);
       for (const r of data ?? []) {
         relIdByKey.set(
