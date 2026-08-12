@@ -31,6 +31,12 @@ export function tuning() {
     dbConcurrency: num("XPM_DB_CONCURRENCY", 6),
     /** Rows per bulk DB statement. */
     dbBatchSize: num("XPM_DB_BATCH_SIZE", 500),
+    /**
+     * Max values per `.in(...)` filter. These are encoded in the request URL,
+     * so large batches produce multi-kilobyte URLs that PostgREST/HTTP2
+     * rejects with an "unspecific protocol error".
+     */
+    filterBatchSize: num("XPM_FILTER_BATCH_SIZE", 80),
     /** Safety cap on pages so a broken cursor can't loop forever. */
     maxClientPages: num("XPM_MAX_CLIENT_PAGES", 500),
   };
