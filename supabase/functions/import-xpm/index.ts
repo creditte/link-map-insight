@@ -372,12 +372,13 @@ async function runSlice(
   const cols = "id, name, entity_type, xpm_uuid, is_trustee_company";
 
   const uuids = [...wanted.values()].map((w) => w.uuid).filter((u): u is string => !!u);
-  for (const batch of chunk(uuids, DB_BATCH_SIZE)) {
-    const { data, error } = await supabase
-      .from("entities")
-      .select(cols)
-      .eq("tenant_id", tenantId)
-      .in("xpm_uuid", batch);
+  for (const batch of chunk(uuids, FILTER_BATCH_SIZE)) {
+    const { data, error } = await withRetry("entity uuid lookup", () =>
+      supabase
+        .from("entities")
+        .select(cols)
+        .eq("tenant_id", tenantId)
+        .in("xpm_uuid", batch));
     if (error) throw new Error(`Entity uuid lookup failed: ${error.message}`);
     for (const e of (data ?? []) as unknown as EntityRec[]) {
       if (e.xpm_uuid) byUuid.set(e.xpm_uuid, e);
@@ -386,12 +387,13 @@ async function runSlice(
   }
 
   const names = [...wanted.keys()];
-  for (const batch of chunk(names, DB_BATCH_SIZE)) {
-    const { data, error } = await supabase
-      .from("entities")
-      .select(cols)
-      .eq("tenant_id", tenantId)
-      .in("name", batch);
+  for (const batch of chunk(names, FILTER_BATCH_SIZE)) {
+    const { data, error } = await withRetry("entity name lookup", () =>
+      supabase
+        .from("entities")
+        .select(cols)
+        .eq("tenant_id", tenantId)
+        .in("name", batch));
     if (error) throw new Error(`Entity name lookup failed: ${error.message}`);
     for (const e of (data ?? []) as unknown as EntityRec[]) {
       if (!byName.has(e.name)) byName.set(e.name, e);
