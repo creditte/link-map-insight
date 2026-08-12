@@ -10,7 +10,7 @@ const corsHeaders = {
 // and hands off to a fresh worker. Every row is now handled in ONE pass with
 // batched DB statements, so a slice can be far larger than the old row-by-row
 // implementation allowed while staying inside the CPU / wall-clock budget.
-const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "1500");
+const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "4000");
 /** Rows per bulk INSERT / UPSERT statement. */
 const DB_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_DB_BATCH_SIZE") ?? "500");
 /**
@@ -21,6 +21,9 @@ const DB_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_DB_BATCH_SIZE") ?? "500");
 const FILTER_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_FILTER_BATCH_SIZE") ?? "80");
 /** Max independent DB statements in flight at once. */
 const DB_CONCURRENCY = Number(Deno.env.get("XPM_IMPORT_DB_CONCURRENCY") ?? "4");
+/** Max read-only lookups in flight at once (cheap, so higher than writes). */
+const LOOKUP_CONCURRENCY = Number(Deno.env.get("XPM_IMPORT_LOOKUP_CONCURRENCY") ?? "8");
+
 const MAX_WARNINGS = 200;
 
 // ── Canonical relationship mapping ──────────────────────────────────────
@@ -162,9 +165,14 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
-function parseCSV(text: string): RawRow[] {
+/**
+ * Parse ONLY the requested window of data rows. Earlier implementations parsed
+ * every row of the file on every slice (O(n²) field parsing for large files);
+ * splitting lines is cheap, so we skip straight to the window we need.
+ */
+function parseCSVRange(text: string, start: number, count: number): { rows: RawRow[]; total: number } {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return [];
+  if (lines.length < 2) return { rows: [], total: 0 };
 
   const header = parseCSVLine(lines[0]).map((h) => stripQuotes(h).toLowerCase());
   const idx = {
@@ -176,8 +184,12 @@ function parseCSV(text: string): RawRow[] {
     related: header.findIndex((h) => h.includes("related")),
   };
 
+  const total = lines.length - 1;
+  const from = 1 + Math.max(0, start);
+  const to = Math.min(lines.length, from + Math.max(0, count));
+
   const rows: RawRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = from; i < to; i++) {
     const cols = parseCSVLine(lines[i]).map((c) => stripQuotes(c));
     if (cols.length < 3) continue;
     rows.push({
@@ -190,7 +202,7 @@ function parseCSV(text: string): RawRow[] {
       relatedClient: cols[idx.related] ?? "",
     });
   }
-  return rows;
+  return { rows, total };
 }
 
 function getTagText(record: string, tag: string): string {
@@ -199,15 +211,19 @@ function getTagText(record: string, tag: string): string {
   return m ? m[1].trim() : "";
 }
 
-function parseXML(text: string): RawRow[] {
+/** XML equivalent of parseCSVRange — records before the window are skipped. */
+function parseXMLRange(text: string, start: number, count: number): { rows: RawRow[]; total: number } {
   const rows: RawRow[] = [];
   const recordRe = /<Record>([\s\S]*?)<\/Record>/gi;
   let m: RegExpExecArray | null;
-  let rowNum = 1;
+  let index = 0;
+  const end = start + count;
   while ((m = recordRe.exec(text)) !== null) {
+    const i = index++;
+    if (i < start || i >= end) continue;
     const rec = m[1];
     rows.push({
-      rowNum: rowNum++,
+      rowNum: i + 1,
       groups: getTagText(rec, "Client-Groups"),
       client: getTagText(rec, "Client-Client"),
       uuid: getTagText(rec, "Client-UUID"),
@@ -216,7 +232,7 @@ function parseXML(text: string): RawRow[] {
       relatedClient: getTagText(rec, "ClientRelationship-RelatedClient"),
     });
   }
-  return rows;
+  return { rows, total: index };
 }
 
 /**
@@ -228,6 +244,7 @@ function countRows(text: string, isXml: boolean): number {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   return Math.max(0, lines.length - 1);
 }
+
 
 // ── Job progress shape ──────────────────────────────────────────────────
 
@@ -279,17 +296,21 @@ async function runSlice(
   progressIn: Progress,
 ): Promise<Progress> {
   const isXml = fileName.toLowerCase().endsWith(".xml");
-  const allRows = isXml ? parseXML(content) : parseCSV(content);
   const p: Progress = { ...progressIn, warnings: [...progressIn.warnings] };
   p.runs += 1;
-  p.totalRowsParsed = allRows.length;
+
+  const parsed = isXml
+    ? parseXMLRange(content, p.rowIndex, ROWS_PER_RUN)
+    : parseCSVRange(content, p.rowIndex, ROWS_PER_RUN);
+  const rows = parsed.rows;
+  p.totalRowsParsed = parsed.total;
 
   const warn = (msg: string) => {
     if (p.warnings.length < MAX_WARNINGS) p.warnings.push(msg);
   };
 
-  const end = Math.min(allRows.length, p.rowIndex + ROWS_PER_RUN);
-  const rows = allRows.slice(p.rowIndex, end);
+  const end = Math.min(parsed.total, p.rowIndex + ROWS_PER_RUN);
+
 
   // ── Pass 1: in-memory collection (no DB calls) ─────────────────────────
   // Distinct client names with their best-known type/uuid, distinct related
@@ -324,7 +345,7 @@ async function runSlice(
   const structureIdByName = new Map<string, string>();
   const groupList = [...groupNames];
   if (groupList.length > 0) {
-    for (const names of chunk(groupList, FILTER_BATCH_SIZE)) {
+    await mapLimit(chunk(groupList, FILTER_BATCH_SIZE), LOOKUP_CONCURRENCY, async (names) => {
       const { data, error } = await withRetry("structure lookup", () =>
         supabase
           .from("structures")
@@ -333,7 +354,8 @@ async function runSlice(
           .in("name", names));
       if (error) throw new Error(`Structure lookup failed: ${error.message}`);
       for (const s of data ?? []) structureIdByName.set(s.name as string, s.id as string);
-    }
+    });
+
 
     const missingStructures = groupList.filter((n) => !structureIdByName.has(n));
     for (const batch of chunk(missingStructures, DB_BATCH_SIZE)) {
@@ -372,33 +394,46 @@ async function runSlice(
   const cols = "id, name, entity_type, xpm_uuid, is_trustee_company";
 
   const uuids = [...wanted.values()].map((w) => w.uuid).filter((u): u is string => !!u);
-  for (const batch of chunk(uuids, FILTER_BATCH_SIZE)) {
-    const { data, error } = await withRetry("entity uuid lookup", () =>
-      supabase
-        .from("entities")
-        .select(cols)
-        .eq("tenant_id", tenantId)
-        .in("xpm_uuid", batch));
-    if (error) throw new Error(`Entity uuid lookup failed: ${error.message}`);
-    for (const e of (data ?? []) as unknown as EntityRec[]) {
-      if (e.xpm_uuid) byUuid.set(e.xpm_uuid, e);
-      if (!byName.has(e.name)) byName.set(e.name, e);
-    }
+  const names = [...wanted.keys()];
+
+  // UUID and name lookups are independent of each other, and each chunk is an
+  // independent query — run them all with bounded concurrency instead of
+  // waiting for one round trip at a time.
+  const uuidHits: EntityRec[] = [];
+  const nameHits: EntityRec[] = [];
+
+  await Promise.all([
+    mapLimit(chunk(uuids, FILTER_BATCH_SIZE), LOOKUP_CONCURRENCY, async (batch) => {
+      const { data, error } = await withRetry("entity uuid lookup", () =>
+        supabase
+          .from("entities")
+          .select(cols)
+          .eq("tenant_id", tenantId)
+          .in("xpm_uuid", batch));
+      if (error) throw new Error(`Entity uuid lookup failed: ${error.message}`);
+      uuidHits.push(...((data ?? []) as unknown as EntityRec[]));
+    }),
+    mapLimit(chunk(names, FILTER_BATCH_SIZE), LOOKUP_CONCURRENCY, async (batch) => {
+      const { data, error } = await withRetry("entity name lookup", () =>
+        supabase
+          .from("entities")
+          .select(cols)
+          .eq("tenant_id", tenantId)
+          .in("name", batch));
+      if (error) throw new Error(`Entity name lookup failed: ${error.message}`);
+      nameHits.push(...((data ?? []) as unknown as EntityRec[]));
+    }),
+  ]);
+
+  // UUID matches win over name matches, exactly as before.
+  for (const e of uuidHits) {
+    if (e.xpm_uuid) byUuid.set(e.xpm_uuid, e);
+    if (!byName.has(e.name)) byName.set(e.name, e);
+  }
+  for (const e of nameHits) {
+    if (!byName.has(e.name)) byName.set(e.name, e);
   }
 
-  const names = [...wanted.keys()];
-  for (const batch of chunk(names, FILTER_BATCH_SIZE)) {
-    const { data, error } = await withRetry("entity name lookup", () =>
-      supabase
-        .from("entities")
-        .select(cols)
-        .eq("tenant_id", tenantId)
-        .in("name", batch));
-    if (error) throw new Error(`Entity name lookup failed: ${error.message}`);
-    for (const e of (data ?? []) as unknown as EntityRec[]) {
-      if (!byName.has(e.name)) byName.set(e.name, e);
-    }
-  }
 
   /** Existing record for a wanted entity, matched by uuid first then name. */
   const findExisting = (w: { name: string; uuid: string | null }): EntityRec | undefined =>
@@ -578,7 +613,7 @@ async function runSlice(
   if (candidates.length > 0) {
     // One batched superset lookup instead of a query per candidate.
     const fromIds = [...new Set(candidates.map((c) => c.from))];
-    for (const batch of chunk(fromIds, FILTER_BATCH_SIZE)) {
+    await mapLimit(chunk(fromIds, FILTER_BATCH_SIZE), LOOKUP_CONCURRENCY, async (batch) => {
       const { data, error } = await withRetry("relationship lookup", () =>
         supabase
           .from("relationships")
@@ -592,7 +627,8 @@ async function runSlice(
           r.id as string,
         );
       }
-    }
+    });
+
 
     const missing = candidates.filter((c) => !relIdByKey.has(`${c.from}|${c.to}|${c.type}`));
     for (const batch of chunk(missing, DB_BATCH_SIZE)) {
@@ -685,7 +721,7 @@ async function runSlice(
   }
 
   p.rowIndex = end;
-  if (p.rowIndex >= allRows.length) p.phase = "done";
+  if (p.rowIndex >= parsed.total) p.phase = "done";
   return p;
 }
 
@@ -708,15 +744,26 @@ async function processJob(
   const fileName = (log.file_name as string) ?? "import.csv";
   const content = (log.raw_payload as string) ?? "";
   const progress = (log.result as Progress | null) ?? emptyProgress(0);
+  let current = progress;
 
   try {
-    const next = await runSlice(supabase, log.tenant_id as string, fileName, content, progress);
+    // Keep working inside THIS worker until the wall-clock budget is spent, so
+    // medium files finish in a single execution with no extra cold-start hops.
+    // Progress is persisted after every slice so the UI keeps moving.
+    const started = Date.now();
+    const BUDGET_MS = 45_000;
+    let done = false;
 
-    const done = next.phase === "done";
-    await supabase
-      .from("import_logs")
-      .update({ status: done ? "completed" : "processing", result: next })
-      .eq("id", logId);
+
+    for (;;) {
+      current = await runSlice(supabase, log.tenant_id as string, fileName, content, current);
+      done = current.phase === "done";
+      await supabase
+        .from("import_logs")
+        .update({ status: done ? "completed" : "processing", result: current })
+        .eq("id", logId);
+      if (done || Date.now() - started > BUDGET_MS) break;
+    }
 
     if (!done) {
       // Chain a fresh worker so no single execution can exhaust its budget.
@@ -730,6 +777,7 @@ async function processJob(
         body: JSON.stringify({ jobId: logId, __continue: true }),
       });
     }
+
   } catch (err) {
     console.error("import-xpm slice failed:", err);
     // rowIndex is only advanced on success, so a retry resumes at the start of
@@ -740,8 +788,9 @@ async function processJob(
       .update({
         status: "failed",
         result: {
-          ...progress,
+          ...current,
           error: err instanceof Error ? err.message : String(err),
+
         },
       })
       .eq("id", logId);
