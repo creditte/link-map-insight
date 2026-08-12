@@ -627,17 +627,21 @@ async function runSlice(
 
     // Auto-flag corporate trustees — one bulk UPDATE instead of 2 statements
     // per trustee relationship.
+    const recById = new Map<string, EntityRec>();
+    for (const rec of byName.values()) recById.set(rec.id, rec);
+    for (const rec of byUuid.values()) recById.set(rec.id, rec);
     const trusteeIds = [
       ...new Set(
         candidates
           .filter((c) => c.type === "trustee")
           .map((c) => c.from)
           .filter((id) => {
-            const rec = [...byName.values()].find((e) => e.id === id);
+            const rec = recById.get(id);
             return rec?.entity_type === "Company" && !rec.is_trustee_company;
           }),
       ),
     ];
+
     for (const batch of chunk(trusteeIds, DB_BATCH_SIZE)) {
       const { error } = await supabase.from("entities").update({ is_trustee_company: true }).in("id", batch);
       if (error) warn(`Failed to flag ${batch.length} trustee companies: ${error.message}`);
