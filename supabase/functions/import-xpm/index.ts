@@ -788,8 +788,9 @@ async function processJob(
       .update({
         status: "failed",
         result: {
-          ...progress,
+          ...current,
           error: err instanceof Error ? err.message : String(err),
+
         },
       })
       .eq("id", logId);
