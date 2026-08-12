@@ -259,6 +259,12 @@ interface Progress {
   relationshipsCreated: number;
   relationshipsSkipped: number;
   structuresCreated: number;
+  /** Groups that could not be created because the plan's structure limit was hit. */
+  structuresSkippedLimit: number;
+  /** Rows that referenced a group which could not be created due to the limit. */
+  rowsSkippedLimit: number;
+  structureLimit: number;
+  limitReached: boolean;
   runs: number;
   warnings: string[];
 }
@@ -273,10 +279,15 @@ function emptyProgress(total: number): Progress {
     relationshipsCreated: 0,
     relationshipsSkipped: 0,
     structuresCreated: 0,
+    structuresSkippedLimit: 0,
+    rowsSkippedLimit: 0,
+    structureLimit: 0,
+    limitReached: false,
     runs: 0,
     warnings: [],
   };
 }
+
 
 // ── One bounded slice of work, fully batched ────────────────────────────
 
