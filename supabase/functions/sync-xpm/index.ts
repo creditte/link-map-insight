@@ -114,13 +114,13 @@ async function resolveExisting(
   tenantId: string,
   uuids: string[],
   names: string[],
-  batchSize: number,
+  filterBatchSize: number,
 ): Promise<{ byUuid: Map<string, EntityRow>; byName: Map<string, EntityRow> }> {
   const byUuid = new Map<string, EntityRow>();
   const byName = new Map<string, EntityRow>();
   const cols = "id, name, xpm_uuid, entity_type, abn, acn, is_trustee_company";
 
-  for (const part of chunk(uuids.filter(Boolean), batchSize)) {
+  for (const part of chunk(uuids.filter(Boolean), filterBatchSize)) {
     const { data } = await supabase
       .from("entities")
       .select(cols)
@@ -133,7 +133,7 @@ async function resolveExisting(
     }
   }
 
-  for (const part of chunk(names.filter(Boolean), batchSize)) {
+  for (const part of chunk(names.filter(Boolean), filterBatchSize)) {
     const { data } = await supabase
       .from("entities")
       .select(cols)
@@ -276,7 +276,7 @@ async function processClientPage(
     tenantId,
     [...uuids],
     [...names],
-    t.dbBatchSize,
+    t.filterBatchSize,
   );
 
   const idByUuid = new Map<string, string>();
@@ -402,7 +402,7 @@ async function processClientPage(
   if (wanted.size > 0) {
     const fromIds = [...new Set([...wanted.values()].map((w) => w.from))];
     const existingKeys = new Set<string>();
-    for (const part of chunk(fromIds, t.dbBatchSize)) {
+    for (const part of chunk(fromIds, t.filterBatchSize)) {
       const { data } = await supabase
         .from("relationships")
         .select("from_entity_id, to_entity_id, relationship_type")
@@ -543,7 +543,7 @@ async function processGroup(
   if (memberUuids.length === 0) return;
 
   const memberEntityIds: string[] = [];
-  for (const part of chunk(memberUuids, t.dbBatchSize)) {
+  for (const part of chunk(memberUuids, t.filterBatchSize)) {
     const { data } = await supabase
       .from("entities")
       .select("id")
@@ -562,7 +562,7 @@ async function processGroup(
   }
 
   const relIds: string[] = [];
-  for (const part of chunk(memberEntityIds, t.dbBatchSize)) {
+  for (const part of chunk(memberEntityIds, t.filterBatchSize)) {
     const { data } = await supabase
       .from("relationships")
       .select("id")
@@ -601,7 +601,7 @@ async function processStaff(
   p.stats.staffFetched = names.length;
 
   const existing = new Set<string>();
-  for (const part of chunk([...new Set(names)], t.dbBatchSize)) {
+  for (const part of chunk([...new Set(names)], t.filterBatchSize)) {
     const { data } = await supabase
       .from("entities")
       .select("name")

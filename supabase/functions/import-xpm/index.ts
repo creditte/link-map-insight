@@ -13,6 +13,12 @@ const corsHeaders = {
 const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "1500");
 /** Rows per bulk INSERT / UPSERT statement. */
 const DB_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_DB_BATCH_SIZE") ?? "500");
+/**
+ * Max values per `.in(...)` filter. These live in the request URL, so large
+ * batches produce multi-kilobyte URLs that PostgREST/HTTP2 rejects with an
+ * "unspecific protocol error". Keep well under the URL limit.
+ */
+const FILTER_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_FILTER_BATCH_SIZE") ?? "80");
 /** Max independent DB statements in flight at once. */
 const DB_CONCURRENCY = Number(Deno.env.get("XPM_IMPORT_DB_CONCURRENCY") ?? "4");
 const MAX_WARNINGS = 200;
@@ -77,6 +83,31 @@ function chunk<T>(items: T[], size: number): T[][] {
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
 }
+
+/**
+ * Retry a DB call on transient transport failures (HTTP/2 stream errors,
+ * connection resets, timeouts). Deterministic errors are re-thrown at once.
+ */
+async function withRetry<T>(label: string, fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const msg = String((e as Error)?.message ?? e).toLowerCase();
+      const transient = msg.includes("http2") || msg.includes("sendrequest") ||
+        msg.includes("connection") || msg.includes("stream error") ||
+        msg.includes("error sending request") || msg.includes("timed out") ||
+        msg.includes("timeout") || msg.includes("reset");
+      if (!transient || attempt === attempts) break;
+      console.warn(`[import-xpm] transient failure in ${label} (attempt ${attempt}), retrying`);
+      await new Promise((r) => setTimeout(r, 400 * 2 ** (attempt - 1)));
+    }
+  }
+  throw lastErr;
+}
+
 
 /** Run `fn` over `items` with at most `limit` promises in flight. */
 async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -293,12 +324,13 @@ async function runSlice(
   const structureIdByName = new Map<string, string>();
   const groupList = [...groupNames];
   if (groupList.length > 0) {
-    for (const names of chunk(groupList, DB_BATCH_SIZE)) {
-      const { data, error } = await supabase
-        .from("structures")
-        .select("id, name")
-        .eq("tenant_id", tenantId)
-        .in("name", names);
+    for (const names of chunk(groupList, FILTER_BATCH_SIZE)) {
+      const { data, error } = await withRetry("structure lookup", () =>
+        supabase
+          .from("structures")
+          .select("id, name")
+          .eq("tenant_id", tenantId)
+          .in("name", names));
       if (error) throw new Error(`Structure lookup failed: ${error.message}`);
       for (const s of data ?? []) structureIdByName.set(s.name as string, s.id as string);
     }
@@ -340,12 +372,13 @@ async function runSlice(
   const cols = "id, name, entity_type, xpm_uuid, is_trustee_company";
 
   const uuids = [...wanted.values()].map((w) => w.uuid).filter((u): u is string => !!u);
-  for (const batch of chunk(uuids, DB_BATCH_SIZE)) {
-    const { data, error } = await supabase
-      .from("entities")
-      .select(cols)
-      .eq("tenant_id", tenantId)
-      .in("xpm_uuid", batch);
+  for (const batch of chunk(uuids, FILTER_BATCH_SIZE)) {
+    const { data, error } = await withRetry("entity uuid lookup", () =>
+      supabase
+        .from("entities")
+        .select(cols)
+        .eq("tenant_id", tenantId)
+        .in("xpm_uuid", batch));
     if (error) throw new Error(`Entity uuid lookup failed: ${error.message}`);
     for (const e of (data ?? []) as unknown as EntityRec[]) {
       if (e.xpm_uuid) byUuid.set(e.xpm_uuid, e);
@@ -354,12 +387,13 @@ async function runSlice(
   }
 
   const names = [...wanted.keys()];
-  for (const batch of chunk(names, DB_BATCH_SIZE)) {
-    const { data, error } = await supabase
-      .from("entities")
-      .select(cols)
-      .eq("tenant_id", tenantId)
-      .in("name", batch);
+  for (const batch of chunk(names, FILTER_BATCH_SIZE)) {
+    const { data, error } = await withRetry("entity name lookup", () =>
+      supabase
+        .from("entities")
+        .select(cols)
+        .eq("tenant_id", tenantId)
+        .in("name", batch));
     if (error) throw new Error(`Entity name lookup failed: ${error.message}`);
     for (const e of (data ?? []) as unknown as EntityRec[]) {
       if (!byName.has(e.name)) byName.set(e.name, e);
@@ -544,12 +578,13 @@ async function runSlice(
   if (candidates.length > 0) {
     // One batched superset lookup instead of a query per candidate.
     const fromIds = [...new Set(candidates.map((c) => c.from))];
-    for (const batch of chunk(fromIds, DB_BATCH_SIZE)) {
-      const { data, error } = await supabase
-        .from("relationships")
-        .select("id, from_entity_id, to_entity_id, relationship_type")
-        .eq("tenant_id", tenantId)
-        .in("from_entity_id", batch);
+    for (const batch of chunk(fromIds, FILTER_BATCH_SIZE)) {
+      const { data, error } = await withRetry("relationship lookup", () =>
+        supabase
+          .from("relationships")
+          .select("id, from_entity_id, to_entity_id, relationship_type")
+          .eq("tenant_id", tenantId)
+          .in("from_entity_id", batch));
       if (error) throw new Error(`Relationship lookup failed: ${error.message}`);
       for (const r of data ?? []) {
         relIdByKey.set(
@@ -642,8 +677,9 @@ async function runSlice(
       ),
     ];
 
-    for (const batch of chunk(trusteeIds, DB_BATCH_SIZE)) {
-      const { error } = await supabase.from("entities").update({ is_trustee_company: true }).in("id", batch);
+    for (const batch of chunk(trusteeIds, FILTER_BATCH_SIZE)) {
+      const { error } = await withRetry("trustee flag update", () =>
+        supabase.from("entities").update({ is_trustee_company: true }).in("id", batch));
       if (error) warn(`Failed to flag ${batch.length} trustee companies: ${error.message}`);
     }
   }

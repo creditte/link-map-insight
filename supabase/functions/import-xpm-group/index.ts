@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { decryptToken } from "../_shared/crypto.ts";
-import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
+import { parse as parseXml } from "https://esm.sh/jsr/@libs/xml@6.0.1";
 import { parseXpmRelationshipType, resolveRelationshipEndpoints } from "../_shared/xpm-relationships.ts";
 
 const corsHeaders = {
@@ -235,9 +235,19 @@ Deno.serve(async (req) => {
     const xpmUuidToEntityId: Record<string, string> = {};
 
     // Check for existing entities with these xpm_uuids
-    const { data: existingEntities } = await supabase.from("entities").select("id, xpm_uuid").eq("tenant_id", tenantId).in("xpm_uuid", clients.map(c => c.uuid));
-    for (const e of existingEntities ?? []) {
-      if (e.xpm_uuid) xpmUuidToEntityId[e.xpm_uuid] = e.id;
+    // `.in(...)` filters live in the request URL — keep batches small so long
+    // UUID lists can't blow the URL limit (HTTP2 protocol error).
+    const FILTER_BATCH = 80;
+    const uuidList = clients.map((c) => c.uuid).filter(Boolean);
+    for (let i = 0; i < uuidList.length; i += FILTER_BATCH) {
+      const { data: existingEntities } = await supabase
+        .from("entities")
+        .select("id, xpm_uuid")
+        .eq("tenant_id", tenantId)
+        .in("xpm_uuid", uuidList.slice(i, i + FILTER_BATCH));
+      for (const e of existingEntities ?? []) {
+        if (e.xpm_uuid) xpmUuidToEntityId[e.xpm_uuid] = e.id;
+      }
     }
 
     // Create missing entities
@@ -285,12 +295,14 @@ Deno.serve(async (req) => {
     // Load entity types for reused entities that may not be in this fetch batch
     const allEntityIds = Object.values(xpmUuidToEntityId);
     if (allEntityIds.length > 0) {
-      const { data: typeRows } = await supabase
-        .from("entities")
-        .select("id, entity_type")
-        .in("id", allEntityIds);
-      for (const row of typeRows ?? []) {
-        entityTypes.set(row.id, row.entity_type);
+      for (let i = 0; i < allEntityIds.length; i += FILTER_BATCH) {
+        const { data: typeRows } = await supabase
+          .from("entities")
+          .select("id, entity_type")
+          .in("id", allEntityIds.slice(i, i + FILTER_BATCH));
+        for (const row of typeRows ?? []) {
+          entityTypes.set(row.id, row.entity_type);
+        }
       }
     }
 
