@@ -361,6 +361,22 @@ export default function Import() {
                 Structures created: <strong>{result.structuresCreated ?? 0}</strong>
               </span>
             </div>
+            {(result.structuresSkippedLimit ?? 0) > 0 && (
+              <div className="mt-3 space-y-1 rounded-md bg-destructive/10 p-3">
+                <p className="font-medium text-destructive">Import completed with limitations</p>
+                <p className="text-xs text-destructive">
+                  {result.structuresSkippedLimit} client group
+                  {result.structuresSkippedLimit === 1 ? "" : "s"} could not be created because your
+                  workspace has reached its{" "}
+                  {result.structureLimit ? `${result.structureLimit}-structure` : "structure"} limit
+                  {(result.rowsSkippedLimit ?? 0) > 0
+                    ? `, affecting ${result.rowsSkippedLimit.toLocaleString()} record${result.rowsSkippedLimit === 1 ? "" : "s"}`
+                    : ""}
+                  . Entities and relationships were still imported — archive or delete structures, or
+                  upgrade your plan, then re-run this import to group them.
+                </p>
+              </div>
+            )}
             {result.warnings?.length > 0 && (
               <div className="mt-3 space-y-1 rounded-md bg-destructive/10 p-3">
                 <p className="font-medium text-destructive">Warnings:</p>
@@ -371,6 +387,7 @@ export default function Import() {
                 ))}
               </div>
             )}
+
           </CardContent>
         </Card>
       )}
