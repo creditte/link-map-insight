@@ -13,6 +13,12 @@ const corsHeaders = {
 const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "1500");
 /** Rows per bulk INSERT / UPSERT statement. */
 const DB_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_DB_BATCH_SIZE") ?? "500");
+/**
+ * Max values per `.in(...)` filter. These live in the request URL, so large
+ * batches produce multi-kilobyte URLs that PostgREST/HTTP2 rejects with an
+ * "unspecific protocol error". Keep well under the URL limit.
+ */
+const FILTER_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_FILTER_BATCH_SIZE") ?? "80");
 /** Max independent DB statements in flight at once. */
 const DB_CONCURRENCY = Number(Deno.env.get("XPM_IMPORT_DB_CONCURRENCY") ?? "4");
 const MAX_WARNINGS = 200;
