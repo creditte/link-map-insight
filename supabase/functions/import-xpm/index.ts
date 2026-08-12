@@ -390,33 +390,46 @@ async function runSlice(
   const cols = "id, name, entity_type, xpm_uuid, is_trustee_company";
 
   const uuids = [...wanted.values()].map((w) => w.uuid).filter((u): u is string => !!u);
-  for (const batch of chunk(uuids, FILTER_BATCH_SIZE)) {
-    const { data, error } = await withRetry("entity uuid lookup", () =>
-      supabase
-        .from("entities")
-        .select(cols)
-        .eq("tenant_id", tenantId)
-        .in("xpm_uuid", batch));
-    if (error) throw new Error(`Entity uuid lookup failed: ${error.message}`);
-    for (const e of (data ?? []) as unknown as EntityRec[]) {
-      if (e.xpm_uuid) byUuid.set(e.xpm_uuid, e);
-      if (!byName.has(e.name)) byName.set(e.name, e);
-    }
+  const names = [...wanted.keys()];
+
+  // UUID and name lookups are independent of each other, and each chunk is an
+  // independent query — run them all with bounded concurrency instead of
+  // waiting for one round trip at a time.
+  const uuidHits: EntityRec[] = [];
+  const nameHits: EntityRec[] = [];
+
+  await Promise.all([
+    mapLimit(chunk(uuids, FILTER_BATCH_SIZE), LOOKUP_CONCURRENCY, async (batch) => {
+      const { data, error } = await withRetry("entity uuid lookup", () =>
+        supabase
+          .from("entities")
+          .select(cols)
+          .eq("tenant_id", tenantId)
+          .in("xpm_uuid", batch));
+      if (error) throw new Error(`Entity uuid lookup failed: ${error.message}`);
+      uuidHits.push(...((data ?? []) as unknown as EntityRec[]));
+    }),
+    mapLimit(chunk(names, FILTER_BATCH_SIZE), LOOKUP_CONCURRENCY, async (batch) => {
+      const { data, error } = await withRetry("entity name lookup", () =>
+        supabase
+          .from("entities")
+          .select(cols)
+          .eq("tenant_id", tenantId)
+          .in("name", batch));
+      if (error) throw new Error(`Entity name lookup failed: ${error.message}`);
+      nameHits.push(...((data ?? []) as unknown as EntityRec[]));
+    }),
+  ]);
+
+  // UUID matches win over name matches, exactly as before.
+  for (const e of uuidHits) {
+    if (e.xpm_uuid) byUuid.set(e.xpm_uuid, e);
+    if (!byName.has(e.name)) byName.set(e.name, e);
+  }
+  for (const e of nameHits) {
+    if (!byName.has(e.name)) byName.set(e.name, e);
   }
 
-  const names = [...wanted.keys()];
-  for (const batch of chunk(names, FILTER_BATCH_SIZE)) {
-    const { data, error } = await withRetry("entity name lookup", () =>
-      supabase
-        .from("entities")
-        .select(cols)
-        .eq("tenant_id", tenantId)
-        .in("name", batch));
-    if (error) throw new Error(`Entity name lookup failed: ${error.message}`);
-    for (const e of (data ?? []) as unknown as EntityRec[]) {
-      if (!byName.has(e.name)) byName.set(e.name, e);
-    }
-  }
 
   /** Existing record for a wanted entity, matched by uuid first then name. */
   const findExisting = (w: { name: string; uuid: string | null }): EntityRec | undefined =>
