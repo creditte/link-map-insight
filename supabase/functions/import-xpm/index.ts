@@ -610,7 +610,7 @@ async function runSlice(
   if (candidates.length > 0) {
     // One batched superset lookup instead of a query per candidate.
     const fromIds = [...new Set(candidates.map((c) => c.from))];
-    for (const batch of chunk(fromIds, FILTER_BATCH_SIZE)) {
+    await mapLimit(chunk(fromIds, FILTER_BATCH_SIZE), LOOKUP_CONCURRENCY, async (batch) => {
       const { data, error } = await withRetry("relationship lookup", () =>
         supabase
           .from("relationships")
@@ -624,7 +624,8 @@ async function runSlice(
           r.id as string,
         );
       }
-    }
+    });
+
 
     const missing = candidates.filter((c) => !relIdByKey.has(`${c.from}|${c.to}|${c.type}`));
     for (const batch of chunk(missing, DB_BATCH_SIZE)) {
