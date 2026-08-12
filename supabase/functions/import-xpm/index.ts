@@ -293,17 +293,21 @@ async function runSlice(
   progressIn: Progress,
 ): Promise<Progress> {
   const isXml = fileName.toLowerCase().endsWith(".xml");
-  const allRows = isXml ? parseXML(content) : parseCSV(content);
   const p: Progress = { ...progressIn, warnings: [...progressIn.warnings] };
   p.runs += 1;
-  p.totalRowsParsed = allRows.length;
+
+  const parsed = isXml
+    ? parseXMLRange(content, p.rowIndex, ROWS_PER_RUN)
+    : parseCSVRange(content, p.rowIndex, ROWS_PER_RUN);
+  const rows = parsed.rows;
+  p.totalRowsParsed = parsed.total;
 
   const warn = (msg: string) => {
     if (p.warnings.length < MAX_WARNINGS) p.warnings.push(msg);
   };
 
-  const end = Math.min(allRows.length, p.rowIndex + ROWS_PER_RUN);
-  const rows = allRows.slice(p.rowIndex, end);
+  const end = Math.min(parsed.total, p.rowIndex + ROWS_PER_RUN);
+
 
   // ── Pass 1: in-memory collection (no DB calls) ─────────────────────────
   // Distinct client names with their best-known type/uuid, distinct related
