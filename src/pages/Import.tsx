@@ -27,10 +27,23 @@ export default function Import() {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [importError, setImportError] = useState<unknown>(null);
-  const [progress, setProgress] = useState<{ phase: string; rowIndex: number; total: number } | null>(null);
+  const [stage, setStage] = useState<"idle" | "uploading" | "preparing" | "importing" | "finishing">("idle");
+  const [percent, setPercent] = useState(0);
+  const [records, setRecords] = useState<{ done: number; total: number } | null>(null);
   const [importLogs, setImportLogs] = useState<any[]>([]);
   const [showInstructions, setShowInstructions] = useState(false);
   const { reportError: reportXeroError } = useXeroConnection();
+
+  /** Monotonic progress — never let the bar jump backwards. */
+  const advance = (next: number) => setPercent((prev) => Math.max(prev, Math.min(99, next)));
+
+  const STAGE_LABEL: Record<string, string> = {
+    uploading: "Uploading file…",
+    preparing: "Preparing data…",
+    importing: "Importing records…",
+    finishing: "Almost done…",
+  };
+
 
   useEffect(() => {
     if (!user) return;
