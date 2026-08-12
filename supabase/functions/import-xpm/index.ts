@@ -744,6 +744,7 @@ async function processJob(
   const fileName = (log.file_name as string) ?? "import.csv";
   const content = (log.raw_payload as string) ?? "";
   const progress = (log.result as Progress | null) ?? emptyProgress(0);
+  let current = progress;
 
   try {
     // Keep working inside THIS worker until the wall-clock budget is spent, so
@@ -751,8 +752,8 @@ async function processJob(
     // Progress is persisted after every slice so the UI keeps moving.
     const started = Date.now();
     const BUDGET_MS = 45_000;
-    let current = progress;
     let done = false;
+
 
     for (;;) {
       current = await runSlice(supabase, log.tenant_id as string, fileName, content, current);
