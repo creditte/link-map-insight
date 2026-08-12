@@ -247,8 +247,11 @@ export default function Import() {
                   ? "Creating entities…"
                   : progress.phase === "structures"
                     ? "Building structures…"
-                    : "Linking relationships…"}
+                    : progress.phase === "relationships"
+                      ? "Linking relationships…"
+                      : "Importing records…"}
               </p>
+
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
                   className="h-full rounded-full bg-primary transition-all"

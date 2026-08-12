@@ -6,10 +6,15 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// How many rows a single execution processes per phase before it persists
-// progress and hands off to a fresh worker. Keeps every invocation well
-// inside the Edge Function CPU / wall-clock budget.
-const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "250");
+// How many source rows a single execution processes before it persists progress
+// and hands off to a fresh worker. Every row is now handled in ONE pass with
+// batched DB statements, so a slice can be far larger than the old row-by-row
+// implementation allowed while staying inside the CPU / wall-clock budget.
+const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "1500");
+/** Rows per bulk INSERT / UPSERT statement. */
+const DB_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_DB_BATCH_SIZE") ?? "500");
+/** Max independent DB statements in flight at once. */
+const DB_CONCURRENCY = Number(Deno.env.get("XPM_IMPORT_DB_CONCURRENCY") ?? "4");
 const MAX_WARNINGS = 200;
 
 // ── Canonical relationship mapping ──────────────────────────────────────
@@ -64,6 +69,27 @@ const ENTITY_TYPE_MAP: Record<string, string> = {
   // Generic trust → Unclassified (needs manual review)
   trust: "Unclassified",
 };
+
+// ── Generic helpers ─────────────────────────────────────────────────────
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/** Run `fn` over `items` with at most `limit` promises in flight. */
+async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let cursor = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    for (;;) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+}
 
 // ── Parsing helpers ─────────────────────────────────────────────────────
 
@@ -162,12 +188,22 @@ function parseXML(text: string): RawRow[] {
   return rows;
 }
 
+/**
+ * Count rows without materialising them — used at job creation so we never hold
+ * a parsed copy of a large file alongside the raw text.
+ */
+function countRows(text: string, isXml: boolean): number {
+  if (isXml) return (text.match(/<Record>/gi) ?? []).length;
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  return Math.max(0, lines.length - 1);
+}
+
 // ── Job progress shape ──────────────────────────────────────────────────
 
-type Phase = "entities" | "structures" | "relationships" | "done";
+type Phase = "importing" | "done";
 
 interface Progress {
-  phase: Phase;
+  phase: Phase | string;
   rowIndex: number;
   totalRowsParsed: number;
   entitiesCreated: number;
@@ -181,7 +217,7 @@ interface Progress {
 
 function emptyProgress(total: number): Progress {
   return {
-    phase: "entities",
+    phase: "importing",
     rowIndex: 0,
     totalRowsParsed: total,
     entitiesCreated: 0,
@@ -194,209 +230,264 @@ function emptyProgress(total: number): Progress {
   };
 }
 
-// ── One bounded slice of work ───────────────────────────────────────────
+// ── One bounded slice of work, fully batched ────────────────────────────
+
+interface EntityRec {
+  id: string;
+  name: string;
+  entity_type: string;
+  xpm_uuid: string | null;
+  is_trustee_company: boolean;
+}
 
 async function runSlice(
   supabase: ReturnType<typeof createClient>,
   tenantId: string,
-  logId: string,
   fileName: string,
   content: string,
   progressIn: Progress,
 ): Promise<Progress> {
   const isXml = fileName.toLowerCase().endsWith(".xml");
-  const rows = isXml ? parseXML(content) : parseCSV(content);
+  const allRows = isXml ? parseXML(content) : parseCSV(content);
   const p: Progress = { ...progressIn, warnings: [...progressIn.warnings] };
   p.runs += 1;
+  p.totalRowsParsed = allRows.length;
 
   const warn = (msg: string) => {
     if (p.warnings.length < MAX_WARNINGS) p.warnings.push(msg);
   };
 
-  const entityIdCache = new Map<string, string>();
+  const end = Math.min(allRows.length, p.rowIndex + ROWS_PER_RUN);
+  const rows = allRows.slice(p.rowIndex, end);
+
+  // ── Pass 1: in-memory collection (no DB calls) ─────────────────────────
+  // Distinct client names with their best-known type/uuid, distinct related
+  // names, and distinct group names for this slice only.
+  const wanted = new Map<string, { name: string; uuid: string | null; entityType: string }>();
+  const groupNames = new Set<string>();
+
+  const noteEntity = (name: string, uuid: string | null, entityType: string) => {
+    const prev = wanted.get(name);
+    if (!prev) {
+      wanted.set(name, { name, uuid, entityType });
+      return;
+    }
+    if (!prev.uuid && uuid) prev.uuid = uuid;
+    if (prev.entityType === "Unclassified" && entityType !== "Unclassified") prev.entityType = entityType;
+  };
+
+  const rowGroups: string[][] = rows.map((row) => {
+    const gs = row.groups ? row.groups.split(";").map((g) => g.trim()).filter(Boolean) : [];
+    for (const g of gs) groupNames.add(g);
+    return gs;
+  });
+
+  for (const row of rows) {
+    if (row.client) {
+      noteEntity(row.client, row.uuid || null, ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified");
+    }
+    if (row.relatedClient) noteEntity(row.relatedClient, null, "Unclassified");
+  }
+
+  // ── Pass 2: batch-resolve structures ──────────────────────────────────
   const structureIdByName = new Map<string, string>();
-
-  async function resolveEntity(
-    name: string,
-    xpmUuid: string | null,
-    entityType: string,
-    rowNum: number,
-  ): Promise<string | null> {
-    if (!name) return null;
-
-    const cacheKey = xpmUuid || name;
-    if (entityIdCache.has(cacheKey)) return entityIdCache.get(cacheKey)!;
-    if (xpmUuid && entityIdCache.has(name)) return entityIdCache.get(name)!;
-
-    let existing: { id: string; entity_type: string; xpm_uuid: string | null } | null = null;
-
-    if (xpmUuid) {
-      const { data } = await supabase
-        .from("entities")
-        .select("id, entity_type, xpm_uuid")
+  const groupList = [...groupNames];
+  if (groupList.length > 0) {
+    for (const names of chunk(groupList, DB_BATCH_SIZE)) {
+      const { data, error } = await supabase
+        .from("structures")
+        .select("id, name")
         .eq("tenant_id", tenantId)
-        .eq("xpm_uuid", xpmUuid)
-        .maybeSingle();
-      existing = data as typeof existing;
+        .in("name", names);
+      if (error) throw new Error(`Structure lookup failed: ${error.message}`);
+      for (const s of data ?? []) structureIdByName.set(s.name as string, s.id as string);
     }
 
-    if (!existing) {
-      const { data } = await supabase
-        .from("entities")
-        .select("id, entity_type, xpm_uuid")
-        .eq("tenant_id", tenantId)
-        .eq("name", name)
-        .maybeSingle();
-      existing = data as typeof existing;
+    const missingStructures = groupList.filter((n) => !structureIdByName.has(n));
+    for (const batch of chunk(missingStructures, DB_BATCH_SIZE)) {
+      const { data, error } = await supabase
+        .from("structures")
+        .insert(batch.map((name) => ({ tenant_id: tenantId, name })))
+        .select("id, name");
+      if (error) {
+        // Fall back per-row so one rejected structure (e.g. diagram limit)
+        // doesn't abort the whole import.
+        for (const name of batch) {
+          const { data: one, error: e1 } = await supabase
+            .from("structures")
+            .insert({ tenant_id: tenantId, name })
+            .select("id, name")
+            .single();
+          if (e1 || !one) {
+            warn(`Failed to create structure "${name}": ${e1?.message ?? "unknown error"}`);
+            continue;
+          }
+          structureIdByName.set(one.name as string, one.id as string);
+          p.structuresCreated++;
+        }
+        continue;
+      }
+      for (const s of data ?? []) {
+        structureIdByName.set(s.name as string, s.id as string);
+        p.structuresCreated++;
+      }
     }
+  }
 
-    if (existing) {
-      const updates: Record<string, string> = {};
-      if (entityType !== "Unclassified" && existing.entity_type === "Unclassified") {
-        updates.entity_type = entityType;
-        updates.source = "imported";
-      }
-      if (xpmUuid && !existing.xpm_uuid) {
-        updates.xpm_uuid = xpmUuid;
-      }
-      if (Object.keys(updates).length > 0) {
-        await supabase.from("entities").update(updates).eq("id", existing.id);
-        p.entitiesUpdated++;
-      }
+  // ── Pass 3: batch-resolve entities ────────────────────────────────────
+  const byName = new Map<string, EntityRec>();
+  const byUuid = new Map<string, EntityRec>();
+  const cols = "id, name, entity_type, xpm_uuid, is_trustee_company";
 
-      entityIdCache.set(cacheKey, existing.id);
-      if (cacheKey !== name) entityIdCache.set(name, existing.id);
-      return existing.id;
-    }
-
+  const uuids = [...wanted.values()].map((w) => w.uuid).filter((u): u is string => !!u);
+  for (const batch of chunk(uuids, DB_BATCH_SIZE)) {
     const { data, error } = await supabase
       .from("entities")
-      .insert({
-        tenant_id: tenantId,
-        name,
-        xpm_uuid: xpmUuid,
-        entity_type: entityType,
-        source: "imported",
-      })
-      .select("id")
-      .single();
-
-    if (error) {
-      warn(`Row ${rowNum}: Failed to create entity "${name}": ${error.message}`);
-      return null;
-    }
-
-    entityIdCache.set(cacheKey, data.id as string);
-    if (cacheKey !== name) entityIdCache.set(name, data.id as string);
-    p.entitiesCreated++;
-    return data.id as string;
-  }
-
-  async function resolveStructure(name: string, rowNum: number): Promise<string | null> {
-    if (structureIdByName.has(name)) return structureIdByName.get(name)!;
-    const { data: existing } = await supabase
-      .from("structures")
-      .select("id")
+      .select(cols)
       .eq("tenant_id", tenantId)
-      .eq("name", name)
-      .maybeSingle();
-    if (existing) {
-      structureIdByName.set(name, existing.id as string);
-      return existing.id as string;
+      .in("xpm_uuid", batch);
+    if (error) throw new Error(`Entity uuid lookup failed: ${error.message}`);
+    for (const e of (data ?? []) as unknown as EntityRec[]) {
+      if (e.xpm_uuid) byUuid.set(e.xpm_uuid, e);
+      if (!byName.has(e.name)) byName.set(e.name, e);
     }
+  }
+
+  const names = [...wanted.keys()];
+  for (const batch of chunk(names, DB_BATCH_SIZE)) {
     const { data, error } = await supabase
-      .from("structures")
-      .insert({ tenant_id: tenantId, name })
-      .select("id")
-      .single();
+      .from("entities")
+      .select(cols)
+      .eq("tenant_id", tenantId)
+      .in("name", batch);
+    if (error) throw new Error(`Entity name lookup failed: ${error.message}`);
+    for (const e of (data ?? []) as unknown as EntityRec[]) {
+      if (!byName.has(e.name)) byName.set(e.name, e);
+    }
+  }
+
+  /** Existing record for a wanted entity, matched by uuid first then name. */
+  const findExisting = (w: { name: string; uuid: string | null }): EntityRec | undefined =>
+    (w.uuid ? byUuid.get(w.uuid) : undefined) ?? byName.get(w.name);
+
+  // Backfill / upgrade existing records in bulk (id-conflict upsert).
+  const entityUpdates: Record<string, unknown>[] = [];
+  const toInsert: { name: string; uuid: string | null; entityType: string }[] = [];
+  for (const w of wanted.values()) {
+    const existing = findExisting(w);
+    if (!existing) {
+      toInsert.push(w);
+      continue;
+    }
+    const needsType = w.entityType !== "Unclassified" && existing.entity_type === "Unclassified";
+    const needsUuid = !!w.uuid && !existing.xpm_uuid;
+    if (needsType || needsUuid) {
+      if (needsType) existing.entity_type = w.entityType;
+      if (needsUuid) existing.xpm_uuid = w.uuid;
+      entityUpdates.push({
+        id: existing.id,
+        tenant_id: tenantId,
+        name: existing.name,
+        entity_type: existing.entity_type,
+        xpm_uuid: existing.xpm_uuid,
+        source: "imported",
+      });
+    }
+  }
+
+  await mapLimit(chunk(entityUpdates, DB_BATCH_SIZE), DB_CONCURRENCY, async (batch) => {
+    const { error } = await supabase.from("entities").upsert(batch, { onConflict: "id" });
     if (error) {
-      warn(`Row ${rowNum}: Failed to create structure "${name}": ${error.message}`);
-      return null;
+      warn(`Failed to update ${batch.length} existing entities: ${error.message}`);
+      return;
     }
-    structureIdByName.set(name, data.id as string);
-    p.structuresCreated++;
-    return data.id as string;
-  }
+    p.entitiesUpdated += batch.length;
+  });
 
-  async function linkRelToStructures(relationshipId: string, row: RawRow) {
-    if (!row.groups) return;
-    const groupNames = row.groups.split(";").map((g) => g.trim()).filter(Boolean);
-    for (const gn of groupNames) {
-      const structureId = await resolveStructure(gn, row.rowNum);
-      if (!structureId) continue;
-      await supabase
-        .from("structure_relationships")
-        .upsert(
-          { structure_id: structureId, relationship_id: relationshipId },
-          { onConflict: "structure_id,relationship_id", ignoreDuplicates: true },
-        );
-    }
-  }
-
-  const end = Math.min(rows.length, p.rowIndex + ROWS_PER_RUN);
-
-  // ── Phase 1: entities ────────────────────────────────────────────────
-  if (p.phase === "entities") {
-    for (let i = p.rowIndex; i < end; i++) {
-      const row = rows[i];
-      if (row.client) {
-        const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
-        await resolveEntity(row.client, row.uuid || null, et, row.rowNum);
+  for (const batch of chunk(toInsert, DB_BATCH_SIZE)) {
+    const payload = batch.map((w) => ({
+      tenant_id: tenantId,
+      name: w.name,
+      xpm_uuid: w.uuid,
+      entity_type: w.entityType,
+      source: "imported",
+    }));
+    const { data, error } = await supabase.from("entities").insert(payload).select(cols);
+    if (error) {
+      for (const w of batch) {
+        const { data: one, error: e1 } = await supabase
+          .from("entities")
+          .insert({ tenant_id: tenantId, name: w.name, xpm_uuid: w.uuid, entity_type: w.entityType, source: "imported" })
+          .select(cols)
+          .single();
+        if (e1 || !one) {
+          warn(`Failed to create entity "${w.name}": ${e1?.message ?? "unknown error"}`);
+          continue;
+        }
+        const rec = one as unknown as EntityRec;
+        byName.set(rec.name, rec);
+        if (rec.xpm_uuid) byUuid.set(rec.xpm_uuid, rec);
+        p.entitiesCreated++;
       }
-      if (row.relatedClient) {
-        await resolveEntity(row.relatedClient, null, "Unclassified", row.rowNum);
-      }
+      continue;
     }
-    p.rowIndex = end;
-    if (p.rowIndex >= rows.length) {
-      p.phase = "structures";
-      p.rowIndex = 0;
+    for (const rec of (data ?? []) as unknown as EntityRec[]) {
+      byName.set(rec.name, rec);
+      if (rec.xpm_uuid) byUuid.set(rec.xpm_uuid, rec);
+      p.entitiesCreated++;
     }
-    return p;
   }
 
-  // ── Phase 2: structures + membership ─────────────────────────────────
-  if (p.phase === "structures") {
-    for (let i = p.rowIndex; i < end; i++) {
-      const row = rows[i];
-      if (!row.groups) continue;
-      const groupNames = row.groups.split(";").map((g) => g.trim()).filter(Boolean);
-      for (const gn of groupNames) {
-        const structureId = await resolveStructure(gn, row.rowNum);
-        if (!structureId) continue;
+  const entityIdFor = (name: string, uuid: string | null): EntityRec | undefined =>
+    (uuid ? byUuid.get(uuid) : undefined) ?? byName.get(name);
 
-        const memberIds: string[] = [];
-        if (row.client) {
-          const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
-          const id = await resolveEntity(row.client, row.uuid || null, et, row.rowNum);
-          if (id) memberIds.push(id);
-        }
-        if (row.relatedClient) {
-          const id = await resolveEntity(row.relatedClient, null, "Unclassified", row.rowNum);
-          if (id) memberIds.push(id);
-        }
-        if (memberIds.length > 0) {
-          await supabase
-            .from("structure_entities")
-            .upsert(
-              memberIds.map((entity_id) => ({ structure_id: structureId, entity_id })),
-              { onConflict: "structure_id,entity_id", ignoreDuplicates: true },
-            );
-        }
+  // ── Pass 4: structure membership (bulk upsert, deduped in memory) ──────
+  const memberKeys = new Set<string>();
+  const memberRows: { structure_id: string; entity_id: string }[] = [];
+  rows.forEach((row, i) => {
+    const gs = rowGroups[i];
+    if (gs.length === 0) return;
+    const ids: string[] = [];
+    if (row.client) {
+      const e = entityIdFor(row.client, row.uuid || null);
+      if (e) ids.push(e.id);
+    }
+    if (row.relatedClient) {
+      const e = entityIdFor(row.relatedClient, null);
+      if (e) ids.push(e.id);
+    }
+    for (const gn of gs) {
+      const sid = structureIdByName.get(gn);
+      if (!sid) continue;
+      for (const entity_id of ids) {
+        const key = `${sid}|${entity_id}`;
+        if (memberKeys.has(key)) continue;
+        memberKeys.add(key);
+        memberRows.push({ structure_id: sid, entity_id });
       }
     }
-    p.rowIndex = end;
-    if (p.rowIndex >= rows.length) {
-      p.phase = "relationships";
-      p.rowIndex = 0;
-    }
-    return p;
+  });
+
+  await mapLimit(chunk(memberRows, DB_BATCH_SIZE), DB_CONCURRENCY, async (batch) => {
+    const { error } = await supabase
+      .from("structure_entities")
+      .upsert(batch, { onConflict: "structure_id,entity_id", ignoreDuplicates: true });
+    if (error) warn(`Failed to link ${batch.length} entities to structures: ${error.message}`);
+  });
+
+  // ── Pass 5: relationships ─────────────────────────────────────────────
+  interface RelCandidate {
+    from: string;
+    to: string;
+    type: string;
+    structureIds: string[];
+    rowNum: number;
+    label: string;
   }
 
-  // ── Phase 3: relationships ───────────────────────────────────────────
-  for (let i = p.rowIndex; i < end; i++) {
-    const row = rows[i];
-    if (!row.relationshipType || !row.client || !row.relatedClient) continue;
+  const relByKey = new Map<string, RelCandidate>();
+  rows.forEach((row, i) => {
+    if (!row.relationshipType || !row.client || !row.relatedClient) return;
 
     const normalizedRelType = row.relationshipType
       .replace(/^"+|"+$/g, '')
@@ -407,89 +498,158 @@ async function runSlice(
     if (!rule) {
       warn(`Row ${row.rowNum}: Unknown relationship type "${row.relationshipType}"`);
       p.relationshipsSkipped++;
-      continue;
+      return;
     }
 
-    const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
-    let fromId = (await resolveEntity(row.client, row.uuid || null, et, row.rowNum)) ?? undefined;
-    let toId = (await resolveEntity(row.relatedClient, null, "Unclassified", row.rowNum)) ?? undefined;
-
-    if (!fromId || !toId) {
+    const fromEnt = entityIdFor(row.client, row.uuid || null);
+    const toEnt = entityIdFor(row.relatedClient, null);
+    if (!fromEnt || !toEnt) {
       warn(`Row ${row.rowNum}: Could not resolve entities for "${row.client}" → "${row.relatedClient}"`);
       p.relationshipsSkipped++;
-      continue;
+      return;
     }
 
-    if (rule.reverse) {
-      [fromId, toId] = [toId, fromId];
-    }
-
+    let a = fromEnt;
+    let b = toEnt;
+    if (rule.reverse) [a, b] = [b, a];
     if (rule.type === "spouse" || rule.type === "partner") {
-      if (fromId > toId) [fromId, toId] = [toId, fromId];
+      if (a.id > b.id) [a, b] = [b, a];
+    }
+    // Enforce Individual → SMSF direction for member relationships (resolved
+    // from the in-memory entity map instead of two extra queries per row).
+    if (rule.type === "member" && a.entity_type === "smsf" && b.entity_type === "Individual") {
+      [a, b] = [b, a];
     }
 
-    // Enforce Individual → SMSF direction for member relationships
-    if (rule.type === "member") {
-      const { data: fromEnt } = await supabase.from("entities").select("entity_type").eq("id", fromId).single();
-      const { data: toEnt } = await supabase.from("entities").select("entity_type").eq("id", toId).single();
-      if (fromEnt?.entity_type === "smsf" && toEnt?.entity_type === "Individual") {
-        [fromId, toId] = [toId, fromId];
+    const key = `${a.id}|${b.id}|${rule.type}`;
+    const sids = rowGroups[i].map((gn) => structureIdByName.get(gn)).filter((s): s is string => !!s);
+    const existingCandidate = relByKey.get(key);
+    if (existingCandidate) {
+      for (const s of sids) if (!existingCandidate.structureIds.includes(s)) existingCandidate.structureIds.push(s);
+      return;
+    }
+    relByKey.set(key, {
+      from: a.id,
+      to: b.id,
+      type: rule.type,
+      structureIds: sids,
+      rowNum: row.rowNum,
+      label: `${rule.type} "${row.client}" → "${row.relatedClient}"`,
+    });
+  });
+
+  const candidates = [...relByKey.values()];
+  const relIdByKey = new Map<string, string>();
+
+  if (candidates.length > 0) {
+    // One batched superset lookup instead of a query per candidate.
+    const fromIds = [...new Set(candidates.map((c) => c.from))];
+    for (const batch of chunk(fromIds, DB_BATCH_SIZE)) {
+      const { data, error } = await supabase
+        .from("relationships")
+        .select("id, from_entity_id, to_entity_id, relationship_type")
+        .eq("tenant_id", tenantId)
+        .in("from_entity_id", batch);
+      if (error) throw new Error(`Relationship lookup failed: ${error.message}`);
+      for (const r of data ?? []) {
+        relIdByKey.set(
+          `${r.from_entity_id}|${r.to_entity_id}|${r.relationship_type}`,
+          r.id as string,
+        );
       }
     }
 
-    const { data: existingRel } = await supabase
-      .from("relationships")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("from_entity_id", fromId)
-      .eq("to_entity_id", toId)
-      .eq("relationship_type", rule.type)
-      .maybeSingle();
-
-    if (existingRel) {
-      await linkRelToStructures(existingRel.id as string, row);
-      continue;
-    }
-
-    const { data: relData, error: relErr } = await supabase
-      .from("relationships")
-      .insert({
+    const missing = candidates.filter((c) => !relIdByKey.has(`${c.from}|${c.to}|${c.type}`));
+    for (const batch of chunk(missing, DB_BATCH_SIZE)) {
+      const payload = batch.map((c) => ({
         tenant_id: tenantId,
-        from_entity_id: fromId,
-        to_entity_id: toId,
-        relationship_type: rule.type,
+        from_entity_id: c.from,
+        to_entity_id: c.to,
+        relationship_type: c.type,
         source: "imported",
         confidence: "imported",
-      })
-      .select("id")
-      .single();
-
-    if (relErr) {
-      warn(`Row ${row.rowNum}: Failed to create relationship ${rule.type} "${row.client}" → "${row.relatedClient}": ${relErr.message}`);
-      p.relationshipsSkipped++;
-      continue;
+      }));
+      const { data, error } = await supabase
+        .from("relationships")
+        .insert(payload)
+        .select("id, from_entity_id, to_entity_id, relationship_type");
+      if (error) {
+        // Validation triggers reject individual edges; isolate them so the
+        // rest of the batch still lands and each bad row gets its warning.
+        for (const c of batch) {
+          const { data: one, error: e1 } = await supabase
+            .from("relationships")
+            .insert({
+              tenant_id: tenantId,
+              from_entity_id: c.from,
+              to_entity_id: c.to,
+              relationship_type: c.type,
+              source: "imported",
+              confidence: "imported",
+            })
+            .select("id")
+            .single();
+          if (e1 || !one) {
+            warn(`Row ${c.rowNum}: Failed to create relationship ${c.label}: ${e1?.message ?? "unknown error"}`);
+            p.relationshipsSkipped++;
+            continue;
+          }
+          relIdByKey.set(`${c.from}|${c.to}|${c.type}`, one.id as string);
+          p.relationshipsCreated++;
+        }
+        continue;
+      }
+      for (const r of data ?? []) {
+        relIdByKey.set(`${r.from_entity_id}|${r.to_entity_id}|${r.relationship_type}`, r.id as string);
+        p.relationshipsCreated++;
+      }
     }
 
-    p.relationshipsCreated++;
-    await linkRelToStructures(relData.id as string, row);
-
-    // Auto-set is_trustee_company for companies acting as trustee for a trust
-    if (rule.type === "trustee") {
-      const { data: trusteeEnt } = await supabase
-        .from("entities")
-        .select("entity_type, is_trustee_company")
-        .eq("id", fromId)
-        .single();
-      if (trusteeEnt && trusteeEnt.entity_type === "Company" && !trusteeEnt.is_trustee_company) {
-        await supabase.from("entities").update({ is_trustee_company: true }).eq("id", fromId);
+    // Structure ↔ relationship membership, bulk + deduped.
+    const relLinkKeys = new Set<string>();
+    const relLinks: { structure_id: string; relationship_id: string }[] = [];
+    for (const c of candidates) {
+      const relId = relIdByKey.get(`${c.from}|${c.to}|${c.type}`);
+      if (!relId) continue;
+      for (const sid of c.structureIds) {
+        const key = `${sid}|${relId}`;
+        if (relLinkKeys.has(key)) continue;
+        relLinkKeys.add(key);
+        relLinks.push({ structure_id: sid, relationship_id: relId });
       }
+    }
+    await mapLimit(chunk(relLinks, DB_BATCH_SIZE), DB_CONCURRENCY, async (batch) => {
+      const { error } = await supabase
+        .from("structure_relationships")
+        .upsert(batch, { onConflict: "structure_id,relationship_id", ignoreDuplicates: true });
+      if (error) warn(`Failed to link ${batch.length} relationships to structures: ${error.message}`);
+    });
+
+    // Auto-flag corporate trustees — one bulk UPDATE instead of 2 statements
+    // per trustee relationship.
+    const recById = new Map<string, EntityRec>();
+    for (const rec of byName.values()) recById.set(rec.id, rec);
+    for (const rec of byUuid.values()) recById.set(rec.id, rec);
+    const trusteeIds = [
+      ...new Set(
+        candidates
+          .filter((c) => c.type === "trustee")
+          .map((c) => c.from)
+          .filter((id) => {
+            const rec = recById.get(id);
+            return rec?.entity_type === "Company" && !rec.is_trustee_company;
+          }),
+      ),
+    ];
+
+    for (const batch of chunk(trusteeIds, DB_BATCH_SIZE)) {
+      const { error } = await supabase.from("entities").update({ is_trustee_company: true }).in("id", batch);
+      if (error) warn(`Failed to flag ${batch.length} trustee companies: ${error.message}`);
     }
   }
 
   p.rowIndex = end;
-  if (p.rowIndex >= rows.length) {
-    p.phase = "done";
-  }
+  if (p.rowIndex >= allRows.length) p.phase = "done";
   return p;
 }
 
@@ -514,14 +674,7 @@ async function processJob(
   const progress = (log.result as Progress | null) ?? emptyProgress(0);
 
   try {
-    const next = await runSlice(
-      supabase,
-      log.tenant_id as string,
-      logId,
-      fileName,
-      content,
-      progress,
-    );
+    const next = await runSlice(supabase, log.tenant_id as string, fileName, content, progress);
 
     const done = next.phase === "done";
     await supabase
@@ -543,6 +696,9 @@ async function processJob(
     }
   } catch (err) {
     console.error("import-xpm slice failed:", err);
+    // rowIndex is only advanced on success, so a retry resumes at the start of
+    // the failed slice; every write in a slice is idempotent (lookup-then-
+    // insert / upsert), so nothing is duplicated.
     await supabase
       .from("import_logs")
       .update({
@@ -620,8 +776,8 @@ Deno.serve(async (req) => {
     }
 
     const isXml = String(fileName).toLowerCase().endsWith(".xml");
-    const rows = isXml ? parseXML(content) : parseCSV(content);
-    if (rows.length === 0) {
+    const totalRows = countRows(content, isXml);
+    if (totalRows === 0) {
       return new Response(JSON.stringify({ error: "No records found in file" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -636,7 +792,7 @@ Deno.serve(async (req) => {
         file_name: fileName,
         raw_payload: content,
         status: "processing",
-        result: emptyProgress(rows.length),
+        result: emptyProgress(totalRows),
       })
       .select("id")
       .single();
@@ -654,7 +810,7 @@ Deno.serve(async (req) => {
     if (runtime?.waitUntil) runtime.waitUntil(task); else await task;
 
     return new Response(
-      JSON.stringify({ status: "processing", jobId: log.id, totalRowsParsed: rows.length }),
+      JSON.stringify({ status: "processing", jobId: log.id, totalRowsParsed: totalRows }),
       { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (err) {
