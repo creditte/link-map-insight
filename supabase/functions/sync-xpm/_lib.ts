@@ -1,6 +1,8 @@
 /** Shared helpers for the chunked XPM sync. */
 import { decryptToken, encryptToken } from "../_shared/crypto.ts";
-import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
+// esm.sh mirror of jsr:@libs/xml — the deno.land/x mirror fails to bundle.
+import { parse as parseXml } from "https://esm.sh/jsr/@libs/xml@6.0.1";
+
 
 export const XPM_BASE = "https://api.xero.com/practicemanager/3.1";
 
@@ -18,17 +20,50 @@ export function tuning() {
   };
   return {
     /** XPM client pages fetched+persisted per execution. */
-    clientPagesPerRun: num("XPM_CLIENT_PAGES_PER_RUN", 2),
+    clientPagesPerRun: num("XPM_CLIENT_PAGES_PER_RUN", 3),
     /** XPM client page size (XPM caps this server-side). */
     clientPageSize: num("XPM_CLIENT_PAGE_SIZE", 100),
     /** Client groups processed per execution. */
-    groupsPerRun: num("XPM_GROUPS_PER_RUN", 10),
+    groupsPerRun: num("XPM_GROUPS_PER_RUN", 24),
+    /** Groups fetched/persisted concurrently within a run. */
+    groupConcurrency: num("XPM_GROUP_CONCURRENCY", 4),
+    /** Concurrency for small independent DB statements (updates, lookups). */
+    dbConcurrency: num("XPM_DB_CONCURRENCY", 6),
     /** Rows per bulk DB statement. */
-    dbBatchSize: num("XPM_DB_BATCH_SIZE", 200),
+    dbBatchSize: num("XPM_DB_BATCH_SIZE", 500),
     /** Safety cap on pages so a broken cursor can't loop forever. */
     maxClientPages: num("XPM_MAX_CLIENT_PAGES", 500),
   };
 }
+
+/** Raised for failures that must abort the sync instead of being retried. */
+export class FatalXpmError extends Error {}
+
+/**
+ * Run `fn` over `items` with at most `limit` in flight. Results keep input
+ * order. Used instead of Promise.all so hundreds of XPM/DB calls never fire
+ * simultaneously.
+ */
+export async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    for (;;) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 
 // ── Token refresh ───────────────────────────────────────────────────
 export async function refreshAccessToken(supabase: any, connection: any): Promise<string> {
@@ -67,31 +102,97 @@ export async function refreshAccessToken(supabase: any, connection: any): Promis
 }
 
 // ── XPM API helpers ─────────────────────────────────────────────────
-export async function xpmGetXml(path: string, accessToken: string, xeroTenantId: string): Promise<any> {
+/**
+ * GET + parse one XPM XML endpoint.
+ *
+ * - 401/403 → fatal (token/scope problem): abort, never retried in a loop.
+ * - 429 → honours `Retry-After` (capped) and retries a bounded number of times.
+ * - 5xx / network error → exponential backoff, bounded retries.
+ * - 4xx (other) / 304 / unparseable → `null`, so a single bad record can't kill
+ *   the whole sync.
+ */
+export async function xpmGetXml(
+  path: string,
+  accessToken: string,
+  xeroTenantId: string,
+  maxAttempts = 3,
+): Promise<any> {
   const url = `${XPM_BASE}${path}`;
-  console.log(`[sync-xpm] GET ${url}`);
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "xero-tenant-id": xeroTenantId,
-      Accept: "application/xml",
-    },
-  });
 
-  if (res.status === 304) return null;
-  if (!res.ok) {
-    const errText = await res.text();
-    console.warn(`[sync-xpm] ${res.status} on ${path}: ${errText.substring(0, 200)}`);
-    return null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "xero-tenant-id": xeroTenantId,
+          Accept: "application/xml",
+        },
+      });
+    } catch (e) {
+      if (attempt === maxAttempts) {
+        console.warn(`[sync-xpm] network error on ${path}:`, e);
+        return null;
+      }
+      await sleep(500 * 2 ** (attempt - 1));
+      continue;
+    }
+
+    if (res.status === 304) {
+      await res.body?.cancel();
+      return null;
+    }
+
+    if (res.status === 401 || res.status === 403) {
+      const errText = (await res.text()).substring(0, 200);
+      throw new FatalXpmError(
+        `Xero rejected the request (${res.status}). The connection needs to be re-authorised. ${errText}`,
+      );
+    }
+
+    if (res.status === 429) {
+      const retryAfter = Number(res.headers.get("Retry-After"));
+      await res.body?.cancel();
+      if (attempt === maxAttempts) {
+        console.warn(`[sync-xpm] rate limited on ${path}, giving up this call`);
+        return null;
+      }
+      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter, 30) * 1000
+        : 2000 * attempt;
+      console.warn(`[sync-xpm] 429 on ${path}; waiting ${waitMs}ms`);
+      await sleep(waitMs);
+      continue;
+    }
+
+    if (res.status >= 500) {
+      await res.body?.cancel();
+      if (attempt === maxAttempts) {
+        console.warn(`[sync-xpm] ${res.status} on ${path} after ${attempt} attempts`);
+        return null;
+      }
+      await sleep(500 * 2 ** (attempt - 1));
+      continue;
+    }
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.warn(`[sync-xpm] ${res.status} on ${path}: ${errText.substring(0, 200)}`);
+      return null;
+    }
+
+    const text = await res.text();
+    try {
+      return parseXml(text);
+    } catch (e) {
+      console.warn(`[sync-xpm] XML parse error on ${path}:`, e);
+      return null;
+    }
   }
-  const text = await res.text();
-  try {
-    return parseXml(text);
-  } catch (e) {
-    console.warn(`[sync-xpm] XML parse error on ${path}:`, e);
-    return null;
-  }
+
+  return null;
 }
+
 
 export function xmlArray(parent: any, key: string): any[] {
   if (!parent) return [];
