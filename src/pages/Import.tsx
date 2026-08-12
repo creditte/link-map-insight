@@ -268,31 +268,27 @@ export default function Import() {
             {importing ? "Importing..." : "Import"}
           </Button>
 
-          {importing && progress && (
+          {importing && (
             <div className="space-y-1.5 rounded-md border bg-muted/40 p-3">
-              <p className="text-xs font-medium text-foreground">
-                {progress.phase === "entities"
-                  ? "Creating entities…"
-                  : progress.phase === "structures"
-                    ? "Building structures…"
-                    : progress.phase === "relationships"
-                      ? "Linking relationships…"
-                      : "Importing records…"}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-medium text-foreground">{STAGE_LABEL[stage] ?? "Importing records…"}</p>
+                <span className="text-xs tabular-nums text-muted-foreground">{Math.round(percent)}%</span>
+              </div>
 
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-primary transition-all"
-                  style={{
-                    width: `${progress.total ? Math.min(100, Math.round((progress.rowIndex / progress.total) * 100)) : 5}%`,
-                  }}
+                  className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+                  style={{ width: `${Math.max(3, percent)}%` }}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                {progress.rowIndex} of {progress.total} rows processed. Large files continue in the background.
-              </p>
+              {records && records.total > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {records.done.toLocaleString()} of {records.total.toLocaleString()} records
+                </p>
+              )}
             </div>
           )}
+
 
 
           {importError && (
