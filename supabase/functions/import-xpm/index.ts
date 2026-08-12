@@ -703,7 +703,7 @@ async function runSlice(
   }
 
   p.rowIndex = end;
-  if (p.rowIndex >= allRows.length) p.phase = "done";
+  if (p.rowIndex >= parsed.total) p.phase = "done";
   return p;
 }
 
