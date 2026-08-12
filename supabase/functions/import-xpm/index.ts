@@ -342,6 +342,10 @@ async function runSlice(
   }
 
   // ── Pass 2: batch-resolve structures ──────────────────────────────────
+  // Structure creation is capped by the workspace's plan limit. We read the
+  // tenant's remaining capacity ONCE per slice and only attempt to create as
+  // many structures as are actually allowed — instead of letting the database
+  // trigger reject each one and emitting a warning per rejected group.
   const structureIdByName = new Map<string, string>();
   const groupList = [...groupNames];
   if (groupList.length > 0) {
@@ -356,37 +360,71 @@ async function runSlice(
       for (const s of data ?? []) structureIdByName.set(s.name as string, s.id as string);
     });
 
-
     const missingStructures = groupList.filter((n) => !structureIdByName.has(n));
-    for (const batch of chunk(missingStructures, DB_BATCH_SIZE)) {
-      const { data, error } = await supabase
-        .from("structures")
-        .insert(batch.map((name) => ({ tenant_id: tenantId, name })))
-        .select("id, name");
-      if (error) {
-        // Fall back per-row so one rejected structure (e.g. diagram limit)
-        // doesn't abort the whole import.
-        for (const name of batch) {
-          const { data: one, error: e1 } = await supabase
-            .from("structures")
-            .insert({ tenant_id: tenantId, name })
-            .select("id, name")
-            .single();
-          if (e1 || !one) {
-            warn(`Failed to create structure "${name}": ${e1?.message ?? "unknown error"}`);
-            continue;
-          }
-          structureIdByName.set(one.name as string, one.id as string);
-          p.structuresCreated++;
-        }
-        continue;
+
+    if (missingStructures.length > 0) {
+      const { data: tenantRow } = await withRetry("tenant capacity", () =>
+        supabase
+          .from("tenants")
+          .select("diagram_limit, diagram_count")
+          .eq("id", tenantId)
+          .maybeSingle());
+      const limit = Number((tenantRow as any)?.diagram_limit ?? 0);
+      const used = Number((tenantRow as any)?.diagram_count ?? 0);
+      let capacity = limit > 0 ? Math.max(0, limit - used) : Number.MAX_SAFE_INTEGER;
+      p.structureLimit = limit;
+
+      const creatable = missingStructures.slice(0, capacity);
+      const rejected = missingStructures.length - creatable.length;
+      if (rejected > 0) {
+        p.structuresSkippedLimit += rejected;
+        p.limitReached = true;
       }
-      for (const s of data ?? []) {
-        structureIdByName.set(s.name as string, s.id as string);
-        p.structuresCreated++;
+
+      for (const batch of chunk(creatable, DB_BATCH_SIZE)) {
+        const { data, error } = await supabase
+          .from("structures")
+          .insert(batch.map((name) => ({ tenant_id: tenantId, name })))
+          .select("id, name");
+        if (error) {
+          // Fall back per-row so one rejected structure doesn't abort the
+          // import. Limit rejections are aggregated, never repeated per row.
+          for (const name of batch) {
+            if (capacity <= 0) {
+              p.structuresSkippedLimit++;
+              p.limitReached = true;
+              continue;
+            }
+            const { data: one, error: e1 } = await supabase
+              .from("structures")
+              .insert({ tenant_id: tenantId, name })
+              .select("id, name")
+              .single();
+            if (e1 || !one) {
+              if (/limit reached/i.test(e1?.message ?? "")) {
+                capacity = 0;
+                p.structuresSkippedLimit++;
+                p.limitReached = true;
+              } else {
+                warn(`Failed to create structure "${name}": ${e1?.message ?? "unknown error"}`);
+              }
+              continue;
+            }
+            capacity--;
+            structureIdByName.set(one.name as string, one.id as string);
+            p.structuresCreated++;
+          }
+          continue;
+        }
+        for (const s of data ?? []) {
+          structureIdByName.set(s.name as string, s.id as string);
+          p.structuresCreated++;
+          capacity--;
+        }
       }
     }
   }
+
 
   // ── Pass 3: batch-resolve entities ────────────────────────────────────
   const byName = new Map<string, EntityRec>();
