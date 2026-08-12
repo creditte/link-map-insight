@@ -73,15 +73,24 @@ export default function Import() {
     setImporting(true);
     setResult(null);
     setImportError(null);
-    setProgress(null);
+    setRecords(null);
+    setPercent(0);
+    setStage("uploading");
+
+    // Gentle creep so the bar always feels alive between server updates.
+    const creep = setInterval(() => setPercent((prev) => (prev < 95 ? prev + 0.4 : prev)), 400);
 
     try {
       const text = await file.text();
+      advance(8);
       const { data, error } = await supabase.functions.invoke("import-xpm", {
         body: { fileName: file.name, content: text },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+
+      setStage("preparing");
+      advance(15);
 
       const jobId: string | undefined = data?.jobId;
       if (!jobId) {
@@ -94,17 +103,15 @@ export default function Import() {
         return;
       }
 
-      toast({
-        title: "Import started",
-        description: "Large files are processed in the background — this page will update automatically.",
-      });
+      if (data?.totalRowsParsed) setRecords({ done: 0, total: data.totalRowsParsed });
 
       const final = await pollJob(jobId);
       if (final.status === "failed") {
         throw new Error(final.result?.error || "The import failed while processing.");
       }
+      setStage("finishing");
+      setPercent(100);
       setResult(final.result);
-      setProgress(null);
       // Import created structures/entities — refresh cached lists and counts.
       invalidateStructures();
       toast({
@@ -117,16 +124,18 @@ export default function Import() {
       const payload = xeroToastPayload(err);
       toast({ title: payload.title, description: payload.description, variant: "destructive" });
     } finally {
+      clearInterval(creep);
       setImporting(false);
+      setStage("idle");
     }
   };
 
-  /** Poll the import_logs row until the background job finishes. */
+  /** Poll the import job until it finishes. Server batching stays invisible. */
   const pollJob = async (jobId: string): Promise<{ status: string; result: any }> => {
     const started = Date.now();
     const TIMEOUT_MS = 20 * 60 * 1000;
     while (Date.now() - started < TIMEOUT_MS) {
-      await new Promise((r) => setTimeout(r, 2500));
+      await new Promise((r) => setTimeout(r, 900));
       const { data } = await supabase
         .from("import_logs")
         .select("status, result")
@@ -135,17 +144,23 @@ export default function Import() {
       if (!data) continue;
       const res = data.result as any;
       if (data.status === "processing") {
-        setProgress({
-          phase: res?.phase ?? "entities",
-          rowIndex: res?.rowIndex ?? 0,
-          total: res?.totalRowsParsed ?? 0,
-        });
+        const total = Number(res?.totalRowsParsed ?? 0);
+        const done = Number(res?.rowIndex ?? 0);
+        if (total > 0) {
+          setRecords({ done, total });
+          // Map row progress into the 15–97% band so the bar never resets.
+          advance(15 + (done / total) * 82);
+          setStage(done >= total ? "finishing" : "importing");
+        } else {
+          setStage("importing");
+        }
         continue;
       }
       return { status: data.status, result: res };
     }
     throw new Error("The import is taking longer than expected. Check Import History for the final result.");
   };
+
 
 
   const handleDownloadSample = () => {
