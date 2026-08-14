@@ -40,21 +40,44 @@ export default function FeedbackModal() {
 
       if (!profile) throw new Error("Profile not found");
 
-      const { error } = await supabase.from("feedback").insert({
-        tenant_id: profile.tenant_id,
-        user_id: user.id,
-        page: location.pathname,
-        structure_id: structureId,
-        message: message.trim(),
-        metadata: {
-          user_agent: navigator.userAgent,
-          timestamp: new Date().toISOString(),
-        },
-      });
+      const { data: inserted, error } = await supabase
+        .from("feedback")
+        .insert({
+          tenant_id: profile.tenant_id,
+          user_id: user.id,
+          page: location.pathname,
+          structure_id: structureId,
+          message: message.trim(),
+          metadata: {
+            user_agent: navigator.userAgent,
+            timestamp: new Date().toISOString(),
+          },
+        })
+        .select("id")
+        .single();
 
       if (error) throw error;
 
+      // Route the feedback to the support inbox (recipient is fixed on the
+      // 'feedback-received' template via SUPPORT_EMAIL).
+      supabase.functions
+        .invoke("send-transactional-email", {
+          body: {
+            templateName: "feedback-received",
+            recipientEmail: user.email,
+            idempotencyKey: `feedback-${inserted?.id ?? Date.now()}`,
+            templateData: {
+              message: message.trim(),
+              submittedBy: user.email,
+              page: location.pathname,
+              structureId: structureId ?? undefined,
+            },
+          },
+        })
+        .catch((e) => console.error("[feedback] email notification failed", e));
+
       toast({ title: "Feedback sent", description: "Thank you for your feedback!" });
+
       setMessage("");
       setOpen(false);
     } catch (err: any) {

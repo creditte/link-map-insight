@@ -19,6 +19,7 @@ import { template as subscriptionCanceled } from './subscription-canceled.tsx'
 import { template as roleChanged } from './role-changed.tsx'
 import { template as accountAccessUpdated } from './account-access-updated.tsx'
 import { template as userDeactivated } from './user-deactivated.tsx'
+import { template as feedbackReceived } from './feedback-received.tsx'
 
 export const TEMPLATES: Record<string, TemplateEntry> = {
   welcome,
@@ -31,4 +32,5 @@ export const TEMPLATES: Record<string, TemplateEntry> = {
   'role-changed': roleChanged,
   'account-access-updated': accountAccessUpdated,
   'user-deactivated': userDeactivated,
+  'feedback-received': feedbackReceived,
 }
