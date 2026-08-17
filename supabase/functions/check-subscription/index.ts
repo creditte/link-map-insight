@@ -181,9 +181,17 @@ Deno.serve(async (req) => {
           }
         }
       } catch (e) {
+        // A subscription that vanished from the active Stripe environment is stale
+        // data (typically created in the other mode) — quarantine rather than retry.
+        if (isStripeMissingResource(e)) {
+          await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "check-subscription:resource_missing");
+          refs = tenantStripeRefs(tenant);
+          legacyStripeData = true;
+        }
         console.error("[check-subscription] Error fetching Stripe sub:", e);
       }
     }
+
 
     // Determine effective diagram_limit strictly from subscription_plan; never fall back to a Pro-sized limit.
     // Trials always get the 3-group trial allowance (full Pro features, capped volume), whether the
