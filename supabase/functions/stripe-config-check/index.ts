@@ -56,9 +56,16 @@ Deno.serve(async (req) => {
 
     const issues: string[] = [];
 
-    const mode = stripeMode();
-    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
-    const webhookSecretSet = Boolean(stripeVar("STRIPE_WEBHOOK_SECRET"));
+    // Optional read-only mode override (?mode=live) so a super admin can verify
+    // the STRIPE_LIVE_* wiring without flipping STRIPE_MODE for the environment.
+    const rawOverride = (new URL(req.url).searchParams.get("mode") ?? "").trim().toLowerCase();
+    const override = rawOverride === "live" ? "live" : rawOverride === "test" ? "test" : undefined;
+    const mode = override ?? stripeMode();
+    const sv = (name: string) => stripeVar(name, mode);
+    const svs = (name: string) => stripeVarSource(name, mode);
+
+    const stripeKey = sv("STRIPE_SECRET_KEY");
+    const webhookSecretSet = Boolean(sv("STRIPE_WEBHOOK_SECRET"));
     if (!webhookSecretSet) issues.push("STRIPE_WEBHOOK_SECRET is not set — webhook signature verification will fail.");
     if (!stripeKey) {
       return json({
@@ -85,8 +92,8 @@ Deno.serve(async (req) => {
     // ---- Price mapping check: explicit, per plan AND per interval ----
     const prices: Array<Record<string, unknown>> = [];
     for (const exp of EXPECTED) {
-      const priceId = stripeVar(exp.key);
-      const expectedProduct = stripeVar(exp.productEnv) || null;
+      const priceId = sv(exp.key);
+      const expectedProduct = sv(exp.productEnv) || null;
       if (!priceId) {
         issues.push(`${exp.key} is not set — ${exp.plan} ${exp.interval}ly checkout cannot run (no fallback exists).`);
         prices.push({ env: exp.key, plan: exp.plan, interval: exp.interval, configured: false, ok: false });
@@ -120,14 +127,14 @@ Deno.serve(async (req) => {
     }
 
     // Duplicate mapping guard: the same price must not serve two plans/intervals.
-    const ids = prices.map((p) => stripeVar(String(p.env))).filter(Boolean) as string[];
+    const ids = prices.map((p) => sv(String(p.env))).filter(Boolean) as string[];
     const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
     if (dupes.length > 0) issues.push("The same Stripe price ID is mapped to more than one plan/interval.");
 
     // ---- Products ----
     const products: Array<Record<string, unknown>> = [];
     for (const env of ["STRIPE_STARTER_PRODUCT_ID", "STRIPE_PRO_PRODUCT_ID"]) {
-      const id = stripeVar(env);
+      const id = sv(env);
       if (!id) { issues.push(`${env} is not set — webhooks cannot resolve this plan.`); products.push({ env, configured: false }); continue; }
       try {
         const product = await stripe.products.retrieve(id);
@@ -182,14 +189,15 @@ Deno.serve(async (req) => {
       mode: {
         configured: mode,
         stripe_mode_env: Deno.env.get("STRIPE_MODE") ?? null,
+        requested_override: override ?? null,
         key_mode: liveMode ? "live" : "test",
         matches_configured_mode: (mode === "live") === liveMode,
         secret_sources: {
-          STRIPE_SECRET_KEY: stripeVarSource("STRIPE_SECRET_KEY"),
-          STRIPE_WEBHOOK_SECRET: stripeVarSource("STRIPE_WEBHOOK_SECRET"),
-          STRIPE_STARTER_PRODUCT_ID: stripeVarSource("STRIPE_STARTER_PRODUCT_ID"),
-          STRIPE_PRO_PRODUCT_ID: stripeVarSource("STRIPE_PRO_PRODUCT_ID"),
-          ...Object.fromEntries(EXPECTED.map((e) => [e.key, stripeVarSource(e.key)])),
+          STRIPE_SECRET_KEY: svs("STRIPE_SECRET_KEY"),
+          STRIPE_WEBHOOK_SECRET: svs("STRIPE_WEBHOOK_SECRET"),
+          STRIPE_STARTER_PRODUCT_ID: svs("STRIPE_STARTER_PRODUCT_ID"),
+          STRIPE_PRO_PRODUCT_ID: svs("STRIPE_PRO_PRODUCT_ID"),
+          ...Object.fromEntries(EXPECTED.map((e) => [e.key, svs(e.key)])),
         },
         live_var_names: [
           "STRIPE_MODE=live",
