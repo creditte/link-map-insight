@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
+import { stripeVar } from "../_shared/stripe-env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -61,7 +62,7 @@ Deno.serve(async (req) => {
     let price_amount: number | null = null;
     if (tenant.stripe_subscription_id) {
       try {
-        const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+        const stripeKey = stripeVar("STRIPE_SECRET_KEY");
         if (stripeKey) {
           const { default: Stripe } = await import("https://esm.sh/stripe@18.5.0");
           const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
@@ -92,11 +93,11 @@ Deno.serve(async (req) => {
             const parseIdList = (name: string) =>
               (Deno.env.get(name) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
             const starterProductIds = [
-              Deno.env.get("STRIPE_STARTER_PRODUCT_ID"),
+              stripeVar("STRIPE_STARTER_PRODUCT_ID"),
               ...parseIdList("STRIPE_STARTER_LEGACY_PRODUCT_IDS"),
             ].filter(Boolean) as string[];
             const proProductIds = [
-              Deno.env.get("STRIPE_PRO_PRODUCT_ID"),
+              stripeVar("STRIPE_PRO_PRODUCT_ID"),
               ...parseIdList("STRIPE_PRO_LEGACY_PRODUCT_IDS"),
             ].filter(Boolean) as string[];
 

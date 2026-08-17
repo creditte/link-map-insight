@@ -11,6 +11,7 @@ import {
   toISO,
 } from "../_shared/stripe-subscription.ts";
 import {
+import { stripeVar } from "../_shared/stripe-env.ts";
   buildPlanConfig,
   buildPriceMap,
   resolvePlanFromSubscription as sharedResolvePlan,
@@ -83,8 +84,8 @@ async function notifyTenantBilling(
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
-  const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
+  const stripeKey = stripeVar("STRIPE_SECRET_KEY");
+  const webhookSecret = stripeVar("STRIPE_WEBHOOK_SECRET");
   if (!stripeKey || !webhookSecret) {
     console.error("Missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET");
     return new Response("Server misconfigured", { status: 500 });

@@ -15,6 +15,7 @@ import {
   getSubscriptionLifecycle,
 } from "../_shared/stripe-subscription.ts";
 import { PLAN_DIAGRAM_LIMITS, resolvePlanFromSubscription } from "../_shared/stripe-plans.ts";
+import { stripeVar } from "../_shared/stripe-env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -117,7 +118,7 @@ Deno.serve(async (req) => {
     const apply = body?.apply === true;
     const tenantId: string | undefined = body?.tenantId || undefined;
 
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
     if (!stripeKey) return json({ error: "STRIPE_SECRET_KEY is not set" }, 500);
     const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
 
