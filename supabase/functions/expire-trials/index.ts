@@ -12,6 +12,7 @@ import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
 import { isServiceRoleRequest } from "../_shared/cron-auth.ts";
 import { stripeVar } from "../_shared/stripe-env.ts";
+import { tenantStripeRefs } from "../_shared/stripe-tenant.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -53,7 +54,7 @@ Deno.serve(async (req) => {
   try {
     const { data: tenants, error } = await supabase
       .from("tenants")
-      .select("id, firm_name, trial_ends_at, stripe_subscription_id, stripe_customer_id")
+      .select("id, firm_name, trial_ends_at, stripe_subscription_id, stripe_customer_id, stripe_mode")
       .eq("subscription_status", "trialing")
       .not("trial_ends_at", "is", null)
       .lt("trial_ends_at", nowIso);
@@ -65,9 +66,15 @@ Deno.serve(async (req) => {
     for (const tenant of tenants ?? []) {
       // A live Stripe subscription always wins over the local trial window:
       // the webhook/self-heal path owns those tenants.
-      if (tenant.stripe_subscription_id && stripe) {
+      const refs = tenantStripeRefs(tenant as any);
+      if (refs.isLegacy) {
+        // Legacy (other Stripe mode) ids: treat the tenant as having no live
+        // subscription rather than calling Stripe with an unknown id.
+        log("legacy stripe ids ignored", { tenant_id: tenant.id, stored_mode: refs.storedMode });
+      }
+      if (refs.subscriptionId && stripe) {
         try {
-          const sub = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+          const sub = await stripe.subscriptions.retrieve(refs.subscriptionId);
           if (LIVE_STRIPE_STATUSES.has(sub.status)) {
             skipped.push({ tenant_id: tenant.id, reason: `stripe_${sub.status}` });
             continue;
@@ -81,7 +88,7 @@ Deno.serve(async (req) => {
           skipped.push({ tenant_id: tenant.id, reason: "stripe_lookup_failed" });
           continue;
         }
-      } else if (tenant.stripe_subscription_id && !stripe) {
+      } else if (refs.subscriptionId && !stripe) {
         skipped.push({ tenant_id: tenant.id, reason: "stripe_not_configured" });
         continue;
       }
