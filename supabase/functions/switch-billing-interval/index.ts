@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
+import { stripeVar } from "../_shared/stripe-env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,12 +10,12 @@ const corsHeaders = {
 
 const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   starter: {
-    month: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
-    year: Deno.env.get("STRIPE_STARTER_ANNUAL_PRICE_ID"),
+    month: stripeVar("STRIPE_STARTER_MONTHLY_PRICE_ID"),
+    year: stripeVar("STRIPE_STARTER_ANNUAL_PRICE_ID"),
   },
   pro: {
-    month: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
-    year: Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
+    month: stripeVar("STRIPE_PRO_MONTHLY_PRICE_ID"),
+    year: stripeVar("STRIPE_PRO_ANNUAL_PRICE_ID"),
   },
 };
 
@@ -37,8 +38,8 @@ function initPlanConfig() {
     if (!id || PLAN_CONFIG[id]) return; // never create a duplicate mapping
     PLAN_CONFIG[id] = { plan, diagramLimit };
   };
-  add(Deno.env.get("STRIPE_STARTER_PRODUCT_ID"), "starter", 15);
-  add(Deno.env.get("STRIPE_PRO_PRODUCT_ID"), "pro", 50);
+  add(stripeVar("STRIPE_STARTER_PRODUCT_ID"), "starter", 15);
+  add(stripeVar("STRIPE_PRO_PRODUCT_ID"), "pro", 50);
   for (const id of parseIdList("STRIPE_STARTER_LEGACY_PRODUCT_IDS")) add(id, "starter", 15);
   for (const id of parseIdList("STRIPE_PRO_LEGACY_PRODUCT_IDS")) add(id, "pro", 50);
 }
@@ -76,7 +77,7 @@ Deno.serve(async (req) => {
   try {
     initPlanConfig();
 
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
     if (!stripeKey) throw new Error("STRIPE_SECRET_KEY not set");
 
     const supabaseAdmin = createClient(

@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { stripeVar } from "../_shared/stripe-env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -108,7 +109,7 @@ Deno.serve(async (req) => {
 
     // --- Billing: cancel any live subscription / trial first -----------------
     let subscriptionCancelled = false;
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
     if (stripeKey && (tenant?.stripe_subscription_id || tenant?.stripe_customer_id)) {
       try {
         const stripe = new Stripe(stripeKey, { apiVersion: "2026-02-25.clover" as any });

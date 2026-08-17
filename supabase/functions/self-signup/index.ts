@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
+import { stripeVar } from "../_shared/stripe-env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -154,7 +155,7 @@ Deno.serve(async (req) => {
     // 2b. Create the Stripe customer only. The trialing subscription is created by
     // Stripe Checkout (mode=subscription, trial_period_days=7) so the card is
     // authorised and stored by Stripe without an immediate charge.
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
     if (stripeKey) {
       try {
         const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });

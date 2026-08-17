@@ -4,6 +4,7 @@ import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
 import { encryptToken } from "../_shared/crypto.ts";
 import { invokeTransactionalEmail } from "../_shared/invoke-transactional-email.ts";
 import { verifyXeroIdToken } from "../_shared/verify-xero-id-token.ts";
+import { stripeVar } from "../_shared/stripe-env.ts";
 
 type PendingSignup = {
   firm_name: string;
@@ -209,7 +210,7 @@ Deno.serve(async (req) => {
       return Response.redirect(`${frontendUrl}/signup?xero_signup=error&reason=tenant_failed`, 302);
     }
 
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
     if (stripeKey) {
       try {
         const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });

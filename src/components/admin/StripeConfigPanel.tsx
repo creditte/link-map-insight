@@ -26,6 +26,14 @@ interface ConfigCheck {
   ready: boolean;
   checked_at: string;
   stripe_account?: { id: string; name: string | null; mode: string };
+  mode?: {
+    configured: string;
+    stripe_mode_env: string | null;
+    key_mode?: string;
+    matches_configured_mode?: boolean;
+    secret_sources?: Record<string, string | null>;
+    live_var_names?: string[];
+  };
   secrets?: { stripe_secret_key_set: boolean; webhook_secret_set: boolean };
   expected_webhook_url?: string;
   billing_enforcement_enabled?: boolean;
@@ -89,6 +97,9 @@ export default function StripeConfigPanel() {
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={result.stripe_account?.mode === "live" ? "default" : "secondary"}>
                 {result.stripe_account?.mode === "live" ? "Live mode" : "Test mode"}
+              </Badge>
+              <Badge variant={result.mode?.matches_configured_mode === false ? "destructive" : "outline"}>
+                STRIPE_MODE: {result.mode?.stripe_mode_env ?? "unset (test)"}
               </Badge>
               <Badge variant="outline">{result.stripe_account?.name || result.stripe_account?.id}</Badge>
               <Badge variant={result.secrets?.webhook_secret_set ? "outline" : "destructive"}>

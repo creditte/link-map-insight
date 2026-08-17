@@ -11,6 +11,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
+import { liveVarName, stripeMode, stripeVar, stripeVarSource } from "../_shared/stripe-env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -55,12 +56,14 @@ Deno.serve(async (req) => {
 
     const issues: string[] = [];
 
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
-    const webhookSecretSet = Boolean(Deno.env.get("STRIPE_WEBHOOK_SECRET"));
+    const mode = stripeMode();
+    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
+    const webhookSecretSet = Boolean(stripeVar("STRIPE_WEBHOOK_SECRET"));
     if (!webhookSecretSet) issues.push("STRIPE_WEBHOOK_SECRET is not set — webhook signature verification will fail.");
     if (!stripeKey) {
       return json({
         ready: false,
+        mode: { configured: mode, stripe_mode_env: Deno.env.get("STRIPE_MODE") ?? null },
         secrets: { stripe_secret_key_set: false, webhook_secret_set: webhookSecretSet },
         issues: [...issues, "STRIPE_SECRET_KEY is not set in this environment."],
       });
@@ -75,11 +78,15 @@ Deno.serve(async (req) => {
       ? probe.data[0].livemode
       : !(stripeKey.startsWith("sk_test") || stripeKey.startsWith("rk_test"));
 
+    if ((mode === "live") !== liveMode) {
+      issues.push(`STRIPE_MODE is "${mode}" but the resolved secret key is a ${liveMode ? "live" : "test"}-mode key.`);
+    }
+
     // ---- Price mapping check: explicit, per plan AND per interval ----
     const prices: Array<Record<string, unknown>> = [];
     for (const exp of EXPECTED) {
-      const priceId = Deno.env.get(exp.key);
-      const expectedProduct = Deno.env.get(exp.productEnv) || null;
+      const priceId = stripeVar(exp.key);
+      const expectedProduct = stripeVar(exp.productEnv) || null;
       if (!priceId) {
         issues.push(`${exp.key} is not set — ${exp.plan} ${exp.interval}ly checkout cannot run (no fallback exists).`);
         prices.push({ env: exp.key, plan: exp.plan, interval: exp.interval, configured: false, ok: false });
@@ -113,14 +120,14 @@ Deno.serve(async (req) => {
     }
 
     // Duplicate mapping guard: the same price must not serve two plans/intervals.
-    const ids = prices.map((p) => Deno.env.get(String(p.env))).filter(Boolean) as string[];
+    const ids = prices.map((p) => stripeVar(String(p.env))).filter(Boolean) as string[];
     const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
     if (dupes.length > 0) issues.push("The same Stripe price ID is mapped to more than one plan/interval.");
 
     // ---- Products ----
     const products: Array<Record<string, unknown>> = [];
     for (const env of ["STRIPE_STARTER_PRODUCT_ID", "STRIPE_PRO_PRODUCT_ID"]) {
-      const id = Deno.env.get(env);
+      const id = stripeVar(env);
       if (!id) { issues.push(`${env} is not set — webhooks cannot resolve this plan.`); products.push({ env, configured: false }); continue; }
       try {
         const product = await stripe.products.retrieve(id);
@@ -172,6 +179,27 @@ Deno.serve(async (req) => {
     return json({
       ready: issues.length === 0,
       checked_at: new Date().toISOString(),
+      mode: {
+        configured: mode,
+        stripe_mode_env: Deno.env.get("STRIPE_MODE") ?? null,
+        key_mode: liveMode ? "live" : "test",
+        matches_configured_mode: (mode === "live") === liveMode,
+        secret_sources: {
+          STRIPE_SECRET_KEY: stripeVarSource("STRIPE_SECRET_KEY"),
+          STRIPE_WEBHOOK_SECRET: stripeVarSource("STRIPE_WEBHOOK_SECRET"),
+          STRIPE_STARTER_PRODUCT_ID: stripeVarSource("STRIPE_STARTER_PRODUCT_ID"),
+          STRIPE_PRO_PRODUCT_ID: stripeVarSource("STRIPE_PRO_PRODUCT_ID"),
+          ...Object.fromEntries(EXPECTED.map((e) => [e.key, stripeVarSource(e.key)])),
+        },
+        live_var_names: [
+          "STRIPE_MODE=live",
+          liveVarName("STRIPE_SECRET_KEY"),
+          liveVarName("STRIPE_WEBHOOK_SECRET"),
+          liveVarName("STRIPE_STARTER_PRODUCT_ID"),
+          liveVarName("STRIPE_PRO_PRODUCT_ID"),
+          ...EXPECTED.map((e) => liveVarName(e.key)),
+        ],
+      },
       stripe_account: { id: account.id, name: account.settings?.dashboard?.display_name ?? null, mode: liveMode ? "live" : "test" },
       secrets: { stripe_secret_key_set: true, webhook_secret_set: webhookSecretSet },
       expected_webhook_url: expectedWebhookUrlSafe(expectedUrl),

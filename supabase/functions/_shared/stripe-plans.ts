@@ -4,6 +4,7 @@
 // implicit fallbacks to another plan.
 
 import type Stripe from "https://esm.sh/stripe@18.5.0";
+import { stripeVar } from "./stripe-env.ts";
 
 export type PlanConfig = { plan: string; diagramLimit: number };
 
@@ -13,7 +14,7 @@ export const PLAN_DIAGRAM_LIMITS: Record<string, number> = {
 };
 
 export function parseIdList(name: string): string[] {
-  return (Deno.env.get(name) ?? "")
+  return (stripeVar(name) ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
@@ -26,12 +27,12 @@ export function legacyPriceIds(): string[] {
 export function buildPriceMap(): Record<string, Record<string, string | undefined>> {
   return {
     starter: {
-      month: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
-      year: Deno.env.get("STRIPE_STARTER_ANNUAL_PRICE_ID"),
+      month: stripeVar("STRIPE_STARTER_MONTHLY_PRICE_ID"),
+      year: stripeVar("STRIPE_STARTER_ANNUAL_PRICE_ID"),
     },
     pro: {
-      month: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
-      year: Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
+      month: stripeVar("STRIPE_PRO_MONTHLY_PRICE_ID"),
+      year: stripeVar("STRIPE_PRO_ANNUAL_PRICE_ID"),
     },
   };
 }
@@ -45,8 +46,8 @@ export function buildPlanConfig(): Record<string, PlanConfig> {
     config[id] = { plan, diagramLimit };
   };
 
-  add(Deno.env.get("STRIPE_STARTER_PRODUCT_ID"), "starter", PLAN_DIAGRAM_LIMITS.starter);
-  add(Deno.env.get("STRIPE_PRO_PRODUCT_ID"), "pro", PLAN_DIAGRAM_LIMITS.pro);
+  add(stripeVar("STRIPE_STARTER_PRODUCT_ID"), "starter", PLAN_DIAGRAM_LIMITS.starter);
+  add(stripeVar("STRIPE_PRO_PRODUCT_ID"), "pro", PLAN_DIAGRAM_LIMITS.pro);
   for (const id of parseIdList("STRIPE_STARTER_LEGACY_PRODUCT_IDS")) {
     add(id, "starter", PLAN_DIAGRAM_LIMITS.starter);
   }

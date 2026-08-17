@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
+import { stripeVar } from "../_shared/stripe-env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,12 +10,12 @@ const corsHeaders = {
 
 const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   starter: {
-    monthly: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
-    annual: Deno.env.get("STRIPE_STARTER_ANNUAL_PRICE_ID"),
+    monthly: stripeVar("STRIPE_STARTER_MONTHLY_PRICE_ID"),
+    annual: stripeVar("STRIPE_STARTER_ANNUAL_PRICE_ID"),
   },
   pro: {
-    monthly: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
-    annual: Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
+    monthly: stripeVar("STRIPE_PRO_MONTHLY_PRICE_ID"),
+    annual: stripeVar("STRIPE_PRO_ANNUAL_PRICE_ID"),
   },
 };
 
@@ -22,7 +23,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
     if (!stripeKey) throw new Error("STRIPE_SECRET_KEY not set");
 
     const supabaseAdmin = createClient(
