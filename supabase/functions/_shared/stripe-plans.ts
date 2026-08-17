@@ -14,7 +14,7 @@ export const PLAN_DIAGRAM_LIMITS: Record<string, number> = {
 };
 
 export function parseIdList(name: string): string[] {
-  return (Deno.env.get(name) ?? "")
+  return (stripeVar(name) ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
