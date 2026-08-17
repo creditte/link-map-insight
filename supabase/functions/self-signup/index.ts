@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
-import { stripeVar } from "../_shared/stripe-env.ts";
+import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -166,6 +166,7 @@ Deno.serve(async (req) => {
 
         await supabaseAdmin.from("tenants").update({
           stripe_customer_id: customer.id,
+          stripe_mode: stripeMode(),
         }).eq("id", tenant.id);
 
         console.log(`[Signup] Stripe customer ${customer.id} created (awaiting payment method)`);

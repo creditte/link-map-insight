@@ -16,6 +16,7 @@ import {
 } from "../_shared/stripe-subscription.ts";
 import { PLAN_DIAGRAM_LIMITS, resolvePlanFromSubscription } from "../_shared/stripe-plans.ts";
 import { stripeVar } from "../_shared/stripe-env.ts";
+import { tenantStripeRefs } from "../_shared/stripe-tenant.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -33,6 +34,7 @@ type TenantRow = {
   firm_name: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  stripe_mode?: string | null;
   subscription_status: string | null;
   subscription_plan: string | null;
   selected_plan: string | null;
@@ -47,7 +49,7 @@ type TenantRow = {
 };
 
 const TENANT_COLUMNS =
-  "id, firm_name, stripe_customer_id, stripe_subscription_id, subscription_status, subscription_plan, selected_plan, diagram_limit, cancel_at_period_end, canceled_at, current_period_start, current_period_end, trial_ends_at, access_enabled, access_locked_reason";
+  "id, firm_name, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, subscription_plan, selected_plan, diagram_limit, cancel_at_period_end, canceled_at, current_period_start, current_period_end, trial_ends_at, access_enabled, access_locked_reason";
 
 function sameInstant(a: string | null, b: string | null): boolean {
   if (!a && !b) return true;
@@ -132,6 +134,7 @@ Deno.serve(async (req) => {
     const now = Date.now();
     const results: Array<Record<string, unknown>> = [];
     const issues: Array<Record<string, unknown>> = [];
+    const skipped: Array<Record<string, unknown>> = [];
     let inSync = 0;
     let applied = 0;
 
@@ -139,6 +142,14 @@ Deno.serve(async (req) => {
       const notes: string[] = [];
       let proposed: Record<string, unknown> = {};
       let subscription: Stripe.Subscription | null = null;
+
+      // Stripe references from another mode are legacy data — never query the
+      // active Stripe environment with them.
+      const refs = tenantStripeRefs(tenant as any);
+      if (refs.isLegacy) {
+        skipped.push({ tenant_id: tenant.id, reason: `legacy ${refs.storedMode}-mode Stripe ids (active mode=${refs.mode})` });
+        continue;
+      }
 
       // ---- 1. Retrieve the current Stripe subscription ----
       if (tenant.stripe_subscription_id) {
@@ -275,10 +286,11 @@ Deno.serve(async (req) => {
       tenants_needing_changes: results.length,
       tenants_updated: applied,
       issues_count: issues.length,
+      tenants_skipped_legacy_stripe_mode: skipped.length,
     };
 
     log("finished", summary);
-    return json({ summary, tenants: results, issues });
+    return json({ summary, tenants: results, issues, skipped });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[reconcile-billing] ERROR", message);

@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { stripeVar } from "../_shared/stripe-env.ts";
+import { tenantStripeRefs } from "../_shared/stripe-tenant.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -92,7 +93,7 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await admin
       .from("tenants")
-      .select("id, firm_name, name, stripe_customer_id, stripe_subscription_id, subscription_status")
+      .select("id, firm_name, name, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status")
       .eq("id", tenantId)
       .maybeSingle();
 
@@ -110,14 +111,20 @@ Deno.serve(async (req) => {
     // --- Billing: cancel any live subscription / trial first -----------------
     let subscriptionCancelled = false;
     const stripeKey = stripeVar("STRIPE_SECRET_KEY");
-    if (stripeKey && (tenant?.stripe_subscription_id || tenant?.stripe_customer_id)) {
+    // Legacy (other Stripe mode) ids cannot be cancelled with the active key —
+    // there is nothing billable to cancel in this environment either.
+    const stripeRefs = tenant ? tenantStripeRefs(tenant as any) : null;
+    if (stripeRefs?.isLegacy) {
+      log("legacy stripe refs ignored on delete", { tenant_id: tenant?.id, stored_mode: stripeRefs.storedMode });
+    }
+    if (stripeKey && (stripeRefs?.subscriptionId || stripeRefs?.customerId)) {
       try {
         const stripe = new Stripe(stripeKey, { apiVersion: "2026-02-25.clover" as any });
         const ids = new Set<string>();
-        if (tenant?.stripe_subscription_id) ids.add(tenant.stripe_subscription_id);
-        if (tenant?.stripe_customer_id) {
+        if (stripeRefs?.subscriptionId) ids.add(stripeRefs.subscriptionId);
+        if (stripeRefs?.customerId) {
           const subs = await stripe.subscriptions.list({
-            customer: tenant.stripe_customer_id,
+            customer: stripeRefs.customerId,
             status: "all",
             limit: 20,
           });

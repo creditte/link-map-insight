@@ -1,6 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
 import { stripeVar } from "../_shared/stripe-env.ts";
+import {
+  isStripeMissingResource,
+  quarantineLegacyStripeRefs,
+  tenantStripeRefs,
+} from "../_shared/stripe-tenant.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -31,15 +36,25 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("subscription_status, subscription_plan, selected_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_limit, diagram_count, cancel_at_period_end, stripe_customer_id, stripe_subscription_id, trial_used_at, last_plan_switch_at, payment_method_captured")
+      .select("id, subscription_status, subscription_plan, selected_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_limit, diagram_count, cancel_at_period_end, stripe_customer_id, stripe_subscription_id, stripe_mode, trial_used_at, last_plan_switch_at, payment_method_captured")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
 
+    // Stripe references saved in a different Stripe mode (legacy sandbox data while
+    // the app now runs live) cannot be read with the active key. Quarantine them so
+    // no Stripe call is made with an ID that does not exist in this environment.
+    let refs = tenantStripeRefs(tenant);
+    let legacyStripeData = refs.isLegacy;
+    if (refs.isLegacy) {
+      await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "check-subscription");
+      refs = tenantStripeRefs(tenant);
+    }
+
     // Mark expired trials and lock access (no subscription = must subscribe)
     if (
       tenant.subscription_status === "trialing" &&
-      !tenant.stripe_subscription_id &&
+      !refs.subscriptionId &&
       tenant.trial_ends_at &&
       new Date(tenant.trial_ends_at) < new Date()
     ) {
@@ -60,13 +75,14 @@ Deno.serve(async (req) => {
     // Determine billing interval from Stripe subscription if available, otherwise fall back to the user's chosen billing cycle
     let billing_interval: string | null = profile.selected_billing === "annual" ? "year" : "month";
     let price_amount: number | null = null;
-    if (tenant.stripe_subscription_id) {
+    if (refs.subscriptionId) {
       try {
         const stripeKey = stripeVar("STRIPE_SECRET_KEY");
         if (stripeKey) {
           const { default: Stripe } = await import("https://esm.sh/stripe@18.5.0");
           const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
-          const sub = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+          const sub = await stripe.subscriptions.retrieve(refs.subscriptionId);
+
           const life = getSubscriptionLifecycle(sub);
           const priceData = sub.items?.data?.[0]?.price;
           if (life.interval) billing_interval = life.interval;
@@ -170,9 +186,17 @@ Deno.serve(async (req) => {
           }
         }
       } catch (e) {
+        // A subscription that vanished from the active Stripe environment is stale
+        // data (typically created in the other mode) — quarantine rather than retry.
+        if (isStripeMissingResource(e)) {
+          await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "check-subscription:resource_missing");
+          refs = tenantStripeRefs(tenant);
+          legacyStripeData = true;
+        }
         console.error("[check-subscription] Error fetching Stripe sub:", e);
       }
     }
+
 
     // Determine effective diagram_limit strictly from subscription_plan; never fall back to a Pro-sized limit.
     // Trials always get the 3-group trial allowance (full Pro features, capped volume), whether the
@@ -223,12 +247,15 @@ Deno.serve(async (req) => {
     // Mandatory payment-method capture during registration is enforced
     // independently of the billing enforcement kill-switch.
     const paymentMethodRequired =
-      tenant.payment_method_captured !== true && !tenant.stripe_subscription_id;
+      tenant.payment_method_captured !== true && !refs.subscriptionId;
 
     return new Response(JSON.stringify({
       enforcement_enabled: enforcementEnabled,
       payment_method_required: paymentMethodRequired,
       payment_method_captured: tenant.payment_method_captured === true,
+      stripe_mode: refs.mode,
+      legacy_stripe_data: legacyStripeData,
+
       subscription_status: tenant.subscription_status,
       subscription_plan: tenant.subscription_plan,
       selected_plan: tenant.selected_plan,

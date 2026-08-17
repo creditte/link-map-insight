@@ -1,7 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
-import { stripeVar } from "../_shared/stripe-env.ts";
+import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
+import { quarantineLegacyStripeRefs, tenantStripeRefs } from "../_shared/stripe-tenant.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -120,7 +121,7 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_customer_id, subscription_status")
+      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
@@ -128,8 +129,18 @@ Deno.serve(async (req) => {
     const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
     const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";
 
-    // Ensure Stripe customer exists
-    let customerId = tenant.stripe_customer_id;
+    // Stripe IDs from another mode (legacy sandbox data) cannot be opened with the
+    // active key — quarantine them and fall through to a fresh checkout instead of
+    // failing with "No such customer".
+    let refs = tenantStripeRefs(tenant);
+    const legacyQuarantined = refs.isLegacy;
+    if (refs.isLegacy) {
+      await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "customer-portal");
+      refs = tenantStripeRefs(tenant);
+    }
+
+    // Ensure Stripe customer exists in the ACTIVE mode
+    let customerId = refs.customerId;
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: userData.user.email,
@@ -138,9 +149,10 @@ Deno.serve(async (req) => {
       customerId = customer.id;
       await supabaseAdmin
         .from("tenants")
-        .update({ stripe_customer_id: customerId })
+        .update({ stripe_customer_id: customerId, stripe_mode: stripeMode() })
         .eq("id", tenant.id);
     }
+
 
     // Check if the customer has an active/trialing subscription in Stripe
     const subscriptions = await stripe.subscriptions.list({

@@ -1,7 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
-import { stripeVar } from "../_shared/stripe-env.ts";
+import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
+import { quarantineLegacyStripeRefs, tenantStripeRefs } from "../_shared/stripe-tenant.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -88,18 +90,29 @@ Deno.serve(async (req) => {
     // Get tenant
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_customer_id, stripe_subscription_id, subscription_status, trial_used_at, payment_method_captured")
+      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, trial_used_at, payment_method_captured")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
 
     const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
 
+    // ── Stripe mode safety ────────────────────────────────────────────
+    // IDs saved in another Stripe mode (e.g. sandbox data now that we run live)
+    // do not exist for the active key. Quarantine them instead of calling Stripe
+    // with them or overwriting them, then continue with a fresh customer.
+    let refs = tenantStripeRefs(tenant);
+    const legacyQuarantined = refs.isLegacy;
+    if (refs.isLegacy) {
+      await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "create-checkout");
+      refs = tenantStripeRefs(tenant);
+    }
+
     // ── Duplicate-subscription protection ─────────────────────────────
-    // 1. Check the subscription we already track.
-    if (tenant.stripe_subscription_id) {
+    // 1. Check the subscription we already track (same mode only).
+    if (refs.subscriptionId) {
       try {
-        const existingSub = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+        const existingSub = await stripe.subscriptions.retrieve(refs.subscriptionId);
         if (["active", "trialing", "past_due", "unpaid"].includes(existingSub.status)) {
           return new Response(
             JSON.stringify({
@@ -114,8 +127,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Create or retrieve Stripe customer
-    let customerId = tenant.stripe_customer_id;
+    // Create or retrieve Stripe customer (always for the ACTIVE Stripe mode)
+    let customerId = refs.customerId;
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: user.email,
@@ -124,9 +137,10 @@ Deno.serve(async (req) => {
       customerId = customer.id;
       await supabaseAdmin
         .from("tenants")
-        .update({ stripe_customer_id: customerId })
+        .update({ stripe_customer_id: customerId, stripe_mode: stripeMode() })
         .eq("id", tenant.id);
     }
+
 
     // 2. Authoritative check against Stripe: never create a second subscription
     // for the same customer (e.g. if the DB lost the subscription id).
@@ -138,7 +152,7 @@ Deno.serve(async (req) => {
       // Re-link and refuse to create a duplicate.
       await supabaseAdmin
         .from("tenants")
-        .update({ stripe_subscription_id: liveSub.id, payment_method_captured: true })
+        .update({ stripe_subscription_id: liveSub.id, stripe_mode: stripeMode(), payment_method_captured: true })
         .eq("id", tenant.id);
       return new Response(
         JSON.stringify({
@@ -149,8 +163,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // The 7-day free trial is granted by Stripe exactly once per workspace.
-    const grantTrial = !tenant.trial_used_at && customerSubs.data.length === 0;
+    // The 7-day free trial is granted by Stripe exactly once per workspace and per
+    // Stripe mode — a trial consumed in the old sandbox account must not block the
+    // first real (live) trial, since no live customer ever existed.
+    const trialUsedInThisMode = !!tenant.trial_used_at && !legacyQuarantined;
+    const grantTrial = !trialUsedInThisMode && customerSubs.data.length === 0;
+
 
     const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";
 

@@ -15,7 +15,7 @@ import {
   buildPriceMap,
   resolvePlanFromSubscription as sharedResolvePlan,
 } from "../_shared/stripe-plans.ts";
-import { stripeVar } from "../_shared/stripe-env.ts";
+import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -111,6 +111,18 @@ Deno.serve(async (req) => {
     return new Response(`Webhook Error: ${err.message}`, { status: 400 });
   }
 
+  // Mode guard: a webhook from the other Stripe environment must never mutate
+  // tenant billing state in this one (test events cannot be trusted in live mode).
+  const activeModeIsLive = stripeMode() === "live";
+  if (event.livemode !== activeModeIsLive) {
+    console.warn(
+      `[stripe-webhooks] Ignoring ${event.type} (${event.id}): event livemode=${event.livemode} but active mode=${activeModeIsLive ? "live" : "test"}`,
+    );
+    return new Response(JSON.stringify({ received: true, ignored: "mode_mismatch" }), { status: 200 });
+  }
+
+
+
   // Idempotency: only events that fully completed are skipped. Rows left in
   // 'processing'/'failed' state are re-processed on Stripe's retry.
   const { data: existing } = await supabaseAdmin
@@ -176,6 +188,7 @@ Deno.serve(async (req) => {
         const updateData: Record<string, any> = {
           stripe_subscription_id: sub.id,
           stripe_customer_id: session.customer as string,
+          stripe_mode: stripeMode(),
           payment_method_captured: true,
           payment_setup_completed_at: new Date().toISOString(),
           trial_used_at: new Date().toISOString(),
@@ -233,6 +246,7 @@ Deno.serve(async (req) => {
           subscription_plan: plan,
           selected_plan: plan, // Sync selected_plan to actual plan on Stripe changes
           stripe_subscription_id: subscription.id,
+          stripe_mode: stripeMode(),
           current_period_start: life.currentPeriodStart,
           current_period_end: life.currentPeriodEnd,
           cancel_at_period_end: life.cancelAtPeriodEnd,
