@@ -96,6 +96,8 @@ export default function StripeConfigPanel() {
               Verify live wiring
             </Button>
           </div>
+        </div>
+
 
         {result && (
           <div className="space-y-4">
