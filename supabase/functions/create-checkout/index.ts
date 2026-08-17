@@ -151,7 +151,7 @@ Deno.serve(async (req) => {
       // Re-link and refuse to create a duplicate.
       await supabaseAdmin
         .from("tenants")
-        .update({ stripe_subscription_id: liveSub.id, payment_method_captured: true })
+        .update({ stripe_subscription_id: liveSub.id, stripe_mode: stripeMode(), payment_method_captured: true })
         .eq("id", tenant.id);
       return new Response(
         JSON.stringify({
@@ -162,8 +162,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // The 7-day free trial is granted by Stripe exactly once per workspace.
-    const grantTrial = !tenant.trial_used_at && customerSubs.data.length === 0;
+    // The 7-day free trial is granted by Stripe exactly once per workspace and per
+    // Stripe mode — a trial consumed in the old sandbox account must not block the
+    // first real (live) trial, since no live customer ever existed.
+    const trialUsedInThisMode = !!tenant.trial_used_at && !legacyQuarantined;
+    const grantTrial = !trialUsedInThisMode && customerSubs.data.length === 0;
+
 
     const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";
 
