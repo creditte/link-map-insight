@@ -113,10 +113,18 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_subscription_id, subscription_status, subscription_plan")
+      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, subscription_plan")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
+
+    // Never modify a subscription that belongs to another Stripe mode.
+    const refs = tenantStripeRefs(tenant);
+    if (refs.isLegacy) {
+      await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "switch-billing-interval");
+      throw new Error(LEGACY_SUBSCRIPTION_MESSAGE);
+    }
+
 
     if (tenant.subscription_status !== "active") {
       throw new Error("Billing interval can only be changed on active subscriptions");
