@@ -51,10 +51,11 @@ export default function StripeConfigPanel() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<ConfigCheck | null>(null);
 
-  const run = async () => {
+  const run = async (modeOverride?: "live" | "test") => {
     setRunning(true);
     try {
-      const { data, error } = await supabase.functions.invoke("stripe-config-check");
+      const path = modeOverride ? `stripe-config-check?mode=${modeOverride}` : "stripe-config-check";
+      const { data, error } = await supabase.functions.invoke(path);
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       setResult(data as ConfigCheck);
@@ -86,11 +87,17 @@ export default function StripeConfigPanel() {
               Read-only — no charges, no changes in Stripe.
             </p>
           </div>
-          <Button onClick={run} disabled={running} size="sm" className="gap-2">
-            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-            Run check
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={() => run()} disabled={running} size="sm" className="gap-2">
+              {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              Run check
+            </Button>
+            <Button onClick={() => run("live")} disabled={running} size="sm" variant="outline" className="gap-2">
+              Verify live wiring
+            </Button>
+          </div>
         </div>
+
 
         {result && (
           <div className="space-y-4">

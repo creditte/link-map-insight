@@ -33,8 +33,8 @@ export function liveVarName(name: string): string {
  * In live mode the STRIPE_LIVE_* value wins; the base name remains a fallback
  * so an environment configured with only live values still works.
  */
-export function stripeVar(name: string): string | undefined {
-  if (stripeMode() === "live") {
+export function stripeVar(name: string, modeOverride?: StripeMode): string | undefined {
+  if ((modeOverride ?? stripeMode()) === "live") {
     const live = Deno.env.get(liveVarName(name));
     if (live && live.trim() !== "") return live.trim();
   }
@@ -43,8 +43,8 @@ export function stripeVar(name: string): string | undefined {
 }
 
 /** Which env var name actually supplied the value (for diagnostics only). */
-export function stripeVarSource(name: string): string | null {
-  if (stripeMode() === "live") {
+export function stripeVarSource(name: string, modeOverride?: StripeMode): string | null {
+  if ((modeOverride ?? stripeMode()) === "live") {
     const live = Deno.env.get(liveVarName(name));
     if (live && live.trim() !== "") return liveVarName(name);
   }
