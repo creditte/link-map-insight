@@ -1200,12 +1200,16 @@ export type Database = {
           firm_name: string
           id: string
           last_plan_switch_at: string | null
+          legacy_stripe_customer_id: string | null
+          legacy_stripe_mode: string | null
+          legacy_stripe_subscription_id: string | null
           logo_url: string | null
           name: string
           payment_method_captured: boolean
           payment_setup_completed_at: string | null
           selected_plan: string | null
           stripe_customer_id: string | null
+          stripe_mode: string | null
           stripe_subscription_id: string | null
           subscription_plan: string | null
           subscription_status: string
@@ -1234,12 +1238,16 @@ export type Database = {
           firm_name?: string
           id?: string
           last_plan_switch_at?: string | null
+          legacy_stripe_customer_id?: string | null
+          legacy_stripe_mode?: string | null
+          legacy_stripe_subscription_id?: string | null
           logo_url?: string | null
           name: string
           payment_method_captured?: boolean
           payment_setup_completed_at?: string | null
           selected_plan?: string | null
           stripe_customer_id?: string | null
+          stripe_mode?: string | null
           stripe_subscription_id?: string | null
           subscription_plan?: string | null
           subscription_status?: string
@@ -1268,12 +1276,16 @@ export type Database = {
           firm_name?: string
           id?: string
           last_plan_switch_at?: string | null
+          legacy_stripe_customer_id?: string | null
+          legacy_stripe_mode?: string | null
+          legacy_stripe_subscription_id?: string | null
           logo_url?: string | null
           name?: string
           payment_method_captured?: boolean
           payment_setup_completed_at?: string | null
           selected_plan?: string | null
           stripe_customer_id?: string | null
+          stripe_mode?: string | null
           stripe_subscription_id?: string | null
           subscription_plan?: string | null
           subscription_status?: string
