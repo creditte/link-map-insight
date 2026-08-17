@@ -111,6 +111,18 @@ Deno.serve(async (req) => {
     return new Response(`Webhook Error: ${err.message}`, { status: 400 });
   }
 
+  // Mode guard: a webhook from the other Stripe environment must never mutate
+  // tenant billing state in this one (test events cannot be trusted in live mode).
+  const activeModeIsLive = stripeMode() === "live";
+  if (event.livemode !== activeModeIsLive) {
+    console.warn(
+      `[stripe-webhooks] Ignoring ${event.type} (${event.id}): event livemode=${event.livemode} but active mode=${activeModeIsLive ? "live" : "test"}`,
+    );
+    return new Response(JSON.stringify({ received: true, ignored: "mode_mismatch" }), { status: 200 });
+  }
+
+
+
   // Idempotency: only events that fully completed are skipped. Rows left in
   // 'processing'/'failed' state are re-processed on Stripe's retry.
   const { data: existing } = await supabaseAdmin
