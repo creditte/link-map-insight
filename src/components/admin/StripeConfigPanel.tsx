@@ -26,6 +26,14 @@ interface ConfigCheck {
   ready: boolean;
   checked_at: string;
   stripe_account?: { id: string; name: string | null; mode: string };
+  mode?: {
+    configured: string;
+    stripe_mode_env: string | null;
+    key_mode?: string;
+    matches_configured_mode?: boolean;
+    secret_sources?: Record<string, string | null>;
+    live_var_names?: string[];
+  };
   secrets?: { stripe_secret_key_set: boolean; webhook_secret_set: boolean };
   expected_webhook_url?: string;
   billing_enforcement_enabled?: boolean;
