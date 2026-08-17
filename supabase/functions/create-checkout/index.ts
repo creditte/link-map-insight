@@ -102,6 +102,7 @@ Deno.serve(async (req) => {
     // do not exist for the active key. Quarantine them instead of calling Stripe
     // with them or overwriting them, then continue with a fresh customer.
     let refs = tenantStripeRefs(tenant);
+    const legacyQuarantined = refs.isLegacy;
     if (refs.isLegacy) {
       await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "create-checkout");
       refs = tenantStripeRefs(tenant);
