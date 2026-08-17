@@ -11,11 +11,11 @@ import {
   toISO,
 } from "../_shared/stripe-subscription.ts";
 import {
-import { stripeVar } from "../_shared/stripe-env.ts";
   buildPlanConfig,
   buildPriceMap,
   resolvePlanFromSubscription as sharedResolvePlan,
 } from "../_shared/stripe-plans.ts";
+import { stripeVar } from "../_shared/stripe-env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
