@@ -51,10 +51,11 @@ export default function StripeConfigPanel() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<ConfigCheck | null>(null);
 
-  const run = async () => {
+  const run = async (modeOverride?: "live" | "test") => {
     setRunning(true);
     try {
-      const { data, error } = await supabase.functions.invoke("stripe-config-check");
+      const path = modeOverride ? `stripe-config-check?mode=${modeOverride}` : "stripe-config-check";
+      const { data, error } = await supabase.functions.invoke(path);
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       setResult(data as ConfigCheck);
