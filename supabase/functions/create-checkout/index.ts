@@ -1,7 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
-import { stripeVar } from "../_shared/stripe-env.ts";
+import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
+import { quarantineLegacyStripeRefs, tenantStripeRefs } from "../_shared/stripe-tenant.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
