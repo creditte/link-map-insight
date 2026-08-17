@@ -242,12 +242,15 @@ Deno.serve(async (req) => {
     // Mandatory payment-method capture during registration is enforced
     // independently of the billing enforcement kill-switch.
     const paymentMethodRequired =
-      tenant.payment_method_captured !== true && !tenant.stripe_subscription_id;
+      tenant.payment_method_captured !== true && !refs.subscriptionId;
 
     return new Response(JSON.stringify({
       enforcement_enabled: enforcementEnabled,
       payment_method_required: paymentMethodRequired,
       payment_method_captured: tenant.payment_method_captured === true,
+      stripe_mode: refs.mode,
+      legacy_stripe_data: legacyStripeData,
+
       subscription_status: tenant.subscription_status,
       subscription_plan: tenant.subscription_plan,
       selected_plan: tenant.selected_plan,
