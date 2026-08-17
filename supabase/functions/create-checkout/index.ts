@@ -90,18 +90,28 @@ Deno.serve(async (req) => {
     // Get tenant
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_customer_id, stripe_subscription_id, subscription_status, trial_used_at, payment_method_captured")
+      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, trial_used_at, payment_method_captured")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
 
     const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
 
+    // ── Stripe mode safety ────────────────────────────────────────────
+    // IDs saved in another Stripe mode (e.g. sandbox data now that we run live)
+    // do not exist for the active key. Quarantine them instead of calling Stripe
+    // with them or overwriting them, then continue with a fresh customer.
+    let refs = tenantStripeRefs(tenant);
+    if (refs.isLegacy) {
+      await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "create-checkout");
+      refs = tenantStripeRefs(tenant);
+    }
+
     // ── Duplicate-subscription protection ─────────────────────────────
-    // 1. Check the subscription we already track.
-    if (tenant.stripe_subscription_id) {
+    // 1. Check the subscription we already track (same mode only).
+    if (refs.subscriptionId) {
       try {
-        const existingSub = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+        const existingSub = await stripe.subscriptions.retrieve(refs.subscriptionId);
         if (["active", "trialing", "past_due", "unpaid"].includes(existingSub.status)) {
           return new Response(
             JSON.stringify({
@@ -116,8 +126,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Create or retrieve Stripe customer
-    let customerId = tenant.stripe_customer_id;
+    // Create or retrieve Stripe customer (always for the ACTIVE Stripe mode)
+    let customerId = refs.customerId;
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: user.email,
@@ -126,9 +136,10 @@ Deno.serve(async (req) => {
       customerId = customer.id;
       await supabaseAdmin
         .from("tenants")
-        .update({ stripe_customer_id: customerId })
+        .update({ stripe_customer_id: customerId, stripe_mode: stripeMode() })
         .eq("id", tenant.id);
     }
+
 
     // 2. Authoritative check against Stripe: never create a second subscription
     // for the same customer (e.g. if the DB lost the subscription id).
