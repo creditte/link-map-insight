@@ -461,6 +461,8 @@ export default function AdminDashboard() {
           ))}
         </div>
 
+        <StripeConfigPanel />
+
         <BillingReconciliationPanel />
 
 
