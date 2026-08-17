@@ -72,10 +72,18 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_subscription_id, subscription_status, subscription_plan, selected_plan, diagram_count, current_period_end, last_plan_switch_at")
+      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, subscription_plan, selected_plan, diagram_count, current_period_end, last_plan_switch_at")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
+
+    // Never modify a subscription that belongs to another Stripe mode.
+    const refs = tenantStripeRefs(tenant);
+    if (refs.isLegacy) {
+      await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "change-plan");
+      throw new Error(LEGACY_SUBSCRIPTION_MESSAGE);
+    }
+
 
     // 24-hour cooldown check
     if (tenant.last_plan_switch_at) {
