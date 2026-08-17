@@ -98,6 +98,9 @@ export default function StripeConfigPanel() {
               <Badge variant={result.stripe_account?.mode === "live" ? "default" : "secondary"}>
                 {result.stripe_account?.mode === "live" ? "Live mode" : "Test mode"}
               </Badge>
+              <Badge variant={result.mode?.matches_configured_mode === false ? "destructive" : "outline"}>
+                STRIPE_MODE: {result.mode?.stripe_mode_env ?? "unset (test)"}
+              </Badge>
               <Badge variant="outline">{result.stripe_account?.name || result.stripe_account?.id}</Badge>
               <Badge variant={result.secrets?.webhook_secret_set ? "outline" : "destructive"}>
                 Webhook secret {result.secrets?.webhook_secret_set ? "set" : "missing"}
