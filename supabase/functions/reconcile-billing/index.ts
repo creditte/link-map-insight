@@ -134,6 +134,7 @@ Deno.serve(async (req) => {
     const now = Date.now();
     const results: Array<Record<string, unknown>> = [];
     const issues: Array<Record<string, unknown>> = [];
+    const skipped: Array<Record<string, unknown>> = [];
     let inSync = 0;
     let applied = 0;
 
@@ -285,10 +286,11 @@ Deno.serve(async (req) => {
       tenants_needing_changes: results.length,
       tenants_updated: applied,
       issues_count: issues.length,
+      tenants_skipped_legacy_stripe_mode: skipped.length,
     };
 
     log("finished", summary);
-    return json({ summary, tenants: results, issues });
+    return json({ summary, tenants: results, issues, skipped });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[reconcile-billing] ERROR", message);
