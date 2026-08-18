@@ -85,8 +85,8 @@ export function stripeVarSafe(name: string, modeOverride?: StripeMode): string |
 }
 
 /** Required live vars that are missing/empty (live mode only). */
-export function missingLiveVars(): string[] {
-  if (stripeMode() !== "live") return [];
+export function missingLiveVars(modeOverride?: StripeMode): string[] {
+  if ((modeOverride ?? stripeMode()) !== "live") return [];
   return REQUIRED_LIVE_VARS.filter((name) => {
     const v = Deno.env.get(liveVarName(name));
     return !v || v.trim() === "";
