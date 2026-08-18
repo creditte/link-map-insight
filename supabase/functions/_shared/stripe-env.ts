@@ -98,7 +98,8 @@ export function missingLiveVars(): string[] {
 export function stripeVarSource(name: string, modeOverride?: StripeMode): string | null {
   if ((modeOverride ?? stripeMode()) === "live") {
     const live = Deno.env.get(liveVarName(name));
-    if (live && live.trim() !== "") return liveVarName(name);
+    // Live mode never reads the sandbox name, so it can never be the source.
+    return live && live.trim() !== "" ? liveVarName(name) : null;
   }
   const base = Deno.env.get(name);
   return base && base.trim() !== "" ? name : null;
