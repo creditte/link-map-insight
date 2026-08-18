@@ -61,8 +61,15 @@ Deno.serve(async (req) => {
     const rawOverride = (new URL(req.url).searchParams.get("mode") ?? "").trim().toLowerCase();
     const override = rawOverride === "live" ? "live" : rawOverride === "test" ? "test" : undefined;
     const mode = override ?? stripeMode();
-    const sv = (name: string) => stripeVar(name, mode);
+    // Diagnostics must report problems, not crash: use the non-throwing variant.
+    const sv = (name: string) => stripeVarSafe(name, mode);
     const svs = (name: string) => stripeVarSource(name, mode);
+    if (mode === "live") {
+      for (const missing of missingLiveVars()) {
+        issues.push(`${missing} is missing or empty — live mode fails closed (no sandbox fallback).`);
+      }
+    }
+
 
     const stripeKey = sv("STRIPE_SECRET_KEY");
     const webhookSecretSet = Boolean(sv("STRIPE_WEBHOOK_SECRET"));
