@@ -29,24 +29,77 @@ export function liveVarName(name: string): string {
 }
 
 /**
+ * Variables that MUST exist as STRIPE_LIVE_* when running in live mode.
+ * Missing/empty values are a hard configuration error — never a sandbox fallback.
+ */
+export const REQUIRED_LIVE_VARS = [
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "STRIPE_STARTER_PRODUCT_ID",
+  "STRIPE_PRO_PRODUCT_ID",
+  "STRIPE_STARTER_MONTHLY_PRICE_ID",
+  "STRIPE_STARTER_ANNUAL_PRICE_ID",
+  "STRIPE_PRO_MONTHLY_PRICE_ID",
+  "STRIPE_PRO_ANNUAL_PRICE_ID",
+] as const;
+
+export class StripeConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StripeConfigError";
+  }
+}
+
+/**
  * Resolve a logical Stripe env var for the active mode.
- * In live mode the STRIPE_LIVE_* value wins; the base name remains a fallback
- * so an environment configured with only live values still works.
+ *
+ * live mode: ONLY the STRIPE_LIVE_* value is ever used. There is no fallback to
+ *   the sandbox name — required vars throw StripeConfigError, optional ones
+ *   resolve to undefined. This makes it impossible for live billing to silently
+ *   use sandbox credentials, product IDs or price IDs.
+ * test mode: the existing STRIPE_* (sandbox) variables, unchanged.
  */
 export function stripeVar(name: string, modeOverride?: StripeMode): string | undefined {
   if ((modeOverride ?? stripeMode()) === "live") {
-    const live = Deno.env.get(liveVarName(name));
+    const liveName = liveVarName(name);
+    const live = Deno.env.get(liveName);
     if (live && live.trim() !== "") return live.trim();
+    if ((REQUIRED_LIVE_VARS as readonly string[]).includes(name)) {
+      throw new StripeConfigError(
+        `Stripe live mode misconfigured: ${liveName} is missing or empty. Set it for this environment; live billing will never fall back to the sandbox variable ${name}.`,
+      );
+    }
+    return undefined;
   }
   const base = Deno.env.get(name);
   return base && base.trim() !== "" ? base.trim() : undefined;
 }
 
+/** Non-throwing variant for diagnostics/reporting surfaces. */
+export function stripeVarSafe(name: string, modeOverride?: StripeMode): string | undefined {
+  try {
+    return stripeVar(name, modeOverride);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Required live vars that are missing/empty (live mode only). */
+export function missingLiveVars(modeOverride?: StripeMode): string[] {
+  if ((modeOverride ?? stripeMode()) !== "live") return [];
+  return REQUIRED_LIVE_VARS.filter((name) => {
+    const v = Deno.env.get(liveVarName(name));
+    return !v || v.trim() === "";
+  }).map((name) => liveVarName(name));
+}
+
+
 /** Which env var name actually supplied the value (for diagnostics only). */
 export function stripeVarSource(name: string, modeOverride?: StripeMode): string | null {
   if ((modeOverride ?? stripeMode()) === "live") {
     const live = Deno.env.get(liveVarName(name));
-    if (live && live.trim() !== "") return liveVarName(name);
+    // Live mode never reads the sandbox name, so it can never be the source.
+    return live && live.trim() !== "" ? liveVarName(name) : null;
   }
   const base = Deno.env.get(name);
   return base && base.trim() !== "" ? name : null;

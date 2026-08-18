@@ -11,7 +11,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
-import { liveVarName, stripeMode, stripeVar, stripeVarSource } from "../_shared/stripe-env.ts";
+import { liveVarName, missingLiveVars, stripeMode, stripeVarSafe, stripeVarSource } from "../_shared/stripe-env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -61,8 +61,15 @@ Deno.serve(async (req) => {
     const rawOverride = (new URL(req.url).searchParams.get("mode") ?? "").trim().toLowerCase();
     const override = rawOverride === "live" ? "live" : rawOverride === "test" ? "test" : undefined;
     const mode = override ?? stripeMode();
-    const sv = (name: string) => stripeVar(name, mode);
+    // Diagnostics must report problems, not crash: use the non-throwing variant.
+    const sv = (name: string) => stripeVarSafe(name, mode);
     const svs = (name: string) => stripeVarSource(name, mode);
+    if (mode === "live") {
+      for (const missing of missingLiveVars(mode)) {
+        issues.push(`${missing} is missing or empty — live mode fails closed (no sandbox fallback).`);
+      }
+    }
+
 
     const stripeKey = sv("STRIPE_SECRET_KEY");
     const webhookSecretSet = Boolean(sv("STRIPE_WEBHOOK_SECRET"));
