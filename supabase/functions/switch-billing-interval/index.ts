@@ -104,15 +104,15 @@ Deno.serve(async (req) => {
       .single();
     if (!profile) throw new Error("No profile found");
 
-    // Owner-only check
+    // Owner, or admin explicitly granted billing access
     const { data: tenantUser } = await supabaseAdmin
       .from("tenant_users")
-      .select("role")
+      .select("role, can_manage_billing")
       .eq("tenant_id", profile.tenant_id)
       .eq("auth_user_id", userData.user.id)
       .eq("status", "active")
       .single();
-    if (!tenantUser || tenantUser.role !== "owner") {
+    if (!tenantUser || !(tenantUser.role === "owner" || (tenantUser.role === "admin" && tenantUser.can_manage_billing === true))) {
       throw new Error("Only the firm owner can change billing settings");
     }
 
