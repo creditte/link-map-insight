@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
       .eq("status", "active")
       .single();
     if (!tenantUser || !(tenantUser.role === "owner" || (tenantUser.role === "admin" && tenantUser.can_manage_billing === true))) {
-      throw new Error("Only the firm owner can change billing settings");
+      throw new Error("Only the firm owner, or an admin with billing access, can change billing settings");
     }
 
     const { data: tenant } = await supabaseAdmin
