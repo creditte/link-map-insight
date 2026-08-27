@@ -8,13 +8,16 @@ import {
   isCorporateTrustee,
   mapLimit,
   refreshAccessToken,
-  REL_TYPE_MAP,
+  rpcCall,
+  counters,
   resolveEntityType,
   tuning,
   xmlArray,
   xmlText,
   xpmGetXml,
 } from "./_lib.ts";
+import { isServiceRoleRequest } from "../_shared/cron-auth.ts";
+import { parseXpmRelationshipType } from "../_shared/xpm-relationships.ts";
 
 /**
  * Chunked, resumable XPM sync.
@@ -50,6 +53,12 @@ interface Stats {
   groupsSkippedUnchanged: number;
   trusteesDetected: number;
   staffFetched: number;
+  /** Observability: cost of the sync so far. */
+  xpmRequests: number;
+  xpmMs: number;
+  dbCalls: number;
+  dbMs: number;
+  wallMs: number;
   typeCounts: Record<string, number>;
 }
 
@@ -60,6 +69,17 @@ interface Progress {
   groupCursor: string;
   /** True once the group catalogue has been pulled from XPM into `xpm_groups`. */
   groupsLoaded: boolean;
+  /**
+   * Fingerprint of the last client page. XPM 3.1 silently ignores `page` on
+   * some practices and keeps returning the same full list, which used to make
+   * the sync re-process identical data hundreds of times. An identical
+   * fingerprint means paging is unsupported and the client phase is complete.
+   */
+  lastPageKey: string;
+  /** When true, every group is re-read from XPM instead of honouring freshness. */
+  fullSync: boolean;
+  /** Worker lease expiry — only the lease holder may talk to XPM. */
+  leaseUntil: string;
   runs: number;
   started_at: string;
   updated_at: string;
@@ -73,6 +93,9 @@ function emptyProgress(): Progress {
     clientPage: 1,
     groupCursor: "",
     groupsLoaded: false,
+    lastPageKey: "",
+    fullSync: false,
+    leaseUntil: "",
     runs: 0,
     started_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -88,6 +111,11 @@ function emptyProgress(): Progress {
       groupsSkippedUnchanged: 0,
       trusteesDetected: 0,
       staffFetched: 0,
+      xpmRequests: 0,
+      xpmMs: 0,
+      dbCalls: 0,
+      dbMs: 0,
+      wallMs: 0,
       typeCounts: {},
     },
     warnings: [],
@@ -98,6 +126,18 @@ function emptyProgress(): Progress {
 /** Warnings are capped so the job row can't grow unbounded. */
 function warn(p: Progress, msg: string) {
   if (p.warnings.length < 200) p.warnings.push(msg);
+}
+
+/**
+ * Unknown relationship labels repeat on nearly every client, so they are
+ * recorded once per distinct label. Building thousands of warning strings was
+ * pure CPU spent on a row the user never reads in full.
+ */
+const seenUnknownRelTypes = new Set<string>();
+function warnUnknownRelType(p: Progress, raw: string) {
+  if (seenUnknownRelTypes.has(raw)) return;
+  seenUnknownRelTypes.add(raw);
+  warn(p, `Unsupported XPM relationship type "${raw}" — those links were skipped`);
 }
 
 // ── Small helpers ──────────────────────────────────────────────────
@@ -132,7 +172,7 @@ interface ParsedClient {
   entityType: string;
   abn: string | null;
   acn: string | null;
-  rels: { type: string; uuid: string; name: string }[];
+  rels: { type: string; uuid: string; name: string; reverse: boolean }[];
 }
 
 /** Parse one XPM client page down to a minimal shape, then drop the XML. */
@@ -153,13 +193,16 @@ function parseClientPage(pageXml: any, p: Progress): ParsedClient[] {
       const relatedUuid = xmlText(rel?.RelatedClient, "UUID") || xmlText(rel, "RelatedClientUUID");
       const relatedName = xmlText(rel?.RelatedClient, "Name") || xmlText(rel, "RelatedClientName");
       if (!raw || !relatedUuid) continue;
-      const mapped = REL_TYPE_MAP[raw];
-      if (!mapped) {
-        warn(p, `Unknown relationship type "${raw}" on client ${name}`);
+      // XPM labels a relationship from either side ("Director" on the company
+      // record, "Director of" on the person record), so both forms are mapped
+      // and `reverse` restores the canonical from → to direction.
+      const rule = parseXpmRelationshipType(raw);
+      if (!rule) {
+        warnUnknownRelType(p, raw);
         p.stats.relationshipsSkipped++;
         continue;
       }
-      rels.push({ type: mapped, uuid: relatedUuid, name: relatedName });
+      rels.push({ type: rule.type, uuid: relatedUuid, name: relatedName, reverse: rule.reverse });
     }
 
     out.push({
@@ -193,19 +236,25 @@ async function processClientPage(
   page: number,
   p: Progress,
   trusteePairs: { trustee_uuid: string; trust_name: string }[],
-): Promise<boolean> {
+): Promise<"processed" | "empty" | "repeat"> {
   const t = tuning();
   let pageXml: any = await xpmGetXml(
     `/client.api/list?detailed=true&page=${page}&pagesize=${t.clientPageSize}`,
     accessToken,
     xeroTenantId,
   );
-  if (!pageXml) return false;
+  if (!pageXml) return "empty";
 
   let parsed: ParsedClient[] | null = parseClientPage(pageXml, p);
   // Release the parsed XML tree (the biggest allocation in the run) immediately.
   pageXml = null;
-  if (parsed.length === 0) return false;
+  if (parsed.length === 0) return "empty";
+
+  // Same page as last time → XPM is not paginating this practice's client list.
+  const pageKey = `${parsed.length}:${parsed[0].uuid}:${parsed[parsed.length - 1].uuid}`;
+  if (pageKey === p.lastPageKey) return "repeat";
+  p.lastPageKey = pageKey;
+
   p.stats.clientsFetched += parsed.length;
 
   const clients: Record<string, unknown>[] = [];
@@ -232,14 +281,18 @@ async function processClientPage(
 
     for (const r of c.rels) {
       if (r.name) related.set(r.uuid, r.name);
-      rels.push({ type: r.type, from_uuid: c.uuid, to_uuid: r.uuid });
+      rels.push(
+        r.reverse
+          ? { type: r.type, from_uuid: r.uuid, to_uuid: c.uuid }
+          : { type: r.type, from_uuid: c.uuid, to_uuid: r.uuid },
+      );
     }
   }
 
   // Drop the parsed page before the request so peak memory stays low.
   parsed = null;
 
-  const { data, error } = await supabase.rpc("sync_xpm_upsert_clients", {
+  const { data, error } = await rpcCall(supabase, "sync_xpm_upsert_clients", {
     _tenant_id: tenantId,
     _payload: {
       clients,
@@ -256,7 +309,7 @@ async function processClientPage(
   p.stats.relationshipsSkipped += res.relationshipsSkipped ?? 0;
   for (const w of res.warnings ?? []) warn(p, String(w));
 
-  return true;
+  return "processed";
 }
 
 // ── Phase: groups ──────────────────────────────────────────────────
@@ -301,68 +354,72 @@ async function fetchGroupSlice(
   tenantId: string,
   cursor: string,
   limit: number,
-): Promise<{ uuid: string; name: string }[]> {
+): Promise<{ uuid: string; name: string; lastSyncedAt: string | null }[]> {
   let q = supabase
     .from("xpm_groups")
-    .select("xpm_uuid, name")
+    .select("xpm_uuid, name, last_synced_at")
     .eq("tenant_id", tenantId)
     .order("xpm_uuid", { ascending: true })
     .limit(limit);
   if (cursor) q = q.gt("xpm_uuid", cursor);
   const { data, error } = await q;
   if (error) throw new Error(`Failed to read group slice: ${error.message}`);
-  return (data ?? []).map((r: any) => ({ uuid: r.xpm_uuid, name: r.name }));
+  return (data ?? []).map((r: any) => ({
+    uuid: r.xpm_uuid,
+    name: r.name,
+    lastSyncedAt: r.last_synced_at as string | null,
+  }));
 }
 
 
 /**
- * One XPM request + one database request per group. The database call resolves
- * the structure, links members and their relationships, and records a
- * membership fingerprint so an unchanged group short-circuits on the next sync.
+ * Fetch one group's membership from XPM. No database work happens here: group
+ * rows are linked in batches (see `linkGroupBatch`) so the per-group database
+ * round-trip is off the critical path and XPM latency is the only cost.
  */
-async function processGroup(
-  supabase: any,
-  tenantId: string,
+async function fetchGroupMembers(
   accessToken: string,
   xeroTenantId: string,
   group: { uuid: string; name: string },
   p: Progress,
-) {
+): Promise<{ uuid: string; name: string; hash: string; members: string[] } | null> {
   let detail: any = await xpmGetXml(`/clientgroup.api/get/${group.uuid}`, accessToken, xeroTenantId);
   if (!detail) {
     warn(p, `Could not read group "${group.name}" from XPM`);
-    return;
+    return null;
   }
-  const memberUuids = xmlArray(detail?.Response?.Group?.Clients, "Client")
+  const members = xmlArray(detail?.Response?.Group?.Clients, "Client")
     .map((m: any) => xmlText(m, "UUID"))
     .filter(Boolean);
   detail = null;
 
-  const memberHash = await hashMembers(group.name, memberUuids);
+  return { uuid: group.uuid, name: group.name, hash: await hashMembers(group.name, members), members };
+}
 
-  const { data, error } = await supabase.rpc("sync_xpm_link_group", {
+/**
+ * Link a batch of groups in ONE database request. The routine resolves each
+ * structure, links members and their relationships, and compares the membership
+ * fingerprint so an unchanged group short-circuits server-side.
+ */
+async function linkGroupBatch(
+  supabase: any,
+  tenantId: string,
+  batch: { uuid: string; name: string; hash: string; members: string[] }[],
+  p: Progress,
+) {
+  if (batch.length === 0) return;
+  const { data, error } = await rpcCall(supabase, "sync_xpm_link_groups", {
     _tenant_id: tenantId,
-    _group_uuid: group.uuid,
-    _group_name: group.name,
-    _member_uuids: memberUuids,
-    _member_hash: memberHash,
+    _groups: batch,
   });
-
   if (error) {
-    warn(p, `Failed to sync group "${group.name}": ${error.message}`);
+    warn(p, `Failed to sync ${batch.length} group(s): ${error.message}`);
     return;
   }
-
   const res = (data ?? {}) as any;
-  if (res.skipped) {
-    p.stats.groupsSkippedUnchanged++;
-    return;
-  }
-  if (res.error) {
-    warn(p, `Failed to create structure for group "${group.name}": ${res.error}`);
-    return;
-  }
-  if (res.structureCreated) p.stats.groupsCreated++;
+  p.stats.groupsCreated += res.structuresCreated ?? 0;
+  p.stats.groupsSkippedUnchanged += res.skippedUnchanged ?? 0;
+  for (const e of res.errors ?? []) warn(p, String(e));
 }
 
 // ── Phase: staff + fallback structure ──────────────────────────────
@@ -413,7 +470,7 @@ async function ensureFallbackStructure(supabase: any, tenantId: string, p: Progr
   if (p.stats.groupsFound > 0) return;
   if (p.stats.entitiesCreated === 0 && p.stats.entitiesUpdated === 0) return;
 
-  const { error } = await supabase.rpc("sync_xpm_ensure_fallback_structure", {
+  const { error } = await rpcCall(supabase, "sync_xpm_ensure_fallback_structure", {
     _tenant_id: tenantId,
     _since: p.started_at,
   });
@@ -431,6 +488,8 @@ async function runSlice(
   const t = tuning();
   const p = progress;
   p.runs++;
+  const c0 = { ...counters };
+  const sliceStartedAt = Date.now();
 
   const { data: connections } = await supabase
     .from("xero_connections")
@@ -463,10 +522,10 @@ async function runSlice(
   if (p.phase === "clients") {
     const trusteePairs: { trustee_uuid: string; trust_name: string }[] = [];
     for (let i = 0; i < t.clientPagesPerRun; i++) {
-      const hadClients = await processClientPage(
+      const outcome = await processClientPage(
         supabase, tenantId, accessToken, xeroTenantId, p.clientPage, p, trusteePairs,
       );
-      if (!hadClients || p.clientPage >= t.maxClientPages) {
+      if (outcome !== "processed" || p.clientPage >= t.maxClientPages) {
         p.phase = "groups";
         break;
       }
@@ -475,12 +534,17 @@ async function runSlice(
       // `updated_at` proves the worker is alive.
       p.updated_at = new Date().toISOString();
       await saveProgress(supabase, jobId, p);
+      // XPM ignores `pagesize` on detailed client lists and can return well over
+      // a thousand clients in a single page, so XML parsing — not the network —
+      // is what burns the worker's CPU budget. Hand over to a fresh worker
+      // before the runtime kills this one mid-page.
+      if (Date.now() - sliceStartedAt > t.sliceBudgetMs) break;
     }
 
     // Corporate trustee → trust matching for this run, resolved set-based in a
     // single call instead of one wildcard query per trustee.
     if (trusteePairs.length > 0) {
-      const { data, error } = await supabase.rpc("sync_xpm_link_trustees", {
+      const { data, error } = await rpcCall(supabase, "sync_xpm_link_trustees", {
         _tenant_id: tenantId,
         _pairs: trusteePairs,
       });
@@ -497,13 +561,45 @@ async function runSlice(
     if (slice.length === 0) {
       p.phase = "staff";
     } else {
-      // Bounded concurrency: several groups in flight, never all of them.
-      await mapLimit(slice, t.groupConcurrency, (group) =>
-        processGroup(supabase, tenantId, accessToken, xeroTenantId!, group, p)
-      );
-      p.stats.groupsProcessed += slice.length;
-      p.groupCursor = slice[slice.length - 1].uuid;
-      if (slice.length < t.groupsPerRun) p.phase = "staff";
+      // Bounded concurrency: a few groups in flight, never all of them, and the
+      // cursor advances batch by batch so a worker killed for CPU time never
+      // reprocesses (or loses) a group.
+      let processed = 0;
+      // Groups read recently enough are left alone: their membership is already
+      // in the database and re-reading them would only spend XPM quota.
+      const freshBefore = Date.now() - t.groupFreshnessMinutes * 60_000;
+      const dueGroups = p.fullSync
+        ? slice
+        : slice.filter((g) => !g.lastSyncedAt || new Date(g.lastSyncedAt).getTime() < freshBefore);
+      const skippedFresh = slice.length - dueGroups.length;
+      if (skippedFresh > 0) {
+        p.stats.groupsSkippedUnchanged += skippedFresh;
+        p.stats.groupsProcessed += skippedFresh;
+      }
+      if (dueGroups.length === 0) {
+        p.groupCursor = slice[slice.length - 1].uuid;
+        processed = slice.length;
+        p.updated_at = new Date().toISOString();
+        await saveProgress(supabase, jobId, p);
+      }
+      for (const batch of chunk(dueGroups, t.groupBatchSize)) {
+        const fetched = await mapLimit(batch, t.groupConcurrency, (group) =>
+          fetchGroupMembers(accessToken, xeroTenantId!, group, p)
+        );
+        await linkGroupBatch(
+          supabase,
+          tenantId,
+          fetched.filter((g): g is NonNullable<typeof g> => g !== null),
+          p,
+        );
+        processed += batch.length;
+        p.stats.groupsProcessed += batch.length;
+        p.groupCursor = batch[batch.length - 1].uuid;
+        p.updated_at = new Date().toISOString();
+        await saveProgress(supabase, jobId, p);
+        if (Date.now() - sliceStartedAt > t.sliceBudgetMs) break;
+      }
+      if (processed >= dueGroups.length && slice.length < t.groupsPerRun) p.phase = "staff";
     }
   } else if (p.phase === "staff") {
     await processStaff(supabase, tenantId, accessToken, xeroTenantId, p);
@@ -512,12 +608,19 @@ async function runSlice(
   }
 
 
+  p.stats.xpmRequests += counters.xpmRequests - c0.xpmRequests;
+  p.stats.xpmMs += counters.xpmMs - c0.xpmMs;
+  p.stats.dbCalls += counters.dbCalls - c0.dbCalls;
+  p.stats.dbMs += counters.dbMs - c0.dbMs;
+  p.stats.wallMs += Date.now() - sliceStartedAt;
   p.updated_at = new Date().toISOString();
   return p;
 }
 
 async function saveProgress(supabase: any, jobId: string, p: Progress) {
   const done = p.phase === "done";
+  // Hold the lease for as long as this worker keeps making progress.
+  p.leaseUntil = done ? "" : new Date(Date.now() + LEASE_SECONDS * 1000).toISOString();
   await supabase
     .from("import_logs")
     .update({
@@ -530,6 +633,9 @@ async function saveProgress(supabase: any, jobId: string, p: Progress) {
           clientPage: p.clientPage,
           groupCursor: p.groupCursor,
           groupsLoaded: p.groupsLoaded,
+          lastPageKey: p.lastPageKey,
+          fullSync: p.fullSync,
+          leaseUntil: p.leaseUntil,
           groupsProcessed: p.stats.groupsProcessed,
           groupsTotal: p.stats.groupsFound,
           runs: p.runs,
@@ -545,8 +651,14 @@ async function saveProgress(supabase: any, jobId: string, p: Progress) {
 }
 
 
-/** Kick a fresh worker to continue the same job. */
-async function continueJob(jobId: string) {
+/**
+ * Kick a fresh worker to continue the same job.
+ *
+ * `expect_runs` is a lightweight lease: the next worker only proceeds if the job
+ * row is still at the run count this worker left behind. Two chains on one job
+ * would otherwise both call XPM and trip Xero's rate limit.
+ */
+async function continueJob(jobId: string, expectRuns: number) {
   const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/sync-xpm`;
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   await fetch(url, {
@@ -556,7 +668,7 @@ async function continueJob(jobId: string) {
       apikey: key,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ continue_job: jobId }),
+    body: JSON.stringify({ continue_job: jobId, expect_runs: expectRuns }),
   }).catch((e) => console.error("[sync-xpm] continuation failed:", e));
 }
 
@@ -569,6 +681,9 @@ function loadProgress(result: any): Progress {
     clientPage: result.progress?.clientPage ?? base.clientPage,
     groupCursor: result.progress?.groupCursor ?? base.groupCursor,
     groupsLoaded: result.progress?.groupsLoaded ?? base.groupsLoaded,
+    lastPageKey: result.progress?.lastPageKey ?? base.lastPageKey,
+    fullSync: result.progress?.fullSync ?? base.fullSync,
+    leaseUntil: result.progress?.leaseUntil ?? base.leaseUntil,
 
     runs: result.progress?.runs ?? 0,
     started_at: result.started_at ?? base.started_at,
@@ -586,6 +701,11 @@ function loadProgress(result: any): Progress {
       trusteesDetected: result.trusteesDetected ?? 0,
 
       staffFetched: result.staffFetched ?? 0,
+      xpmRequests: result.xpmRequests ?? 0,
+      xpmMs: result.xpmMs ?? 0,
+      dbCalls: result.dbCalls ?? 0,
+      dbMs: result.dbMs ?? 0,
+      wallMs: result.wallMs ?? 0,
       typeCounts: result.typeCounts ?? {},
     },
     warnings: Array.isArray(result.warnings) ? result.warnings.slice(0, 200) : [],
@@ -598,7 +718,7 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
     try {
       const next = await runSlice(supabase, jobId, tenantId, progress);
       await saveProgress(supabase, jobId, next);
-      if (next.phase !== "done") await continueJob(jobId);
+      if (next.phase !== "done") await continueJob(jobId, next.runs);
       else console.log(`[sync-xpm] job ${jobId} completed in ${next.runs} runs`);
     } catch (e) {
       const fatal = e instanceof FatalXpmError;
@@ -653,7 +773,7 @@ Deno.serve(async (req) => {
 
     // ── Internal continuation (service-role only) ──────────────────
     if (body.continue_job) {
-      if (authHeader !== `Bearer ${serviceKey}`) return json({ error: "Unauthorized" }, 401);
+      if (!isServiceRoleRequest(req)) return json({ error: "Unauthorized" }, 401);
 
       const { data: job } = await supabase
         .from("import_logs")
@@ -663,8 +783,23 @@ Deno.serve(async (req) => {
       if (!job) return json({ error: "Job not found" }, 404);
       if (job.status !== "processing") return json({ skipped: true, status: job.status });
 
-      scheduleSlice(supabase, job.id, job.tenant_id, loadProgress(job.result));
+      // Exactly one worker may hold the job at a time: the claim is atomic and
+      // its lease expires on its own if a worker is killed mid-slice.
+      const { data: claimed } = await supabase.rpc("claim_sync_job", {
+        _job_id: job.id,
+        _lease_seconds: LEASE_SECONDS,
+      });
+      if (!claimed) {
+        console.log(`[sync-xpm] ${job.id} is already held by another worker; standing down`);
+        return json({ skipped: true, leased: true });
+      }
+      const { data: fresh } = await supabase
+        .from("import_logs").select("result").eq("id", job.id).maybeSingle();
+      const progress = loadProgress(fresh?.result ?? job.result);
+
+      scheduleSlice(supabase, job.id, job.tenant_id, progress);
       return json({ continued: true, jobId: job.id }, 202);
+
     }
 
     // ── User-initiated sync ───────────────────────────────────────
@@ -724,6 +859,9 @@ Deno.serve(async (req) => {
     }
 
     const progress = emptyProgress();
+    // `full_sync` forces every group to be re-read from XPM, bypassing the
+    // freshness window. Routine syncs leave recently read groups alone.
+    progress.fullSync = body.full_sync === true;
     const { data: jobRow, error: jobErr } = await supabase
       .from("import_logs")
       .insert({
