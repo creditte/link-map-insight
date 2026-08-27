@@ -1477,6 +1477,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_sync_job: {
+        Args: { _job_id: string; _lease_seconds?: number }
+        Returns: boolean
+      }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
