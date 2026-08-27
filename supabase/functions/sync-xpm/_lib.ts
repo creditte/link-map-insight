@@ -20,11 +20,11 @@ export function tuning() {
   };
   return {
     /** XPM client pages fetched+persisted per execution. */
-    clientPagesPerRun: num("XPM_CLIENT_PAGES_PER_RUN", 3),
+    clientPagesPerRun: num("XPM_CLIENT_PAGES_PER_RUN", 6),
     /** XPM client page size (XPM caps this server-side). */
-    clientPageSize: num("XPM_CLIENT_PAGE_SIZE", 100),
+    clientPageSize: num("XPM_CLIENT_PAGE_SIZE", 50),
     /** Client groups processed per execution. */
-    groupsPerRun: num("XPM_GROUPS_PER_RUN", 24),
+    groupsPerRun: num("XPM_GROUPS_PER_RUN", 60),
     /** Groups fetched/persisted concurrently within a run. */
     groupConcurrency: num("XPM_GROUP_CONCURRENCY", 4),
     /** Concurrency for small independent DB statements (updates, lookups). */

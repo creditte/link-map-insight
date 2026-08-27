@@ -46,6 +46,8 @@ interface Stats {
   groupsFound: number;
   groupsCreated: number;
   groupsProcessed: number;
+  /** Groups whose XPM membership is unchanged since the last sync. */
+  groupsSkippedUnchanged: number;
   trusteesDetected: number;
   staffFetched: number;
   typeCounts: Record<string, number>;
@@ -83,6 +85,7 @@ function emptyProgress(): Progress {
       groupsFound: 0,
       groupsCreated: 0,
       groupsProcessed: 0,
+      groupsSkippedUnchanged: 0,
       trusteesDetected: 0,
       staffFetched: 0,
       typeCounts: {},
@@ -97,92 +100,29 @@ function warn(p: Progress, msg: string) {
   if (p.warnings.length < 200) p.warnings.push(msg);
 }
 
-// ── Bulk entity resolution ─────────────────────────────────────────
-interface EntityRow {
-  id: string;
-  name: string;
-  xpm_uuid: string | null;
-  entity_type: string;
-  abn: string | null;
-  acn: string | null;
-  is_trustee_company: boolean;
+// ── Small helpers ──────────────────────────────────────────────────
+/** Stable fingerprint of a group's membership, used for change detection. */
+async function hashMembers(name: string, memberUuids: string[]): Promise<string> {
+  const payload = `${name}\n${[...memberUuids].sort().join(",")}`;
+  const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(payload));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Look up existing entities by xpm_uuid and by name in bulk. */
-async function resolveExisting(
-  supabase: any,
-  tenantId: string,
-  uuids: string[],
-  names: string[],
-  filterBatchSize: number,
-): Promise<{ byUuid: Map<string, EntityRow>; byName: Map<string, EntityRow> }> {
-  const byUuid = new Map<string, EntityRow>();
-  const byName = new Map<string, EntityRow>();
-  const cols = "id, name, xpm_uuid, entity_type, abn, acn, is_trustee_company";
-
-  for (const part of chunk(uuids.filter(Boolean), filterBatchSize)) {
-    const { data } = await supabase
-      .from("entities")
-      .select(cols)
-      .eq("tenant_id", tenantId)
-      .is("deleted_at", null)
-      .in("xpm_uuid", part);
-    for (const row of data ?? []) {
-      if (row.xpm_uuid) byUuid.set(row.xpm_uuid, row);
-      byName.set(row.name, row);
-    }
-  }
-
-  for (const part of chunk(names.filter(Boolean), filterBatchSize)) {
-    const { data } = await supabase
-      .from("entities")
-      .select(cols)
-      .eq("tenant_id", tenantId)
-      .is("deleted_at", null)
-      .in("name", part);
-    for (const row of data ?? []) {
-      if (!byName.has(row.name)) byName.set(row.name, row);
-      if (row.xpm_uuid && !byUuid.has(row.xpm_uuid)) byUuid.set(row.xpm_uuid, row);
-    }
-  }
-
-  return { byUuid, byName };
-}
-
+/** Bulk insert helper — only used for the small staff list. */
 async function bulkInsertEntities(
   supabase: any,
   rows: Record<string, unknown>[],
   batchSize: number,
   p: Progress,
-): Promise<Map<string, string>> {
-  const created = new Map<string, string>(); // key (uuid or name) → id
+): Promise<void> {
   for (const part of chunk(rows, batchSize)) {
-    const { data, error } = await supabase.from("entities").insert(part).select("id, name, xpm_uuid");
+    const { data, error } = await supabase.from("entities").insert(part).select("id");
     if (error) {
-      // Fall back to per-row so one bad record doesn't drop the batch.
-      for (const row of part) {
-        const { data: one, error: oneErr } = await supabase
-          .from("entities")
-          .insert(row)
-          .select("id, name, xpm_uuid")
-          .single();
-        if (oneErr) {
-          warn(p, `Failed to create entity "${row.name}": ${oneErr.message}`);
-          continue;
-        }
-        created.set((one.xpm_uuid as string) ?? one.name, one.id);
-        if (one.xpm_uuid) created.set(one.name, one.id);
-        p.stats.entitiesCreated++;
-      }
+      warn(p, `Failed to create ${part.length} staff entities: ${error.message}`);
       continue;
     }
-    for (const one of data ?? []) {
-      created.set(one.xpm_uuid ?? one.name, one.id);
-      if (one.xpm_uuid) created.set(one.name, one.id);
-      p.stats.entitiesCreated++;
-    }
+    p.stats.entitiesCreated += data?.length ?? part.length;
   }
-  return created;
 }
 
 // ── Phase: clients (paged) ─────────────────────────────────────────
@@ -235,7 +175,16 @@ function parseClientPage(pageXml: any, p: Progress): ParsedClient[] {
   return out;
 }
 
-/** Returns true when the page had clients (i.e. more pages may follow). */
+/**
+ * Fetch one client page and persist it with a SINGLE database call.
+ *
+ * Everything the page implies (entity resolution by uuid/name, inserts,
+ * field backfills, relationship de-duplication and insertion) happens inside
+ * `sync_xpm_upsert_clients`, so a page costs 1 XPM request + 1 DB request
+ * instead of the dozens of chunked lookups and per-row fallbacks it used to.
+ *
+ * Returns true when the page had clients (i.e. more pages may follow).
+ */
 async function processClientPage(
   supabase: any,
   tenantId: string,
@@ -243,6 +192,7 @@ async function processClientPage(
   xeroTenantId: string,
   page: number,
   p: Progress,
+  trusteePairs: { trustee_uuid: string; trust_name: string }[],
 ): Promise<boolean> {
   const t = tuning();
   let pageXml: any = await xpmGetXml(
@@ -252,197 +202,59 @@ async function processClientPage(
   );
   if (!pageXml) return false;
 
-  const parsed = parseClientPage(pageXml, p);
+  let parsed: ParsedClient[] | null = parseClientPage(pageXml, p);
   // Release the parsed XML tree (the biggest allocation in the run) immediately.
   pageXml = null;
   if (parsed.length === 0) return false;
   p.stats.clientsFetched += parsed.length;
 
-
-  // Everything referenced by this page (clients + their related clients).
-  const uuids = new Set<string>();
-  const names = new Set<string>();
-  for (const c of parsed) {
-    uuids.add(c.uuid);
-    names.add(c.name);
-    for (const r of c.rels) {
-      uuids.add(r.uuid);
-      if (r.name) names.add(r.name);
-    }
-  }
-
-  const { byUuid, byName } = await resolveExisting(
-    supabase,
-    tenantId,
-    [...uuids],
-    [...names],
-    t.filterBatchSize,
-  );
-
-  const idByUuid = new Map<string, string>();
-  const toInsert: Record<string, unknown>[] = [];
-  const trusteePairs: { entityId?: string; uuid: string; trustName: string }[] = [];
-  // Collected first, then issued with bounded concurrency — unchanged records
-  // produce no write at all.
-  const pendingUpdates: { id: string; updates: Record<string, unknown> }[] = [];
+  const clients: Record<string, unknown>[] = [];
+  const related = new Map<string, string>();
+  const rels: Record<string, unknown>[] = [];
 
   for (const c of parsed) {
     const isTrustee = isCorporateTrustee(c.name, c.entityType);
     p.stats.typeCounts[c.entityType] = (p.stats.typeCounts[c.entityType] || 0) + 1;
-    if (isTrustee) p.stats.trusteesDetected++;
-
-    const existing = byUuid.get(c.uuid) ?? byName.get(c.name);
-    if (existing) {
-      idByUuid.set(c.uuid, existing.id);
-      const updates: Record<string, unknown> = {};
-      if (c.entityType !== "Unclassified" && existing.entity_type === "Unclassified") {
-        updates.entity_type = c.entityType;
-      }
-      if (!existing.xpm_uuid) updates.xpm_uuid = c.uuid;
-      if (c.abn && !existing.abn) updates.abn = c.abn;
-      if (c.acn && !existing.acn) updates.acn = c.acn;
-      if (isTrustee && !existing.is_trustee_company) updates.is_trustee_company = true;
-      if (Object.keys(updates).length > 0) {
-        updates.source = "imported";
-        pendingUpdates.push({ id: existing.id, updates });
-      }
-
-    } else {
-      toInsert.push({
-        tenant_id: tenantId,
-        name: c.name,
-        xpm_uuid: c.uuid,
-        entity_type: c.entityType,
-        abn: c.abn,
-        acn: c.acn,
-        is_trustee_company: isTrustee,
-        source: "imported",
-      });
-    }
-
     if (isTrustee) {
+      p.stats.trusteesDetected++;
       const trustName = extractTrustName(c.name);
-      if (trustName) trusteePairs.push({ uuid: c.uuid, trustName });
+      if (trustName) trusteePairs.push({ trustee_uuid: c.uuid, trust_name: trustName });
     }
-  }
 
-  // Related clients not present on this page and not in the DB yet.
-  const known = new Set([...idByUuid.keys()]);
-  const pendingInsertUuids = new Set(toInsert.map((r) => r.xpm_uuid as string));
-  for (const c of parsed) {
-    for (const r of c.rels) {
-      if (known.has(r.uuid) || pendingInsertUuids.has(r.uuid)) continue;
-      const existing = byUuid.get(r.uuid) ?? (r.name ? byName.get(r.name) : undefined);
-      if (existing) {
-        idByUuid.set(r.uuid, existing.id);
-        known.add(r.uuid);
-        continue;
-      }
-      if (!r.name) continue;
-      pendingInsertUuids.add(r.uuid);
-      toInsert.push({
-        tenant_id: tenantId,
-        name: r.name,
-        xpm_uuid: r.uuid,
-        entity_type: "Unclassified",
-        source: "imported",
-      });
-    }
-  }
-
-  if (pendingUpdates.length > 0) {
-    await mapLimit(pendingUpdates, t.dbConcurrency, async (u) => {
-      const { error } = await supabase.from("entities").update(u.updates).eq("id", u.id);
-      if (!error) p.stats.entitiesUpdated++;
-      else warn(p, `Failed to update entity ${u.id}: ${error.message}`);
+    clients.push({
+      uuid: c.uuid,
+      name: c.name,
+      entity_type: c.entityType,
+      abn: c.abn,
+      acn: c.acn,
+      is_trustee: isTrustee,
     });
-  }
 
-  const createdKeys = await bulkInsertEntities(supabase, toInsert, t.dbBatchSize, p);
-
-  for (const row of toInsert) {
-    const id = createdKeys.get(row.xpm_uuid as string) ?? createdKeys.get(row.name as string);
-    if (id) idByUuid.set(row.xpm_uuid as string, id);
-  }
-
-  // ── Relationships (deduped, bulk-checked, bulk-inserted) ──────────
-  const wanted = new Map<string, { from: string; to: string; type: string }>();
-  for (const c of parsed) {
-    const fromBase = idByUuid.get(c.uuid);
-    if (!fromBase) continue;
     for (const r of c.rels) {
-      const toBase = idByUuid.get(r.uuid);
-      if (!toBase) {
-        p.stats.relationshipsSkipped++;
-        continue;
-      }
-      let from = fromBase;
-      let to = toBase;
-      if ((r.type === "spouse" || r.type === "partner") && from > to) [from, to] = [to, from];
-      wanted.set(`${r.type}:${from}:${to}`, { from, to, type: r.type });
+      if (r.name) related.set(r.uuid, r.name);
+      rels.push({ type: r.type, from_uuid: c.uuid, to_uuid: r.uuid });
     }
   }
 
-  // Trustee-by-name pairs (bounded per page, bounded concurrency).
-  const trusteeLookups = trusteePairs.filter((pair) => idByUuid.has(pair.uuid));
-  await mapLimit(trusteeLookups, t.dbConcurrency, async (pair) => {
-    const trusteeId = idByUuid.get(pair.uuid)!;
-    const { data: trust } = await supabase
-      .from("entities")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .ilike("name", `%${pair.trustName}%`)
-      .is("deleted_at", null)
-      .limit(1)
-      .maybeSingle();
-    if (trust) wanted.set(`trustee:${trusteeId}:${trust.id}`, { from: trusteeId, to: trust.id, type: "trustee" });
+  // Drop the parsed page before the request so peak memory stays low.
+  parsed = null;
+
+  const { data, error } = await supabase.rpc("sync_xpm_upsert_clients", {
+    _tenant_id: tenantId,
+    _payload: {
+      clients,
+      related: [...related.entries()].map(([uuid, name]) => ({ uuid, name })),
+      rels,
+    },
   });
+  if (error) throw new Error(`Client page ${page} failed: ${error.message}`);
 
-
-  if (wanted.size > 0) {
-    const fromIds = [...new Set([...wanted.values()].map((w) => w.from))];
-    const existingKeys = new Set<string>();
-    for (const part of chunk(fromIds, t.filterBatchSize)) {
-      const { data } = await supabase
-        .from("relationships")
-        .select("from_entity_id, to_entity_id, relationship_type")
-        .eq("tenant_id", tenantId)
-        .is("deleted_at", null)
-        .in("from_entity_id", part);
-      for (const row of data ?? []) {
-        existingKeys.add(`${row.relationship_type}:${row.from_entity_id}:${row.to_entity_id}`);
-      }
-    }
-
-    const relRows = [...wanted.entries()]
-      .filter(([key]) => !existingKeys.has(key))
-      .map(([, w]) => ({
-        tenant_id: tenantId,
-        from_entity_id: w.from,
-        to_entity_id: w.to,
-        relationship_type: w.type,
-        source: "imported",
-        confidence: "imported",
-      }));
-
-    for (const part of chunk(relRows, t.dbBatchSize)) {
-      const { data, error } = await supabase.from("relationships").insert(part).select("id");
-      if (error) {
-        // Relationship rules are enforced by trigger — retry individually.
-        for (const row of part) {
-          const { error: oneErr } = await supabase.from("relationships").insert(row);
-          if (oneErr) {
-            p.stats.relationshipsSkipped++;
-            warn(p, `Skipped ${row.relationship_type} relationship: ${oneErr.message}`);
-          } else {
-            p.stats.relationshipsCreated++;
-          }
-        }
-        continue;
-      }
-      p.stats.relationshipsCreated += data?.length ?? part.length;
-    }
-  }
+  const res = (data ?? {}) as any;
+  p.stats.entitiesCreated += res.entitiesCreated ?? 0;
+  p.stats.entitiesUpdated += res.entitiesUpdated ?? 0;
+  p.stats.relationshipsCreated += res.relationshipsCreated ?? 0;
+  p.stats.relationshipsSkipped += res.relationshipsSkipped ?? 0;
+  for (const w of res.warnings ?? []) warn(p, String(w));
 
   return true;
 }
@@ -471,6 +283,8 @@ async function loadGroupList(
   const t = tuning();
   const now = new Date().toISOString();
   for (const part of chunk(groups, t.dbBatchSize)) {
+    // `member_hash` is deliberately left untouched so previously synced groups
+    // keep their fingerprint and can be skipped when unchanged.
     const { error } = await supabase.from("xpm_groups").upsert(
       part.map((g) => ({ tenant_id: tenantId, xpm_uuid: g.uuid, name: g.name, updated_at: now })),
       { onConflict: "tenant_id,xpm_uuid" },
@@ -501,6 +315,11 @@ async function fetchGroupSlice(
 }
 
 
+/**
+ * One XPM request + one database request per group. The database call resolves
+ * the structure, links members and their relationships, and records a
+ * membership fingerprint so an unchanged group short-circuits on the next sync.
+ */
 async function processGroup(
   supabase: any,
   tenantId: string,
@@ -509,75 +328,41 @@ async function processGroup(
   group: { uuid: string; name: string },
   p: Progress,
 ) {
-  const t = tuning();
-  const detail = await xpmGetXml(`/clientgroup.api/get/${group.uuid}`, accessToken, xeroTenantId);
+  let detail: any = await xpmGetXml(`/clientgroup.api/get/${group.uuid}`, accessToken, xeroTenantId);
+  if (!detail) {
+    warn(p, `Could not read group "${group.name}" from XPM`);
+    return;
+  }
   const memberUuids = xmlArray(detail?.Response?.Group?.Clients, "Client")
     .map((m: any) => xmlText(m, "UUID"))
     .filter(Boolean);
+  detail = null;
 
-  const { data: existingStruct } = await supabase
-    .from("structures")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("name", group.name)
-    .is("deleted_at", null)
-    .maybeSingle();
+  const memberHash = await hashMembers(group.name, memberUuids);
 
-  let structureId: string;
-  if (existingStruct) {
-    structureId = existingStruct.id;
-  } else {
-    const { data: newStruct, error } = await supabase
-      .from("structures")
-      .insert({ tenant_id: tenantId, name: group.name })
-      .select("id")
-      .single();
-    if (error) {
-      warn(p, `Failed to create structure for group "${group.name}": ${error.message}`);
-      return;
-    }
-    structureId = newStruct.id;
-    p.stats.groupsCreated++;
+  const { data, error } = await supabase.rpc("sync_xpm_link_group", {
+    _tenant_id: tenantId,
+    _group_uuid: group.uuid,
+    _group_name: group.name,
+    _member_uuids: memberUuids,
+    _member_hash: memberHash,
+  });
+
+  if (error) {
+    warn(p, `Failed to sync group "${group.name}": ${error.message}`);
+    return;
   }
 
-  if (memberUuids.length === 0) return;
-
-  const memberEntityIds: string[] = [];
-  for (const part of chunk(memberUuids, t.filterBatchSize)) {
-    const { data } = await supabase
-      .from("entities")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .is("deleted_at", null)
-      .in("xpm_uuid", part);
-    for (const row of data ?? []) memberEntityIds.push(row.id);
+  const res = (data ?? {}) as any;
+  if (res.skipped) {
+    p.stats.groupsSkippedUnchanged++;
+    return;
   }
-  if (memberEntityIds.length === 0) return;
-
-  for (const part of chunk(memberEntityIds, t.dbBatchSize)) {
-    await supabase.from("structure_entities").upsert(
-      part.map((entity_id) => ({ structure_id: structureId, entity_id })),
-      { onConflict: "structure_id,entity_id", ignoreDuplicates: true },
-    );
+  if (res.error) {
+    warn(p, `Failed to create structure for group "${group.name}": ${res.error}`);
+    return;
   }
-
-  const relIds: string[] = [];
-  for (const part of chunk(memberEntityIds, t.filterBatchSize)) {
-    const { data } = await supabase
-      .from("relationships")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .is("deleted_at", null)
-      .in("from_entity_id", part);
-    for (const row of data ?? []) relIds.push(row.id);
-  }
-
-  for (const part of chunk(relIds, tuning().dbBatchSize)) {
-    await supabase.from("structure_relationships").upsert(
-      part.map((relationship_id) => ({ structure_id: structureId, relationship_id })),
-      { onConflict: "structure_id,relationship_id", ignoreDuplicates: true },
-    );
-  }
+  if (res.structureCreated) p.stats.groupsCreated++;
 }
 
 // ── Phase: staff + fallback structure ──────────────────────────────
@@ -619,68 +404,22 @@ async function processStaff(
   await bulkInsertEntities(supabase, rows, t.dbBatchSize, p);
 }
 
+/**
+ * Only used when the practice has no client groups at all. Scoped to records
+ * touched by THIS sync (one INSERT … SELECT per table), so it never rescans the
+ * tenant's whole entity/relationship history like the paged version did.
+ */
 async function ensureFallbackStructure(supabase: any, tenantId: string, p: Progress) {
   if (p.stats.groupsFound > 0) return;
   if (p.stats.entitiesCreated === 0 && p.stats.entitiesUpdated === 0) return;
 
-  const t = tuning();
-  const { data: existing } = await supabase
-    .from("structures")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("name", "XPM Import")
-    .is("deleted_at", null)
-    .maybeSingle();
-
-  let structureId = existing?.id as string | undefined;
-  if (!structureId) {
-    const { data: created } = await supabase
-      .from("structures")
-      .insert({ tenant_id: tenantId, name: "XPM Import" })
-      .select("id")
-      .single();
-    structureId = created?.id;
-  }
-  if (!structureId) return;
-
-  // Stream imported entities in pages so nothing large sits in memory.
-  const PAGE = 500;
-  for (let offset = 0; ; offset += PAGE) {
-    const { data } = await supabase
-      .from("entities")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("source", "imported")
-      .is("deleted_at", null)
-      .range(offset, offset + PAGE - 1);
-    if (!data || data.length === 0) break;
-    for (const part of chunk(data.map((r: any) => r.id), t.dbBatchSize)) {
-      await supabase.from("structure_entities").upsert(
-        part.map((entity_id: string) => ({ structure_id: structureId, entity_id })),
-        { onConflict: "structure_id,entity_id", ignoreDuplicates: true },
-      );
-    }
-    if (data.length < PAGE) break;
-  }
-
-  for (let offset = 0; ; offset += PAGE) {
-    const { data } = await supabase
-      .from("relationships")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("source", "imported")
-      .is("deleted_at", null)
-      .range(offset, offset + PAGE - 1);
-    if (!data || data.length === 0) break;
-    for (const part of chunk(data.map((r: any) => r.id), t.dbBatchSize)) {
-      await supabase.from("structure_relationships").upsert(
-        part.map((relationship_id: string) => ({ structure_id: structureId, relationship_id })),
-        { onConflict: "structure_id,relationship_id", ignoreDuplicates: true },
-      );
-    }
-    if (data.length < PAGE) break;
-  }
+  const { error } = await supabase.rpc("sync_xpm_ensure_fallback_structure", {
+    _tenant_id: tenantId,
+    _since: p.started_at,
+  });
+  if (error) warn(p, `Failed to build fallback structure: ${error.message}`);
 }
+
 
 // ── One bounded slice of work ──────────────────────────────────────
 async function runSlice(
@@ -716,20 +455,43 @@ async function runSlice(
   }
   if (!xeroTenantId) throw new Error("Xero tenant ID not available");
 
+  // Heartbeat BEFORE any heavy XPM/XML work so a worker that dies mid-page
+  // leaves a visible, reap-able timestamp instead of a silently stuck job.
+  p.updated_at = new Date().toISOString();
+  await saveProgress(supabase, jobId, p);
+
   if (p.phase === "clients") {
+    const trusteePairs: { trustee_uuid: string; trust_name: string }[] = [];
     for (let i = 0; i < t.clientPagesPerRun; i++) {
       const hadClients = await processClientPage(
-        supabase, tenantId, accessToken, xeroTenantId, p.clientPage, p,
+        supabase, tenantId, accessToken, xeroTenantId, p.clientPage, p, trusteePairs,
       );
       if (!hadClients || p.clientPage >= t.maxClientPages) {
         p.phase = "groups";
         break;
       }
       p.clientPage++;
+      // Persist after every page: progress is never lost, and the job row's
+      // `updated_at` proves the worker is alive.
+      p.updated_at = new Date().toISOString();
+      await saveProgress(supabase, jobId, p);
+    }
+
+    // Corporate trustee → trust matching for this run, resolved set-based in a
+    // single call instead of one wildcard query per trustee.
+    if (trusteePairs.length > 0) {
+      const { data, error } = await supabase.rpc("sync_xpm_link_trustees", {
+        _tenant_id: tenantId,
+        _pairs: trusteePairs,
+      });
+      if (error) warn(p, `Trustee matching failed: ${error.message}`);
+      else p.stats.relationshipsCreated += (data as any)?.relationshipsCreated ?? 0;
     }
   } else if (p.phase === "groups") {
     if (!p.groupsLoaded) {
       await loadGroupList(supabase, tenantId, accessToken, xeroTenantId, p);
+      p.updated_at = new Date().toISOString();
+      await saveProgress(supabase, jobId, p);
     }
     const slice = await fetchGroupSlice(supabase, tenantId, p.groupCursor, t.groupsPerRun);
     if (slice.length === 0) {
@@ -748,6 +510,7 @@ async function runSlice(
     await ensureFallbackStructure(supabase, tenantId, p);
     p.phase = "done";
   }
+
 
   p.updated_at = new Date().toISOString();
   return p;
@@ -819,6 +582,7 @@ function loadProgress(result: any): Progress {
       groupsFound: result.groupsFound ?? 0,
       groupsCreated: result.groupsCreated ?? 0,
       groupsProcessed: result.groupsProcessed ?? result.progress?.groupsProcessed ?? 0,
+      groupsSkippedUnchanged: result.groupsSkippedUnchanged ?? 0,
       trusteesDetected: result.trusteesDetected ?? 0,
 
       staffFetched: result.staffFetched ?? 0,
@@ -934,7 +698,11 @@ Deno.serve(async (req) => {
     }
 
     // Don't start a second sync while one is still running.
-    const staleCutoff = new Date(Date.now() - 15 * 60_000).toISOString();
+    // Mark abandoned workers as failed so a dead job never blocks a new sync
+    // and is visible to the user instead of sitting in "processing" forever.
+    await supabase.rpc("fail_stale_import_jobs", { _max_idle_minutes: 10 });
+
+    const staleCutoff = new Date(Date.now() - 10 * 60_000).toISOString();
     const { data: running } = await supabase
       .from("import_logs")
       .select("id, updated_at")
