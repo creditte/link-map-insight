@@ -1435,6 +1435,8 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          last_synced_at: string | null
+          member_hash: string | null
           name: string
           tenant_id: string
           updated_at: string
@@ -1443,6 +1445,8 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          last_synced_at?: string | null
+          member_hash?: string | null
           name: string
           tenant_id: string
           updated_at?: string
@@ -1451,6 +1455,8 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          last_synced_at?: string | null
+          member_hash?: string | null
           name?: string
           tenant_id?: string
           updated_at?: string
@@ -1482,6 +1488,10 @@ export type Database = {
       email_queue_dispatch: { Args: never; Returns: undefined }
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
+        Returns: number
+      }
+      fail_stale_import_jobs: {
+        Args: { _max_idle_minutes?: number }
         Returns: number
       }
       find_duplicate_entities: {
@@ -1517,6 +1527,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      import_xpm_batch: {
+        Args: { _payload: Json; _tenant_id: string }
+        Returns: Json
       }
       is_billing_enforcement_enabled: { Args: never; Returns: boolean }
       is_owner: { Args: { _tenant_id: string }; Returns: boolean }
@@ -1589,6 +1603,28 @@ export type Database = {
       }
       rpc_soft_delete_tenant_user: {
         Args: { p_tenant_id: string; p_tenant_user_id: string }
+        Returns: Json
+      }
+      sync_xpm_ensure_fallback_structure: {
+        Args: { _since: string; _tenant_id: string }
+        Returns: Json
+      }
+      sync_xpm_link_group: {
+        Args: {
+          _group_name: string
+          _group_uuid: string
+          _member_hash: string
+          _member_uuids: string[]
+          _tenant_id: string
+        }
+        Returns: Json
+      }
+      sync_xpm_link_trustees: {
+        Args: { _pairs: Json; _tenant_id: string }
+        Returns: Json
+      }
+      sync_xpm_upsert_clients: {
+        Args: { _payload: Json; _tenant_id: string }
         Returns: Json
       }
     }

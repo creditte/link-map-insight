@@ -6,23 +6,13 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// How many source rows a single execution processes before it persists progress
-// and hands off to a fresh worker. Every row is now handled in ONE pass with
-// batched DB statements, so a slice can be far larger than the old row-by-row
-// implementation allowed while staying inside the CPU / wall-clock budget.
-const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "4000");
-/** Rows per bulk INSERT / UPSERT statement. */
-const DB_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_DB_BATCH_SIZE") ?? "500");
 /**
- * Max values per `.in(...)` filter. These live in the request URL, so large
- * batches produce multi-kilobyte URLs that PostgREST/HTTP2 rejects with an
- * "unspecific protocol error". Keep well under the URL limit.
+ * Rows a single slice hands to the database. Everything a slice does is now a
+ * SINGLE `import_xpm_batch` RPC — no per-row HTTP inserts, no `.in(...)`
+ * lookup chunking — so a slice can be large. The cap exists only to bound the
+ * JSON payload size of one request.
  */
-const FILTER_BATCH_SIZE = Number(Deno.env.get("XPM_IMPORT_FILTER_BATCH_SIZE") ?? "80");
-/** Max independent DB statements in flight at once. */
-const DB_CONCURRENCY = Number(Deno.env.get("XPM_IMPORT_DB_CONCURRENCY") ?? "4");
-/** Max read-only lookups in flight at once (cheap, so higher than writes). */
-const LOOKUP_CONCURRENCY = Number(Deno.env.get("XPM_IMPORT_LOOKUP_CONCURRENCY") ?? "8");
+const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "2000");
 
 const MAX_WARNINGS = 200;
 
@@ -81,12 +71,6 @@ const ENTITY_TYPE_MAP: Record<string, string> = {
 
 // ── Generic helpers ─────────────────────────────────────────────────────
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
-
 /**
  * Retry a DB call on transient transport failures (HTTP/2 stream errors,
  * connection resets, timeouts). Deterministic errors are re-thrown at once.
@@ -109,20 +93,6 @@ async function withRetry<T>(label: string, fn: () => Promise<T>, attempts = 3): 
     }
   }
   throw lastErr;
-}
-
-
-/** Run `fn` over `items` with at most `limit` promises in flight. */
-async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
-  let cursor = 0;
-  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
-    for (;;) {
-      const i = cursor++;
-      if (i >= items.length) return;
-      await fn(items[i]);
-    }
-  });
-  await Promise.all(workers);
 }
 
 // ── Parsing helpers ─────────────────────────────────────────────────────
@@ -166,13 +136,13 @@ function parseCSVLine(line: string): string[] {
 }
 
 /**
- * Parse ONLY the requested window of data rows. Earlier implementations parsed
- * every row of the file on every slice (O(n²) field parsing for large files);
- * splitting lines is cheap, so we skip straight to the window we need.
+ * Parse the WHOLE payload exactly once per worker execution. Earlier versions
+ * re-split and re-parsed the file for every slice, which made a large file
+ * quadratic in field parsing; slices are now taken from this array.
  */
-function parseCSVRange(text: string, start: number, count: number): { rows: RawRow[]; total: number } {
+function parseCSV(text: string): RawRow[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return { rows: [], total: 0 };
+  if (lines.length < 2) return [];
 
   const header = parseCSVLine(lines[0]).map((h) => stripQuotes(h).toLowerCase());
   const idx = {
@@ -184,12 +154,8 @@ function parseCSVRange(text: string, start: number, count: number): { rows: RawR
     related: header.findIndex((h) => h.includes("related")),
   };
 
-  const total = lines.length - 1;
-  const from = 1 + Math.max(0, start);
-  const to = Math.min(lines.length, from + Math.max(0, count));
-
   const rows: RawRow[] = [];
-  for (let i = from; i < to; i++) {
+  for (let i = 1; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i]).map((c) => stripQuotes(c));
     if (cols.length < 3) continue;
     rows.push({
@@ -202,7 +168,7 @@ function parseCSVRange(text: string, start: number, count: number): { rows: RawR
       relatedClient: cols[idx.related] ?? "",
     });
   }
-  return { rows, total };
+  return rows;
 }
 
 function getTagText(record: string, tag: string): string {
@@ -211,16 +177,14 @@ function getTagText(record: string, tag: string): string {
   return m ? m[1].trim() : "";
 }
 
-/** XML equivalent of parseCSVRange — records before the window are skipped. */
-function parseXMLRange(text: string, start: number, count: number): { rows: RawRow[]; total: number } {
+/** XML equivalent of parseCSV — also a single pass over the payload. */
+function parseXML(text: string): RawRow[] {
   const rows: RawRow[] = [];
   const recordRe = /<Record>([\s\S]*?)<\/Record>/gi;
   let m: RegExpExecArray | null;
   let index = 0;
-  const end = start + count;
   while ((m = recordRe.exec(text)) !== null) {
     const i = index++;
-    if (i < start || i >= end) continue;
     const rec = m[1];
     rows.push({
       rowNum: i + 1,
@@ -232,7 +196,11 @@ function parseXMLRange(text: string, start: number, count: number): { rows: RawR
       relatedClient: getTagText(rec, "ClientRelationship-RelatedClient"),
     });
   }
-  return { rows, total: index };
+  return rows;
+}
+
+function parseAll(text: string, isXml: boolean): RawRow[] {
+  return isXml ? parseXML(text) : parseCSV(text);
 }
 
 /**
@@ -289,24 +257,27 @@ function emptyProgress(total: number): Progress {
 }
 
 
-// ── One bounded slice of work, fully batched ────────────────────────────
+// ── One bounded slice of work: build payload → ONE RPC ──────────────────
 
-interface EntityRec {
-  id: string;
-  name: string;
-  entity_type: string;
-  xpm_uuid: string | null;
-  is_trustee_company: boolean;
+interface BatchResult {
+  entitiesCreated: number;
+  entitiesUpdated: number;
+  structuresCreated: number;
+  structuresSkippedLimit: number;
+  structureLimit: number;
+  relationshipsCreated: number;
+  relationshipsSkipped: number;
+  warnings: string[];
+  unavailableGroups: string[];
+  unresolvedRels: { row: number; label: string }[];
 }
 
 async function runSlice(
   supabase: ReturnType<typeof createClient>,
   tenantId: string,
-  fileName: string,
-  content: string,
+  allRows: RawRow[],
   progressIn: Progress,
 ): Promise<Progress> {
-  const isXml = fileName.toLowerCase().endsWith(".xml");
   const p: Progress = {
     ...progressIn,
     // Jobs created before these counters existed resume without them.
@@ -318,34 +289,27 @@ async function runSlice(
   };
 
   p.runs += 1;
+  p.totalRowsParsed = allRows.length;
 
-  const parsed = isXml
-    ? parseXMLRange(content, p.rowIndex, ROWS_PER_RUN)
-    : parseCSVRange(content, p.rowIndex, ROWS_PER_RUN);
-  const rows = parsed.rows;
-  p.totalRowsParsed = parsed.total;
+  const end = Math.min(allRows.length, p.rowIndex + ROWS_PER_RUN);
+  const rows = allRows.slice(p.rowIndex, end);
 
   const warn = (msg: string) => {
     if (p.warnings.length < MAX_WARNINGS) p.warnings.push(msg);
   };
 
-  const end = Math.min(parsed.total, p.rowIndex + ROWS_PER_RUN);
-
-
-  // ── Pass 1: in-memory collection (no DB calls) ─────────────────────────
-  // Distinct client names with their best-known type/uuid, distinct related
-  // names, and distinct group names for this slice only.
-  const wanted = new Map<string, { name: string; uuid: string | null; entityType: string }>();
+  // ── Build the payload entirely in memory (no DB calls) ────────────────
+  const wanted = new Map<string, { name: string; uuid: string | null; entity_type: string }>();
   const groupNames = new Set<string>();
 
   const noteEntity = (name: string, uuid: string | null, entityType: string) => {
     const prev = wanted.get(name);
     if (!prev) {
-      wanted.set(name, { name, uuid, entityType });
+      wanted.set(name, { name, uuid, entity_type: entityType });
       return;
     }
     if (!prev.uuid && uuid) prev.uuid = uuid;
-    if (prev.entityType === "Unclassified" && entityType !== "Unclassified") prev.entityType = entityType;
+    if (prev.entity_type === "Unclassified" && entityType !== "Unclassified") prev.entity_type = entityType;
   };
 
   const rowGroups: string[][] = rows.map((row) => {
@@ -361,266 +325,32 @@ async function runSlice(
     if (row.relatedClient) noteEntity(row.relatedClient, null, "Unclassified");
   }
 
-  // ── Pass 2: batch-resolve structures ──────────────────────────────────
-  // Structure creation is capped by the workspace's plan limit. We read the
-  // tenant's remaining capacity ONCE per slice and only attempt to create as
-  // many structures as are actually allowed — instead of letting the database
-  // trigger reject each one and emitting a warning per rejected group.
-  const structureIdByName = new Map<string, string>();
-  const groupList = [...groupNames];
-  if (groupList.length > 0) {
-    await mapLimit(chunk(groupList, FILTER_BATCH_SIZE), LOOKUP_CONCURRENCY, async (names) => {
-      const { data, error } = await withRetry("structure lookup", () =>
-        supabase
-          .from("structures")
-          .select("id, name")
-          .eq("tenant_id", tenantId)
-          .in("name", names));
-      if (error) throw new Error(`Structure lookup failed: ${error.message}`);
-      for (const s of data ?? []) structureIdByName.set(s.name as string, s.id as string);
-    });
-
-    const missingStructures = groupList.filter((n) => !structureIdByName.has(n));
-
-    if (missingStructures.length > 0) {
-      const { data: tenantRow } = await withRetry("tenant capacity", () =>
-        supabase
-          .from("tenants")
-          .select("diagram_limit, diagram_count")
-          .eq("id", tenantId)
-          .maybeSingle());
-      const limit = Number((tenantRow as any)?.diagram_limit ?? 0);
-      const used = Number((tenantRow as any)?.diagram_count ?? 0);
-      let capacity = limit > 0 ? Math.max(0, limit - used) : Number.MAX_SAFE_INTEGER;
-      p.structureLimit = limit;
-
-      const creatable = missingStructures.slice(0, capacity);
-      const rejected = missingStructures.length - creatable.length;
-      if (rejected > 0) {
-        p.structuresSkippedLimit += rejected;
-        p.limitReached = true;
-      }
-
-      for (const batch of chunk(creatable, DB_BATCH_SIZE)) {
-        const { data, error } = await supabase
-          .from("structures")
-          .insert(batch.map((name) => ({ tenant_id: tenantId, name })))
-          .select("id, name");
-        if (error) {
-          // Fall back per-row so one rejected structure doesn't abort the
-          // import. Limit rejections are aggregated, never repeated per row.
-          for (const name of batch) {
-            if (capacity <= 0) {
-              p.structuresSkippedLimit++;
-              p.limitReached = true;
-              continue;
-            }
-            const { data: one, error: e1 } = await supabase
-              .from("structures")
-              .insert({ tenant_id: tenantId, name })
-              .select("id, name")
-              .single();
-            if (e1 || !one) {
-              if (/limit reached/i.test(e1?.message ?? "")) {
-                capacity = 0;
-                p.structuresSkippedLimit++;
-                p.limitReached = true;
-              } else {
-                warn(`Failed to create structure "${name}": ${e1?.message ?? "unknown error"}`);
-              }
-              continue;
-            }
-            capacity--;
-            structureIdByName.set(one.name as string, one.id as string);
-            p.structuresCreated++;
-          }
-          continue;
-        }
-        for (const s of data ?? []) {
-          structureIdByName.set(s.name as string, s.id as string);
-          p.structuresCreated++;
-          capacity--;
-        }
-      }
-    }
-  }
-
-
-  // ── Pass 3: batch-resolve entities ────────────────────────────────────
-  const byName = new Map<string, EntityRec>();
-  const byUuid = new Map<string, EntityRec>();
-  const cols = "id, name, entity_type, xpm_uuid, is_trustee_company";
-
-  const uuids = [...wanted.values()].map((w) => w.uuid).filter((u): u is string => !!u);
-  const names = [...wanted.keys()];
-
-  // UUID and name lookups are independent of each other, and each chunk is an
-  // independent query — run them all with bounded concurrency instead of
-  // waiting for one round trip at a time.
-  const uuidHits: EntityRec[] = [];
-  const nameHits: EntityRec[] = [];
-
-  await Promise.all([
-    mapLimit(chunk(uuids, FILTER_BATCH_SIZE), LOOKUP_CONCURRENCY, async (batch) => {
-      const { data, error } = await withRetry("entity uuid lookup", () =>
-        supabase
-          .from("entities")
-          .select(cols)
-          .eq("tenant_id", tenantId)
-          .in("xpm_uuid", batch));
-      if (error) throw new Error(`Entity uuid lookup failed: ${error.message}`);
-      uuidHits.push(...((data ?? []) as unknown as EntityRec[]));
-    }),
-    mapLimit(chunk(names, FILTER_BATCH_SIZE), LOOKUP_CONCURRENCY, async (batch) => {
-      const { data, error } = await withRetry("entity name lookup", () =>
-        supabase
-          .from("entities")
-          .select(cols)
-          .eq("tenant_id", tenantId)
-          .in("name", batch));
-      if (error) throw new Error(`Entity name lookup failed: ${error.message}`);
-      nameHits.push(...((data ?? []) as unknown as EntityRec[]));
-    }),
-  ]);
-
-  // UUID matches win over name matches, exactly as before.
-  for (const e of uuidHits) {
-    if (e.xpm_uuid) byUuid.set(e.xpm_uuid, e);
-    if (!byName.has(e.name)) byName.set(e.name, e);
-  }
-  for (const e of nameHits) {
-    if (!byName.has(e.name)) byName.set(e.name, e);
-  }
-
-
-  /** Existing record for a wanted entity, matched by uuid first then name. */
-  const findExisting = (w: { name: string; uuid: string | null }): EntityRec | undefined =>
-    (w.uuid ? byUuid.get(w.uuid) : undefined) ?? byName.get(w.name);
-
-  // Backfill / upgrade existing records in bulk (id-conflict upsert).
-  const entityUpdates: Record<string, unknown>[] = [];
-  const toInsert: { name: string; uuid: string | null; entityType: string }[] = [];
-  for (const w of wanted.values()) {
-    const existing = findExisting(w);
-    if (!existing) {
-      toInsert.push(w);
-      continue;
-    }
-    const needsType = w.entityType !== "Unclassified" && existing.entity_type === "Unclassified";
-    const needsUuid = !!w.uuid && !existing.xpm_uuid;
-    if (needsType || needsUuid) {
-      if (needsType) existing.entity_type = w.entityType;
-      if (needsUuid) existing.xpm_uuid = w.uuid;
-      entityUpdates.push({
-        id: existing.id,
-        tenant_id: tenantId,
-        name: existing.name,
-        entity_type: existing.entity_type,
-        xpm_uuid: existing.xpm_uuid,
-        source: "imported",
-      });
-    }
-  }
-
-  await mapLimit(chunk(entityUpdates, DB_BATCH_SIZE), DB_CONCURRENCY, async (batch) => {
-    const { error } = await supabase.from("entities").upsert(batch, { onConflict: "id" });
-    if (error) {
-      warn(`Failed to update ${batch.length} existing entities: ${error.message}`);
-      return;
-    }
-    p.entitiesUpdated += batch.length;
-  });
-
-  for (const batch of chunk(toInsert, DB_BATCH_SIZE)) {
-    const payload = batch.map((w) => ({
-      tenant_id: tenantId,
-      name: w.name,
-      xpm_uuid: w.uuid,
-      entity_type: w.entityType,
-      source: "imported",
-    }));
-    const { data, error } = await supabase.from("entities").insert(payload).select(cols);
-    if (error) {
-      for (const w of batch) {
-        const { data: one, error: e1 } = await supabase
-          .from("entities")
-          .insert({ tenant_id: tenantId, name: w.name, xpm_uuid: w.uuid, entity_type: w.entityType, source: "imported" })
-          .select(cols)
-          .single();
-        if (e1 || !one) {
-          warn(`Failed to create entity "${w.name}": ${e1?.message ?? "unknown error"}`);
-          continue;
-        }
-        const rec = one as unknown as EntityRec;
-        byName.set(rec.name, rec);
-        if (rec.xpm_uuid) byUuid.set(rec.xpm_uuid, rec);
-        p.entitiesCreated++;
-      }
-      continue;
-    }
-    for (const rec of (data ?? []) as unknown as EntityRec[]) {
-      byName.set(rec.name, rec);
-      if (rec.xpm_uuid) byUuid.set(rec.xpm_uuid, rec);
-      p.entitiesCreated++;
-    }
-  }
-
-  const entityIdFor = (name: string, uuid: string | null): EntityRec | undefined =>
-    (uuid ? byUuid.get(uuid) : undefined) ?? byName.get(name);
-
-  // ── Pass 4: structure membership (bulk upsert, deduped in memory) ──────
+  // Structure membership pairs (deduped).
   const memberKeys = new Set<string>();
-  const memberRows: { structure_id: string; entity_id: string }[] = [];
+  const members: { grp: string; ent: string }[] = [];
   rows.forEach((row, i) => {
-    const gs = rowGroups[i];
-    if (gs.length === 0) return;
-    const ids: string[] = [];
-    if (row.client) {
-      const e = entityIdFor(row.client, row.uuid || null);
-      if (e) ids.push(e.id);
-    }
-    if (row.relatedClient) {
-      const e = entityIdFor(row.relatedClient, null);
-      if (e) ids.push(e.id);
-    }
-    let blocked = false;
-    for (const gn of gs) {
-      const sid = structureIdByName.get(gn);
-      if (!sid) {
-        // The group's structure could not be created (plan limit) — the
-        // entities themselves are still imported, only the grouping is lost.
-        blocked = true;
-        continue;
-      }
-      for (const entity_id of ids) {
-        const key = `${sid}|${entity_id}`;
+    for (const grp of rowGroups[i]) {
+      for (const ent of [row.client, row.relatedClient]) {
+        if (!ent) continue;
+        const key = `${grp}|${ent}`;
         if (memberKeys.has(key)) continue;
         memberKeys.add(key);
-        memberRows.push({ structure_id: sid, entity_id });
+        members.push({ grp, ent });
       }
     }
-    if (blocked) p.rowsSkippedLimit++;
   });
 
-
-  await mapLimit(chunk(memberRows, DB_BATCH_SIZE), DB_CONCURRENCY, async (batch) => {
-    const { error } = await supabase
-      .from("structure_entities")
-      .upsert(batch, { onConflict: "structure_id,entity_id", ignoreDuplicates: true });
-    if (error) warn(`Failed to link ${batch.length} entities to structures: ${error.message}`);
-  });
-
-  // ── Pass 5: relationships ─────────────────────────────────────────────
-  interface RelCandidate {
-    from: string;
-    to: string;
+  // Relationship candidates (deduped by canonical key).
+  interface RelPayload {
+    row: number;
     type: string;
-    structureIds: string[];
-    rowNum: number;
+    from_key: string;
+    to_key: string;
     label: string;
+    groups: string[];
   }
+  const relByKey = new Map<string, RelPayload>();
 
-  const relByKey = new Map<string, RelCandidate>();
   rows.forEach((row, i) => {
     if (!row.relationshipType || !row.client || !row.relatedClient) return;
 
@@ -636,162 +366,71 @@ async function runSlice(
       return;
     }
 
-    const fromEnt = entityIdFor(row.client, row.uuid || null);
-    const toEnt = entityIdFor(row.relatedClient, null);
-    if (!fromEnt || !toEnt) {
-      warn(`Row ${row.rowNum}: Could not resolve entities for "${row.client}" → "${row.relatedClient}"`);
-      p.relationshipsSkipped++;
-      return;
-    }
+    let from = row.client;
+    let to = row.relatedClient;
+    if (rule.reverse) [from, to] = [to, from];
 
-    let a = fromEnt;
-    let b = toEnt;
-    if (rule.reverse) [a, b] = [b, a];
-    if (rule.type === "spouse" || rule.type === "partner") {
-      if (a.id > b.id) [a, b] = [b, a];
-    }
-    // Enforce Individual → SMSF direction for member relationships (resolved
-    // from the in-memory entity map instead of two extra queries per row).
-    if (rule.type === "member" && a.entity_type === "smsf" && b.entity_type === "Individual") {
-      [a, b] = [b, a];
-    }
-
-    const key = `${a.id}|${b.id}|${rule.type}`;
-    const sids = rowGroups[i].map((gn) => structureIdByName.get(gn)).filter((s): s is string => !!s);
-    const existingCandidate = relByKey.get(key);
-    if (existingCandidate) {
-      for (const s of sids) if (!existingCandidate.structureIds.includes(s)) existingCandidate.structureIds.push(s);
+    const key = `${from}|${to}|${rule.type}`;
+    const existing = relByKey.get(key);
+    if (existing) {
+      for (const g of rowGroups[i]) if (!existing.groups.includes(g)) existing.groups.push(g);
       return;
     }
     relByKey.set(key, {
-      from: a.id,
-      to: b.id,
+      row: row.rowNum,
       type: rule.type,
-      structureIds: sids,
-      rowNum: row.rowNum,
+      from_key: from,
+      to_key: to,
       label: `${rule.type} "${row.client}" → "${row.relatedClient}"`,
+      groups: [...rowGroups[i]],
     });
   });
 
-  const candidates = [...relByKey.values()];
-  const relIdByKey = new Map<string, string>();
+  // ── ONE round trip for the whole slice ───────────────────────────────
+  const { data, error } = await withRetry("import_xpm_batch", () =>
+    supabase.rpc("import_xpm_batch", {
+      _tenant_id: tenantId,
+      _payload: {
+        entities: [...wanted.values()],
+        groups: [...groupNames],
+        members,
+        rels: [...relByKey.values()],
+      },
+    }));
 
-  if (candidates.length > 0) {
-    // One batched superset lookup instead of a query per candidate.
-    const fromIds = [...new Set(candidates.map((c) => c.from))];
-    await mapLimit(chunk(fromIds, FILTER_BATCH_SIZE), LOOKUP_CONCURRENCY, async (batch) => {
-      const { data, error } = await withRetry("relationship lookup", () =>
-        supabase
-          .from("relationships")
-          .select("id, from_entity_id, to_entity_id, relationship_type")
-          .eq("tenant_id", tenantId)
-          .in("from_entity_id", batch));
-      if (error) throw new Error(`Relationship lookup failed: ${error.message}`);
-      for (const r of data ?? []) {
-        relIdByKey.set(
-          `${r.from_entity_id}|${r.to_entity_id}|${r.relationship_type}`,
-          r.id as string,
-        );
-      }
-    });
+  if (error) throw new Error(`Import batch failed: ${error.message}`);
+  const res = (data ?? {}) as unknown as BatchResult;
 
+  p.entitiesCreated += res.entitiesCreated ?? 0;
+  p.entitiesUpdated += res.entitiesUpdated ?? 0;
+  p.structuresCreated += res.structuresCreated ?? 0;
+  p.structuresSkippedLimit += res.structuresSkippedLimit ?? 0;
+  p.relationshipsCreated += res.relationshipsCreated ?? 0;
+  p.relationshipsSkipped += res.relationshipsSkipped ?? 0;
+  if (res.structureLimit) p.structureLimit = res.structureLimit;
+  if ((res.structuresSkippedLimit ?? 0) > 0) p.limitReached = true;
 
-    const missing = candidates.filter((c) => !relIdByKey.has(`${c.from}|${c.to}|${c.type}`));
-    for (const batch of chunk(missing, DB_BATCH_SIZE)) {
-      const payload = batch.map((c) => ({
-        tenant_id: tenantId,
-        from_entity_id: c.from,
-        to_entity_id: c.to,
-        relationship_type: c.type,
-        source: "imported",
-        confidence: "imported",
-      }));
-      const { data, error } = await supabase
-        .from("relationships")
-        .insert(payload)
-        .select("id, from_entity_id, to_entity_id, relationship_type");
-      if (error) {
-        // Validation triggers reject individual edges; isolate them so the
-        // rest of the batch still lands and each bad row gets its warning.
-        for (const c of batch) {
-          const { data: one, error: e1 } = await supabase
-            .from("relationships")
-            .insert({
-              tenant_id: tenantId,
-              from_entity_id: c.from,
-              to_entity_id: c.to,
-              relationship_type: c.type,
-              source: "imported",
-              confidence: "imported",
-            })
-            .select("id")
-            .single();
-          if (e1 || !one) {
-            warn(`Row ${c.rowNum}: Failed to create relationship ${c.label}: ${e1?.message ?? "unknown error"}`);
-            p.relationshipsSkipped++;
-            continue;
-          }
-          relIdByKey.set(`${c.from}|${c.to}|${c.type}`, one.id as string);
-          p.relationshipsCreated++;
-        }
-        continue;
-      }
-      for (const r of data ?? []) {
-        relIdByKey.set(`${r.from_entity_id}|${r.to_entity_id}|${r.relationship_type}`, r.id as string);
-        p.relationshipsCreated++;
-      }
-    }
+  for (const w of res.warnings ?? []) warn(String(w));
 
-    // Structure ↔ relationship membership, bulk + deduped.
-    const relLinkKeys = new Set<string>();
-    const relLinks: { structure_id: string; relationship_id: string }[] = [];
-    for (const c of candidates) {
-      const relId = relIdByKey.get(`${c.from}|${c.to}|${c.type}`);
-      if (!relId) continue;
-      for (const sid of c.structureIds) {
-        const key = `${sid}|${relId}`;
-        if (relLinkKeys.has(key)) continue;
-        relLinkKeys.add(key);
-        relLinks.push({ structure_id: sid, relationship_id: relId });
-      }
-    }
-    await mapLimit(chunk(relLinks, DB_BATCH_SIZE), DB_CONCURRENCY, async (batch) => {
-      const { error } = await supabase
-        .from("structure_relationships")
-        .upsert(batch, { onConflict: "structure_id,relationship_id", ignoreDuplicates: true });
-      if (error) warn(`Failed to link ${batch.length} relationships to structures: ${error.message}`);
-    });
-
-    // Auto-flag corporate trustees — one bulk UPDATE instead of 2 statements
-    // per trustee relationship.
-    const recById = new Map<string, EntityRec>();
-    for (const rec of byName.values()) recById.set(rec.id, rec);
-    for (const rec of byUuid.values()) recById.set(rec.id, rec);
-    const trusteeIds = [
-      ...new Set(
-        candidates
-          .filter((c) => c.type === "trustee")
-          .map((c) => c.from)
-          .filter((id) => {
-            const rec = recById.get(id);
-            return rec?.entity_type === "Company" && !rec.is_trustee_company;
-          }),
-      ),
-    ];
-
-    for (const batch of chunk(trusteeIds, FILTER_BATCH_SIZE)) {
-      const { error } = await withRetry("trustee flag update", () =>
-        supabase.from("entities").update({ is_trustee_company: true }).in("id", batch));
-      if (error) warn(`Failed to flag ${batch.length} trustee companies: ${error.message}`);
+  // Rows whose grouping was lost because a structure could not be created.
+  const unavailable = new Set(res.unavailableGroups ?? []);
+  if (unavailable.size > 0) {
+    for (const gs of rowGroups) {
+      if (gs.some((g) => unavailable.has(g))) p.rowsSkippedLimit++;
     }
   }
 
+  for (const u of res.unresolvedRels ?? []) {
+    p.relationshipsSkipped++;
+    warn(`Row ${u.row}: Could not resolve entities for ${u.label}`);
+  }
+
   p.rowIndex = end;
-  if (p.rowIndex >= parsed.total) p.phase = "done";
+  if (p.rowIndex >= allRows.length) p.phase = "done";
   return p;
 }
 
-// ── Background driver: one slice, persist, hand off to a fresh worker ──
+// ── Background driver: slices, persist, hand off to a fresh worker ──────
 
 async function processJob(
   supabase: ReturnType<typeof createClient>,
@@ -813,16 +452,22 @@ async function processJob(
   let current = progress;
 
   try {
-    // Keep working inside THIS worker until the wall-clock budget is spent, so
-    // medium files finish in a single execution with no extra cold-start hops.
-    // Progress is persisted after every slice so the UI keeps moving.
+    // Parse the payload ONCE for this execution, then slice from memory.
+    const allRows = parseAll(content, fileName.toLowerCase().endsWith(".xml"));
+
+    // Heartbeat before any heavy work, so a worker death is visible as a
+    // stalled `updated_at` (and gets reaped) rather than an invisible hang.
+    await supabase
+      .from("import_logs")
+      .update({ status: "processing", result: { ...current, totalRowsParsed: allRows.length } })
+      .eq("id", logId);
+
     const started = Date.now();
     const BUDGET_MS = 45_000;
     let done = false;
 
-
     for (;;) {
-      current = await runSlice(supabase, log.tenant_id as string, fileName, content, current);
+      current = await runSlice(supabase, log.tenant_id as string, allRows, current);
       done = current.phase === "done";
       await supabase
         .from("import_logs")
@@ -856,7 +501,6 @@ async function processJob(
         result: {
           ...current,
           error: err instanceof Error ? err.message : String(err),
-
         },
       })
       .eq("id", logId);
@@ -917,6 +561,9 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Abandoned jobs must not stay "processing" forever.
+    await supabase.rpc("fail_stale_import_jobs", { _max_idle_minutes: 10 });
 
     const { fileName, content } = body ?? {};
     if (!content || !fileName) {
