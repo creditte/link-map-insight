@@ -45,9 +45,10 @@ import CreateStructureModal from "@/components/structure/CreateStructureModal";
 import XeroLogo from "@/components/XeroLogo";
 import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
+import { useXpmSyncJob } from "@/hooks/useXpmSyncJob";
+import { Progress } from "@/components/ui/progress";
 
 export default function Dashboard() {
-  const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [xeroLoading, setXeroLoading] = useState(false);
 
@@ -63,6 +64,15 @@ export default function Dashboard() {
   const [xeroConnectionType, setXeroConnectionType] = useState<"accounting" | "practice_manager">("practice_manager");
   const { review, loading: healthLoading, runReview } = useClientHealthReview();
   const { user } = useAuth();
+  // The sync runs as a resumable background job; the UI follows the job row so
+  // it never claims success before the database work has actually finished.
+  const {
+    job: syncJob,
+    running: syncing,
+    label: syncLabel,
+    percent: syncPercent,
+    start: startXpmSync,
+  } = useXpmSyncJob({ onFinished: () => window.location.reload() });
   const {
     // Shared Xero record — the Dashboard no longer fetches it separately.
     connection: xeroConnection,
@@ -228,36 +238,10 @@ export default function Dashboard() {
   };
 
   const handleSyncXpm = async () => {
-    setSyncing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("sync-xpm");
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      if (data?.started) {
-        toast({
-          title: "XPM Sync Started",
-          description:
-            data.message ||
-            "Running in background. Refresh the dashboard in a minute or two to see updated entities.",
-        });
-      } else {
-        const parts = [
-          `${data.clientsFetched ?? data.contactsFetched ?? 0} clients fetched`,
-          `${data.entitiesCreated ?? 0} created`,
-          `${data.entitiesUpdated ?? 0} updated`,
-        ];
-        if (data.relationshipsCreated > 0) parts.push(`${data.relationshipsCreated} relationships created`);
-        if (data.groupsCreated > 0) parts.push(`${data.groupsCreated} groups created`);
-        if (data.staffFetched > 0) parts.push(`${data.staffFetched} staff fetched`);
-        if (data.trusteesDetected > 0) parts.push(`${data.trusteesDetected} corporate trustees detected`);
-        toast({ title: "XPM Sync Complete", description: parts.join(", ") + "." });
-      }
+      await startXpmSync();
     } catch (err) {
       reportXeroError(err);
-      const payload = xeroToastPayload(err);
-      toast({ title: payload.title, description: payload.description, variant: "destructive" });
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -427,6 +411,20 @@ export default function Dashboard() {
                   </Button>
                 </div>
               )}
+              {syncing && (
+                <div className="w-full max-w-md space-y-1.5 rounded-xl border border-border bg-card/60 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-foreground">{syncLabel || "Starting XPM sync…"}</span>
+                    <span className="text-xs text-muted-foreground">{syncPercent}%</span>
+                  </div>
+                  <Progress value={syncPercent} className="h-1.5" />
+                  {syncJob && syncJob.groupsSkippedUnchanged > 0 && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {syncJob.groupsSkippedUnchanged} unchanged groups skipped
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -497,6 +495,20 @@ export default function Dashboard() {
                     {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
                     {disconnecting ? "Disconnecting…" : "Disconnect"}
                   </Button>
+                </div>
+              )}
+              {syncing && (
+                <div className="w-full max-w-md space-y-1.5 rounded-xl border border-border bg-card/60 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-foreground">{syncLabel || "Starting XPM sync…"}</span>
+                    <span className="text-xs text-muted-foreground">{syncPercent}%</span>
+                  </div>
+                  <Progress value={syncPercent} className="h-1.5" />
+                  {syncJob && syncJob.groupsSkippedUnchanged > 0 && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {syncJob.groupsSkippedUnchanged} unchanged groups skipped
+                    </p>
+                  )}
                 </div>
               )}
             </div>

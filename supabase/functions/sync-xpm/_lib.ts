@@ -19,14 +19,39 @@ export function tuning() {
     return Number.isFinite(v) && v > 0 ? v : d;
   };
   return {
-    /** XPM client pages fetched+persisted per execution. */
-    clientPagesPerRun: num("XPM_CLIENT_PAGES_PER_RUN", 6),
+    /**
+     * XPM client pages fetched+persisted per execution. A detailed page can hold
+     * >1,000 clients, and parsing one costs several seconds of the worker's CPU
+     * budget, so the default is deliberately small and `sliceBudgetMs` stops the
+     * slice early when a page turns out to be huge.
+     */
+    clientPagesPerRun: num("XPM_CLIENT_PAGES_PER_RUN", 2),
+    /**
+     * Soft budget for one execution. Exceeding it ends the slice cleanly and
+     * chains a fresh worker, instead of being killed with "CPU Time exceeded"
+     * and losing the in-flight page.
+     */
+    sliceBudgetMs: num("XPM_SLICE_BUDGET_MS", 5000),
     /** XPM client page size (XPM caps this server-side). */
     clientPageSize: num("XPM_CLIENT_PAGE_SIZE", 50),
     /** Client groups processed per execution. */
-    groupsPerRun: num("XPM_GROUPS_PER_RUN", 60),
-    /** Groups fetched/persisted concurrently within a run. */
-    groupConcurrency: num("XPM_GROUP_CONCURRENCY", 4),
+    groupsPerRun: num("XPM_GROUPS_PER_RUN", 120),
+    /** Groups fetched concurrently from XPM within a run. */
+    groupConcurrency: num("XPM_GROUP_CONCURRENCY", 3),
+    /**
+     * Minimum gap between XPM requests. Xero enforces ~60 calls/minute per
+     * tenant and answers bursts with a 429 that parks the worker for 25-30s,
+     * so pacing below the limit is strictly faster than being throttled.
+     */
+    xpmMinIntervalMs: num("XPM_MIN_INTERVAL_MS", 1050),
+    /**
+     * Groups whose membership was read from XPM more recently than this are
+     * skipped without an XPM call. Group membership has no change feed, so this
+     * freshness window is what keeps routine syncs quick.
+     */
+    groupFreshnessMinutes: num("XPM_GROUP_FRESHNESS_MINUTES", 1440),
+    /** Groups linked per database request (one round trip per batch). */
+    groupBatchSize: num("XPM_GROUP_BATCH_SIZE", 24),
     /** Concurrency for small independent DB statements (updates, lookups). */
     dbConcurrency: num("XPM_DB_CONCURRENCY", 6),
     /** Rows per bulk DB statement. */
@@ -44,6 +69,21 @@ export function tuning() {
 
 /** Raised for failures that must abort the sync instead of being retried. */
 export class FatalXpmError extends Error {}
+
+/**
+ * Per-worker counters. Used to report how many XPM HTTP requests a slice made
+ * so sync cost is observable from the job row instead of guessed at.
+ */
+export const counters = { xpmRequests: 0, xpmRetries: 0, xpmMs: 0, dbCalls: 0, dbMs: 0 };
+
+/** Counted + timed Supabase RPC call, so DB cost is observable per job. */
+export async function rpcCall(supabase: any, fn: string, args: Record<string, unknown>) {
+  const startedAt = Date.now();
+  counters.dbCalls++;
+  const res = await supabase.rpc(fn, args);
+  counters.dbMs += Date.now() - startedAt;
+  return res;
+}
 
 /**
  * Run `fn` over `items` with at most `limit` in flight. Results keep input
@@ -69,6 +109,24 @@ export async function mapLimit<T, R>(
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Serialises XPM request start times so concurrent workers inside one execution
+ * still respect Xero's per-minute cap. Requests queue on this chain and each one
+ * waits until at least `xpmMinIntervalMs` has passed since the previous start.
+ */
+let xpmGate: Promise<void> = Promise.resolve();
+async function awaitXpmSlot() {
+  const minInterval = tuning().xpmMinIntervalMs;
+  const mine = xpmGate.then(async () => {
+    const wait = minInterval - (Date.now() - lastXpmStartedAt);
+    if (wait > 0) await sleep(wait);
+    lastXpmStartedAt = Date.now();
+  });
+  xpmGate = mine.catch(() => {});
+  await mine;
+}
+let lastXpmStartedAt = 0;
 
 
 // ── Token refresh ───────────────────────────────────────────────────
@@ -124,8 +182,11 @@ export async function xpmGetXml(
   maxAttempts = 3,
 ): Promise<any> {
   const url = `${XPM_BASE}${path}`;
+  const startedAt = Date.now();
+  counters.xpmRequests++;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await awaitXpmSlot();
     let res: Response;
     try {
       res = await fetch(url, {
@@ -140,6 +201,7 @@ export async function xpmGetXml(
         console.warn(`[sync-xpm] network error on ${path}:`, e);
         return null;
       }
+      counters.xpmRetries++;
       await sleep(500 * 2 ** (attempt - 1));
       continue;
     }
@@ -188,6 +250,7 @@ export async function xpmGetXml(
     }
 
     const text = await res.text();
+    counters.xpmMs += Date.now() - startedAt;
     try {
       return parseXml(text);
     } catch (e) {

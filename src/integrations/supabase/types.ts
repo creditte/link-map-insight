@@ -1554,6 +1554,10 @@ export type Database = {
           read_ct: number
         }[]
       }
+      rel_direction_valid: {
+        Args: { _from_type: string; _rtype: string; _to_type: string }
+        Returns: boolean
+      }
       rpc_change_tenant_user_role: {
         Args: {
           p_new_role: string
@@ -1617,6 +1621,10 @@ export type Database = {
           _member_uuids: string[]
           _tenant_id: string
         }
+        Returns: Json
+      }
+      sync_xpm_link_groups: {
+        Args: { _groups: Json; _tenant_id: string }
         Returns: Json
       }
       sync_xpm_link_trustees: {
