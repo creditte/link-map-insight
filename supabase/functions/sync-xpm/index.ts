@@ -6,6 +6,8 @@ import {
   extractTrustName,
   FatalXpmError,
   isCorporateTrustee,
+  LEASE_SECONDS,
+
   mapLimit,
   refreshAccessToken,
   rpcCall,
@@ -583,6 +585,7 @@ async function runSlice(
         await saveProgress(supabase, jobId, p);
       }
       for (const batch of chunk(dueGroups, t.groupBatchSize)) {
+        const batchStartedAt = Date.now();
         const fetched = await mapLimit(batch, t.groupConcurrency, (group) =>
           fetchGroupMembers(accessToken, xeroTenantId!, group, p)
         );
@@ -592,6 +595,7 @@ async function runSlice(
           fetched.filter((g): g is NonNullable<typeof g> => g !== null),
           p,
         );
+        console.log(`[sync-xpm] linked ${batch.length} groups in ${Date.now() - batchStartedAt}ms (slice ${Date.now() - sliceStartedAt}ms)`);
         processed += batch.length;
         p.stats.groupsProcessed += batch.length;
         p.groupCursor = batch[batch.length - 1].uuid;
@@ -617,10 +621,18 @@ async function runSlice(
   return p;
 }
 
-async function saveProgress(supabase: any, jobId: string, p: Progress) {
+async function saveProgress(
+  supabase: any,
+  jobId: string,
+  p: Progress,
+  opts?: { releaseLease?: boolean },
+) {
   const done = p.phase === "done";
-  // Hold the lease for as long as this worker keeps making progress.
-  p.leaseUntil = done ? "" : new Date(Date.now() + LEASE_SECONDS * 1000).toISOString();
+  // Hold the lease while this worker is making progress, and hand it over when
+  // the slice ends so the next worker in the chain can claim the job.
+  p.leaseUntil = done || opts?.releaseLease
+    ? ""
+    : new Date(Date.now() + LEASE_SECONDS * 1000).toISOString();
   await supabase
     .from("import_logs")
     .update({
@@ -652,11 +664,9 @@ async function saveProgress(supabase: any, jobId: string, p: Progress) {
 
 
 /**
- * Kick a fresh worker to continue the same job.
- *
- * `expect_runs` is a lightweight lease: the next worker only proceeds if the job
- * row is still at the run count this worker left behind. Two chains on one job
- * would otherwise both call XPM and trip Xero's rate limit.
+ * Kick a fresh worker to continue the same job. The next worker still has to
+ * claim the job lease before doing anything, so a duplicate chain stands down
+ * instead of double-calling XPM (which trips Xero's rate limit).
  */
 async function continueJob(jobId: string, expectRuns: number) {
   const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/sync-xpm`;
@@ -717,7 +727,7 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
   const task = (async () => {
     try {
       const next = await runSlice(supabase, jobId, tenantId, progress);
-      await saveProgress(supabase, jobId, next);
+      await saveProgress(supabase, jobId, next, { releaseLease: true });
       if (next.phase !== "done") await continueJob(jobId, next.runs);
       else console.log(`[sync-xpm] job ${jobId} completed in ${next.runs} runs`);
     } catch (e) {
@@ -875,6 +885,8 @@ Deno.serve(async (req) => {
       .single();
     if (jobErr || !jobRow) return json({ error: jobErr?.message ?? "Failed to start sync" }, 500);
 
+    // Take the lease immediately so a stray continuation can't join in.
+    await supabase.rpc("claim_sync_job", { _job_id: jobRow.id, _lease_seconds: LEASE_SECONDS });
     scheduleSlice(supabase, jobRow.id, tenantId, progress);
 
     return json({
