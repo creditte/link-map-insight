@@ -78,6 +78,8 @@ interface Progress {
   lastPageKey: string;
   /** When true, every group is re-read from XPM instead of honouring freshness. */
   fullSync: boolean;
+  /** Worker lease expiry — only the lease holder may talk to XPM. */
+  leaseUntil: string;
   runs: number;
   started_at: string;
   updated_at: string;
@@ -93,6 +95,7 @@ function emptyProgress(): Progress {
     groupsLoaded: false,
     lastPageKey: "",
     fullSync: false,
+    leaseUntil: "",
     runs: 0,
     started_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -616,6 +619,8 @@ async function runSlice(
 
 async function saveProgress(supabase: any, jobId: string, p: Progress) {
   const done = p.phase === "done";
+  // Hold the lease for as long as this worker keeps making progress.
+  p.leaseUntil = done ? "" : new Date(Date.now() + LEASE_SECONDS * 1000).toISOString();
   await supabase
     .from("import_logs")
     .update({
@@ -630,6 +635,7 @@ async function saveProgress(supabase: any, jobId: string, p: Progress) {
           groupsLoaded: p.groupsLoaded,
           lastPageKey: p.lastPageKey,
           fullSync: p.fullSync,
+          leaseUntil: p.leaseUntil,
           groupsProcessed: p.stats.groupsProcessed,
           groupsTotal: p.stats.groupsFound,
           runs: p.runs,
@@ -677,6 +683,7 @@ function loadProgress(result: any): Progress {
     groupsLoaded: result.progress?.groupsLoaded ?? base.groupsLoaded,
     lastPageKey: result.progress?.lastPageKey ?? base.lastPageKey,
     fullSync: result.progress?.fullSync ?? base.fullSync,
+    leaseUntil: result.progress?.leaseUntil ?? base.leaseUntil,
 
     runs: result.progress?.runs ?? 0,
     started_at: result.started_at ?? base.started_at,
@@ -776,13 +783,19 @@ Deno.serve(async (req) => {
       if (!job) return json({ error: "Job not found" }, 404);
       if (job.status !== "processing") return json({ skipped: true, status: job.status });
 
-      const progress = loadProgress(job.result);
-      // Reject a continuation that belongs to a superseded chain, so only one
-      // worker per job ever talks to XPM.
-      if (typeof body.expect_runs === "number" && body.expect_runs !== progress.runs) {
-        console.log(`[sync-xpm] stale continuation for ${job.id} (expected run ${body.expect_runs}, job at ${progress.runs})`);
-        return json({ skipped: true, stale: true });
+      // Exactly one worker may hold the job at a time: the claim is atomic and
+      // its lease expires on its own if a worker is killed mid-slice.
+      const { data: claimed } = await supabase.rpc("claim_sync_job", {
+        _job_id: job.id,
+        _lease_seconds: LEASE_SECONDS,
+      });
+      if (!claimed) {
+        console.log(`[sync-xpm] ${job.id} is already held by another worker; standing down`);
+        return json({ skipped: true, leased: true });
       }
+      const { data: fresh } = await supabase
+        .from("import_logs").select("result").eq("id", job.id).maybeSingle();
+      const progress = loadProgress(fresh?.result ?? job.result);
 
       scheduleSlice(supabase, job.id, job.tenant_id, progress);
       return json({ continued: true, jobId: job.id }, 202);

@@ -4,6 +4,9 @@ import { decryptToken, encryptToken } from "../_shared/crypto.ts";
 import { parse as parseXml } from "https://esm.sh/jsr/@libs/xml@6.0.1";
 
 
+/** Seconds a worker holds the job lease before another worker may take over. */
+export const LEASE_SECONDS = 90;
+
 export const XPM_BASE = "https://api.xero.com/practicemanager/3.1";
 
 export const corsHeaders = {
