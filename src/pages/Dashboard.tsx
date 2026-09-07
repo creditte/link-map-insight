@@ -205,7 +205,10 @@ export default function Dashboard() {
 
 
 
-  const handleConnectXero = async () => {
+  const handleConnectXero = async (
+    connectionType: "accounting" | "practice_manager" = xeroConnectionType,
+  ) => {
+    setXeroConnectionType(connectionType);
     setXeroLoading(true);
     try {
       const {
