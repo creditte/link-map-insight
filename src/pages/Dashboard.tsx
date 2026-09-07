@@ -9,6 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import {
   Plus,
@@ -199,7 +205,10 @@ export default function Dashboard() {
 
 
 
-  const handleConnectXero = async () => {
+  const handleConnectXero = async (
+    connectionType: "accounting" | "practice_manager" = xeroConnectionType,
+  ) => {
+    setXeroConnectionType(connectionType);
     setXeroLoading(true);
     try {
       const {
@@ -216,7 +225,7 @@ export default function Dashboard() {
           Authorization: `Bearer ${session.access_token}`,
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
-        body: JSON.stringify({ origin: window.location.origin, connection_type: xeroConnectionType }),
+        body: JSON.stringify({ origin: window.location.origin, connection_type: connectionType }),
       });
       let data: any = null;
       try {
@@ -363,19 +372,42 @@ export default function Dashboard() {
                 </Button>
               )}
               {canManageIntegrations && !xeroConnection && (
-                <Button
-                  variant="outline"
-                  className="gap-2 rounded-xl px-5 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
-                  onClick={handleConnectXero}
-                  disabled={xeroLoading}
-                >
-                  {xeroLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <XeroLogo className="h-4 w-4" />
-                  )}
-                  Connect to Xero
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="gap-2 rounded-xl px-5 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
+                      disabled={xeroLoading}
+                    >
+                      {xeroLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <XeroLogo className="h-4 w-4" />
+                      )}
+                      Connect to Xero
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72">
+                    <DropdownMenuItem
+                      className="flex flex-col items-start gap-0.5"
+                      onClick={() => handleConnectXero("practice_manager")}
+                    >
+                      <span className="text-sm font-medium">Xero Practice Manager</span>
+                      <span className="text-xs text-muted-foreground">
+                        Import client groups and relationships (needs XPM access).
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="flex flex-col items-start gap-0.5"
+                      onClick={() => handleConnectXero("accounting")}
+                    >
+                      <span className="text-sm font-medium">Xero organisation</span>
+                      <span className="text-xs text-muted-foreground">
+                        Works for any Xero account — imports your contacts.
+                      </span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               {canManageIntegrations && xeroConnection && (
                 <div className="flex items-center gap-2 rounded-xl border border-[#13B5EA]/30 bg-[#13B5EA]/5 pl-3 pr-1.5 py-1.5">
@@ -448,20 +480,43 @@ export default function Dashboard() {
                 </Button>
               )}
               {canManageIntegrations && !xeroConnection && (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="gap-2 rounded-xl px-6 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
-                  onClick={handleConnectXero}
-                  disabled={xeroLoading}
-                >
-                  {xeroLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <XeroLogo className="h-4 w-4" />
-                  )}
-                  Connect to Xero
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      className="gap-2 rounded-xl px-6 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
+                      disabled={xeroLoading}
+                    >
+                      {xeroLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <XeroLogo className="h-4 w-4" />
+                      )}
+                      Connect to Xero
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72">
+                    <DropdownMenuItem
+                      className="flex flex-col items-start gap-0.5"
+                      onClick={() => handleConnectXero("practice_manager")}
+                    >
+                      <span className="text-sm font-medium">Xero Practice Manager</span>
+                      <span className="text-xs text-muted-foreground">
+                        Import client groups and relationships (needs XPM access).
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="flex flex-col items-start gap-0.5"
+                      onClick={() => handleConnectXero("accounting")}
+                    >
+                      <span className="text-sm font-medium">Xero organisation</span>
+                      <span className="text-xs text-muted-foreground">
+                        Works for any Xero account — imports your contacts.
+                      </span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               {canManageIntegrations && xeroConnection && (
                 <div className="flex items-center gap-2 rounded-xl border border-[#13B5EA]/30 bg-[#13B5EA]/5 pl-3 pr-1.5 py-1.5">
