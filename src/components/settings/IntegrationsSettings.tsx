@@ -234,21 +234,33 @@ export default function IntegrationsSettings() {
           ) : (
             <>
               <p className="text-sm text-muted-foreground">
-                Sign in with your Xero account to link your Practice Manager organisation. You will
-                be redirected to Xero to authorise the connection and returned here when done.
+                Sign in with your Xero account to link it to strukcha. Choose Practice Manager if
+                your firm uses XPM, or connect a standard Xero organisation — that option works for
+                any Xero account. You will be redirected to Xero and returned here when done.
               </p>
-              <Button
-                onClick={handleConnect}
-                disabled={connecting}
-                className="gap-2 bg-[#13B5EA] text-white hover:bg-[#0f9dcc]"
-              >
-                {connecting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  onClick={() => handleConnect("practice_manager")}
+                  disabled={connecting}
+                  className="gap-2 bg-[#13B5EA] text-white hover:bg-[#0f9dcc]"
+                >
+                  {connecting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <XeroLogo className="h-4 w-4" />
+                  )}
+                  {connecting ? "Redirecting to Xero…" : "Connect Practice Manager"}
+                </Button>
+                <Button
+                  onClick={() => handleConnect("accounting")}
+                  disabled={connecting}
+                  variant="outline"
+                  className="gap-2"
+                >
                   <XeroLogo className="h-4 w-4" />
-                )}
-                {connecting ? "Redirecting to Xero…" : "Connect to Xero"}
-              </Button>
+                  Connect Xero organisation
+                </Button>
+              </div>
             </>
           )}
         </CardContent>
