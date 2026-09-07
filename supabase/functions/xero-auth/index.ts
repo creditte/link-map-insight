@@ -78,7 +78,7 @@ serve(async (req) => {
     // Store user_id, origin, connection type, and CSRF token in state
     const state = btoa(JSON.stringify({
       user_id: claimsData.claims.sub,
-      origin: callerOrigin || Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app",
+      origin: callerOrigin || Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app",
       csrf: csrfToken,
       connection_type: connectionType,
     }));
@@ -90,7 +90,7 @@ serve(async (req) => {
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `scope=${encodeURIComponent(scopes)}&` +
       `state=${encodeURIComponent(state)}&` +
-      `prompt=${encodeURIComponent("consent select_account")}`;
+      `prompt=consent`;
 
     return new Response(JSON.stringify({ url: authUrl }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
