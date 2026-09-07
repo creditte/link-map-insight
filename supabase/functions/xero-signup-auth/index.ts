@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
 
     const frontendOrigin = callerOrigin ||
       Deno.env.get("FRONTEND_URL") ||
-      "https://link-map-insight.lovable.app";
+      "https://strukcha-dev.lovable.app";
 
     const state = btoa(JSON.stringify({
       csrf: csrfToken,

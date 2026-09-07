@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
     const stateParam = url.searchParams.get("state");
     const oauthError = url.searchParams.get("error");
 
-    const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app";
+    const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
 
     if (oauthError) {
       console.error("Xero OAuth error:", oauthError);
@@ -330,7 +330,7 @@ Deno.serve(async (req) => {
     return Response.redirect(linkData.properties.action_link, 302);
   } catch (err) {
     console.error("xero-signup-callback error:", err);
-    const fallback = Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app";
+    const fallback = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
     return Response.redirect(`${fallback}/signup?xero_signup=error&reason=server_error`, 302);
   }
 });

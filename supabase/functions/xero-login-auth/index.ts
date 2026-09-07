@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `scope=${encodeURIComponent(scopes)}&` +
       `state=${encodeURIComponent(state)}&` +
-      `prompt=${encodeURIComponent("consent select_account")}`;
+      `prompt=consent`;
 
     return new Response(JSON.stringify({ url: authUrl }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

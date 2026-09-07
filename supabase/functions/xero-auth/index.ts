@@ -78,7 +78,7 @@ serve(async (req) => {
     // Store user_id, origin, connection type, and CSRF token in state
     const state = btoa(JSON.stringify({
       user_id: claimsData.claims.sub,
-      origin: callerOrigin || Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app",
+      origin: callerOrigin || Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app",
       csrf: csrfToken,
       connection_type: connectionType,
     }));
