@@ -198,7 +198,7 @@ export default function IntegrationsSettings() {
               <div className="flex flex-wrap items-center gap-2">
                 {xeroInvalid ? (
                   <Button
-                    onClick={handleConnect}
+                    onClick={() => handleConnect("practice_manager")}
                     disabled={connecting}
                     className="gap-2 bg-[#13B5EA] text-white hover:bg-[#0f9dcc]"
                   >
