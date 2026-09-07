@@ -36,7 +36,9 @@ export default function IntegrationsSettings() {
   const connection = sharedConnection as XeroConnection | null;
 
 
-  const handleConnect = async () => {
+  const handleConnect = async (
+    connectionType: "accounting" | "practice_manager" = "practice_manager",
+  ) => {
     setConnecting(true);
     setXeroError(null);
     try {
@@ -52,7 +54,7 @@ export default function IntegrationsSettings() {
         },
         body: JSON.stringify({
           origin: window.location.origin,
-          connection_type: "practice_manager",
+          connection_type: connectionType,
         }),
       });
       let data: any = null;
