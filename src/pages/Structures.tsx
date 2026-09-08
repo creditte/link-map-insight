@@ -848,7 +848,7 @@ export default function Structures() {
                   variant={showArchived ? "secondary" : "outline"}
                   size="sm"
                   className="h-8 text-xs gap-1.5"
-                  onClick={() => setShowArchived(!showArchived)}
+                  onClick={() => { setShowArchived(!showArchived); exitSelectMode(); }}
                 >
                   <Archive className="h-3.5 w-3.5" />
                   {showArchived ? "View Active" : `Archived (${archivedManualStructures.length})`}
