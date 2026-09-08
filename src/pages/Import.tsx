@@ -41,6 +41,87 @@ export default function Import() {
   const structureCount = billing?.diagram_count ?? null;
   const limitReached =
     structureLimit !== null && structureCount !== null && structureCount >= structureLimit;
+  const freeSlots =
+    structureLimit !== null && structureCount !== null
+      ? Math.max(0, structureLimit - structureCount)
+      : null;
+
+  const [analysing, setAnalysing] = useState(false);
+  const [preflight, setPreflight] = useState<{
+    groups: number;
+    newGroups: number;
+    existingGroups: number;
+    freeSlots: number | null;
+    fits: boolean;
+  } | null>(null);
+
+  /** Pull the client-group names out of an XPM CSV/XML export, client-side. */
+  const extractGroupNames = (text: string, isXml: boolean): Set<string> => {
+    const names = new Set<string>();
+    const push = (raw: string) => {
+      for (const g of raw.split(";").map((s) => s.trim()).filter(Boolean)) names.add(g);
+    };
+    if (isXml) {
+      const re = /<Client-Groups>([\s\S]*?)<\/Client-Groups>/gi;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text)) !== null) push(m[1].trim());
+      return names;
+    }
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return names;
+    const splitLine = (line: string): string[] => {
+      const out: string[] = [];
+      let cur = "";
+      let q = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q;
+        } else if (ch === "," && !q) { out.push(cur.trim()); cur = ""; }
+        else cur += ch;
+      }
+      out.push(cur.trim());
+      return out;
+    };
+    const header = splitLine(lines[0]).map((h) => h.replace(/^"+|"+$/g, "").trim().toLowerCase());
+    const gi = header.findIndex((h) => h.includes("group"));
+    if (gi < 0) return names;
+    for (let i = 1; i < lines.length; i++) {
+      const cols = splitLine(lines[i]).map((c) => c.replace(/^"+|"+$/g, "").trim());
+      if (cols[gi]) push(cols[gi]);
+    }
+    return names;
+  };
+
+  /** Decide up front whether the file's groups fit in the remaining slots. */
+  const analyseFile = async (f: File) => {
+    setAnalysing(true);
+    setPreflight(null);
+    try {
+      const text = await f.text();
+      const groups = extractGroupNames(text, f.name.toLowerCase().endsWith(".xml"));
+      const { data: existing } = await supabase
+        .from("structures")
+        .select("name")
+        .is("deleted_at", null);
+      const existingNames = new Set((existing ?? []).map((s: any) => String(s.name)));
+      let newGroups = 0;
+      groups.forEach((g) => {
+        if (!existingNames.has(g)) newGroups++;
+      });
+      setPreflight({
+        groups: groups.size,
+        newGroups,
+        existingGroups: groups.size - newGroups,
+        freeSlots,
+        fits: freeSlots === null || newGroups <= freeSlots,
+      });
+    } catch {
+      setPreflight(null);
+    } finally {
+      setAnalysing(false);
+    }
+  };
 
   /** Monotonic progress — never let the bar jump backwards. */
   const advance = (next: number) => setPercent((prev) => Math.max(prev, Math.min(99, next)));
@@ -71,6 +152,8 @@ export default function Import() {
     if (f && (f.name.endsWith(".csv") || f.name.endsWith(".xml"))) {
       setFile(f);
       setResult(null);
+      setImportError(null);
+      void analyseFile(f);
     } else {
       toast({ title: "Invalid file", description: "Please select a CSV or XML file.", variant: "destructive" });
     }
@@ -82,6 +165,14 @@ export default function Import() {
       toast({
         title: "Structure limit reached",
         description: `You already have ${structureCount} of ${structureLimit} structures. Delete a structure or upgrade your subscription before importing.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (preflight && !preflight.fits) {
+      toast({
+        title: "Not enough structure space",
+        description: `This file would create ${preflight.newGroups} new structures but you only have ${preflight.freeSlots} slot${preflight.freeSlots === 1 ? "" : "s"} left. Delete or archive structures, or upgrade your subscription, then try again.`,
         variant: "destructive",
       });
       return;
@@ -284,18 +375,69 @@ export default function Import() {
               </AlertDescription>
             </Alert>
           )}
-          <label className="flex min-h-[5.5rem] cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-4 text-muted-foreground transition-colors hover:border-primary hover:text-foreground sm:flex-row sm:p-8">
+          <label
+            aria-disabled={limitReached || importing}
+            className={`flex min-h-[5.5rem] flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-4 text-muted-foreground transition-colors sm:flex-row sm:p-8 ${
+              limitReached || importing
+                ? "pointer-events-none cursor-not-allowed opacity-50"
+                : "cursor-pointer hover:border-primary hover:text-foreground"
+            }`}
+          >
             <Upload className="h-5 w-5 shrink-0" />
             <span className="max-w-full min-w-0 break-words text-center text-sm font-medium sm:text-left">
-              {file ? file.name : "Choose CSV or XML file"}
+              {limitReached ? "Upload unavailable — limit reached" : file ? file.name : "Choose CSV or XML file"}
             </span>
-            <input type="file" accept=".csv,.xml" className="hidden" onChange={handleFileChange} />
+            <input
+              type="file"
+              accept=".csv,.xml"
+              className="hidden"
+              disabled={limitReached || importing}
+              onChange={handleFileChange}
+            />
           </label>
 
-          {!file && <p className="text-xs text-muted-foreground text-center">Select a file above to enable import.</p>}
+          {!file && !limitReached && (
+            <p className="text-xs text-muted-foreground text-center">Select a file above to enable import.</p>
+          )}
 
-          <Button onClick={handleImport} disabled={!file || importing || limitReached} className="w-full">
-            {importing ? "Importing..." : "Import"}
+          {file && analysing && (
+            <p className="text-xs text-muted-foreground text-center">Checking the file against your available space…</p>
+          )}
+
+          {file && !analysing && preflight && !limitReached && (
+            <Alert variant={preflight.fits ? "default" : "destructive"}>
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>
+                {preflight.fits ? "Ready to import" : "This file needs more structure space"}
+              </AlertTitle>
+              <AlertDescription className="text-xs">
+                {preflight.groups.toLocaleString()} client group
+                {preflight.groups === 1 ? "" : "s"} found — {preflight.newGroups.toLocaleString()} new,{" "}
+                {preflight.existingGroups.toLocaleString()} already in your workspace.
+                {preflight.freeSlots !== null && (
+                  <>
+                    {" "}
+                    You have {preflight.freeSlots.toLocaleString()} free slot
+                    {preflight.freeSlots === 1 ? "" : "s"} of {structureLimit}.
+                  </>
+                )}
+                {!preflight.fits && (
+                  <>
+                    {" "}
+                    Delete or archive structures, or upgrade your subscription, so all{" "}
+                    {preflight.newGroups.toLocaleString()} groups can be created.
+                  </>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <Button
+            onClick={handleImport}
+            disabled={!file || importing || analysing || limitReached || (!!preflight && !preflight.fits)}
+            className="w-full"
+          >
+            {importing ? "Importing..." : analysing ? "Checking file..." : "Import"}
           </Button>
 
           {importing && (
