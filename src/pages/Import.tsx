@@ -41,6 +41,87 @@ export default function Import() {
   const structureCount = billing?.diagram_count ?? null;
   const limitReached =
     structureLimit !== null && structureCount !== null && structureCount >= structureLimit;
+  const freeSlots =
+    structureLimit !== null && structureCount !== null
+      ? Math.max(0, structureLimit - structureCount)
+      : null;
+
+  const [analysing, setAnalysing] = useState(false);
+  const [preflight, setPreflight] = useState<{
+    groups: number;
+    newGroups: number;
+    existingGroups: number;
+    freeSlots: number | null;
+    fits: boolean;
+  } | null>(null);
+
+  /** Pull the client-group names out of an XPM CSV/XML export, client-side. */
+  const extractGroupNames = (text: string, isXml: boolean): Set<string> => {
+    const names = new Set<string>();
+    const push = (raw: string) => {
+      for (const g of raw.split(";").map((s) => s.trim()).filter(Boolean)) names.add(g);
+    };
+    if (isXml) {
+      const re = /<Client-Groups>([\s\S]*?)<\/Client-Groups>/gi;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text)) !== null) push(m[1].trim());
+      return names;
+    }
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return names;
+    const splitLine = (line: string): string[] => {
+      const out: string[] = [];
+      let cur = "";
+      let q = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q;
+        } else if (ch === "," && !q) { out.push(cur.trim()); cur = ""; }
+        else cur += ch;
+      }
+      out.push(cur.trim());
+      return out;
+    };
+    const header = splitLine(lines[0]).map((h) => h.replace(/^"+|"+$/g, "").trim().toLowerCase());
+    const gi = header.findIndex((h) => h.includes("group"));
+    if (gi < 0) return names;
+    for (let i = 1; i < lines.length; i++) {
+      const cols = splitLine(lines[i]).map((c) => c.replace(/^"+|"+$/g, "").trim());
+      if (cols[gi]) push(cols[gi]);
+    }
+    return names;
+  };
+
+  /** Decide up front whether the file's groups fit in the remaining slots. */
+  const analyseFile = async (f: File) => {
+    setAnalysing(true);
+    setPreflight(null);
+    try {
+      const text = await f.text();
+      const groups = extractGroupNames(text, f.name.toLowerCase().endsWith(".xml"));
+      const { data: existing } = await supabase
+        .from("structures")
+        .select("name")
+        .is("deleted_at", null);
+      const existingNames = new Set((existing ?? []).map((s: any) => String(s.name)));
+      let newGroups = 0;
+      groups.forEach((g) => {
+        if (!existingNames.has(g)) newGroups++;
+      });
+      setPreflight({
+        groups: groups.size,
+        newGroups,
+        existingGroups: groups.size - newGroups,
+        freeSlots,
+        fits: freeSlots === null || newGroups <= freeSlots,
+      });
+    } catch {
+      setPreflight(null);
+    } finally {
+      setAnalysing(false);
+    }
+  };
 
   /** Monotonic progress — never let the bar jump backwards. */
   const advance = (next: number) => setPercent((prev) => Math.max(prev, Math.min(99, next)));
