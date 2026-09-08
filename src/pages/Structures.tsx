@@ -413,6 +413,43 @@ export default function Structures() {
     }
   }
 
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("structures")
+        .update({ deleted_at: new Date().toISOString() })
+        .in("id", ids);
+      if (error) throw error;
+      patchManualCache((prev) => prev.filter((s) => !selectedIds.has(s.id)));
+      toast.success(`${ids.length} ${ids.length === 1 ? "structure" : "structures"} deleted`);
+      exitSelectMode();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete structures");
+    } finally {
+      setDeleting(false);
+      setBulkDeleteOpen(false);
+    }
+  }
+
+
+
   async function handleArchiveStructure(structure: ManualStructure) {
     try {
       const { error } = await supabase
