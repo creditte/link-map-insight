@@ -169,6 +169,14 @@ export default function Import() {
       });
       return;
     }
+    if (preflight && !preflight.fits) {
+      toast({
+        title: "Not enough structure space",
+        description: `This file would create ${preflight.newGroups} new structures but you only have ${preflight.freeSlots} slot${preflight.freeSlots === 1 ? "" : "s"} left. Delete or archive structures, or upgrade your subscription, then try again.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setImporting(true);
     setResult(null);
     setImportError(null);
