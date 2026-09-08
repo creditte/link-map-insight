@@ -15,10 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Search, Users, RefreshCw, AlertCircle, Plus, Settings, FileBox,
   Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine, Star, Clock, Copy,
-  Archive, ArchiveRestore, MoreVertical,
+  Archive, ArchiveRestore, MoreVertical, CheckSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 import { xeroToastPayload } from "@/lib/xeroErrors";
@@ -103,6 +104,9 @@ export default function Structures() {
   const [deleting, setDeleting] = useState(false);
   const [importingId, setImportingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const limitReached = billing ? billing.diagram_count >= billing.diagram_limit : false;
 
@@ -409,6 +413,43 @@ export default function Structures() {
       setDeleteTarget(null);
     }
   }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("structures")
+        .update({ deleted_at: new Date().toISOString() })
+        .in("id", ids);
+      if (error) throw error;
+      patchManualCache((prev) => prev.filter((s) => !selectedIds.has(s.id)));
+      toast.success(`${ids.length} ${ids.length === 1 ? "structure" : "structures"} deleted`);
+      exitSelectMode();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete structures");
+    } finally {
+      setDeleting(false);
+      setBulkDeleteOpen(false);
+    }
+  }
+
+
 
   async function handleArchiveStructure(structure: ManualStructure) {
     try {
@@ -807,7 +848,7 @@ export default function Structures() {
                   variant={showArchived ? "secondary" : "outline"}
                   size="sm"
                   className="h-8 text-xs gap-1.5"
-                  onClick={() => setShowArchived(!showArchived)}
+                  onClick={() => { setShowArchived(!showArchived); exitSelectMode(); }}
                 >
                   <Archive className="h-3.5 w-3.5" />
                   {showArchived ? "View Active" : `Archived (${archivedManualStructures.length})`}
@@ -835,6 +876,17 @@ export default function Structures() {
                   />
                 </div>
               )}
+              {canManageStructures && filteredManual.length > 0 && (
+                <Button
+                  variant={selectMode ? "secondary" : "outline"}
+                  size="sm"
+                  className="h-8 text-xs gap-1.5"
+                  onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                >
+                  <CheckSquare className="h-3.5 w-3.5" />
+                  {selectMode ? "Cancel" : "Select"}
+                </Button>
+              )}
               {canManageStructures && !showArchived && (
                 <Button
                   size="sm"
@@ -847,6 +899,43 @@ export default function Structures() {
               )}
             </div>
           </div>
+
+          {selectMode && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="select-all-structures"
+                  checked={filteredManual.length > 0 && filteredManual.every((s) => selectedIds.has(s.id))}
+                  onCheckedChange={(v) => {
+                    setSelectedIds((prev) => {
+                      const next = new Set(prev);
+                      if (v === true) filteredManual.forEach((s) => next.add(s.id));
+                      else filteredManual.forEach((s) => next.delete(s.id));
+                      return next;
+                    });
+                  }}
+                />
+                <label htmlFor="select-all-structures" className="text-xs font-medium text-foreground">
+                  Select all ({filteredManual.length})
+                </label>
+                <span className="text-xs text-muted-foreground">
+                  {selectedIds.size} selected
+                </span>
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-8 text-xs gap-1.5"
+                disabled={selectedIds.size === 0 || deleting}
+                onClick={() => setBulkDeleteOpen(true)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete selected
+              </Button>
+            </div>
+          )}
+
+
 
           {manualLoading && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -881,11 +970,23 @@ export default function Structures() {
               {filteredManual.map((s) => (
                 <Card
                   key={s.id}
-                  className="cursor-pointer transition-all hover:shadow-md hover:border-primary/30 relative group hover:bg-accent/30"
-                  onClick={() => navigate(`/structures/${s.id}`)}
+                  className={`cursor-pointer transition-all hover:shadow-md hover:border-primary/30 relative group hover:bg-accent/30 ${
+                    selectMode && selectedIds.has(s.id) ? "border-primary ring-1 ring-primary/40" : ""
+                  }`}
+                  onClick={() => (selectMode ? toggleSelected(s.id) : navigate(`/structures/${s.id}`))}
                 >
-                  {canManageStructures && (
+                  {selectMode && (
+                    <div className="absolute top-3 left-3 z-10" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedIds.has(s.id)}
+                        onCheckedChange={() => toggleSelected(s.id)}
+                        aria-label={`Select ${s.name}`}
+                      />
+                    </div>
+                  )}
+                  {canManageStructures && !selectMode && (
                     <div className="absolute top-3 right-3 z-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
+
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <button
@@ -922,7 +1023,7 @@ export default function Structures() {
                       </DropdownMenu>
                     </div>
                   )}
-                  <CardContent className="p-4 space-y-3">
+                  <CardContent className={`p-4 space-y-3 ${selectMode ? "pt-10" : ""}`}>
                     <div className="flex items-start gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary shrink-0">
                         <Waypoints className="h-5 w-5 text-foreground" />
@@ -1014,6 +1115,28 @@ export default function Structures() {
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteStructure}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={(open) => { if (!open) setBulkDeleteOpen(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedIds.size} {selectedIds.size === 1 ? "structure" : "structures"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
               disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
