@@ -152,6 +152,8 @@ export default function Import() {
     if (f && (f.name.endsWith(".csv") || f.name.endsWith(".xml"))) {
       setFile(f);
       setResult(null);
+      setImportError(null);
+      void analyseFile(f);
     } else {
       toast({ title: "Invalid file", description: "Please select a CSV or XML file.", variant: "destructive" });
     }
