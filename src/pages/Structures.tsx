@@ -970,11 +970,23 @@ export default function Structures() {
               {filteredManual.map((s) => (
                 <Card
                   key={s.id}
-                  className="cursor-pointer transition-all hover:shadow-md hover:border-primary/30 relative group hover:bg-accent/30"
-                  onClick={() => navigate(`/structures/${s.id}`)}
+                  className={`cursor-pointer transition-all hover:shadow-md hover:border-primary/30 relative group hover:bg-accent/30 ${
+                    selectMode && selectedIds.has(s.id) ? "border-primary ring-1 ring-primary/40" : ""
+                  }`}
+                  onClick={() => (selectMode ? toggleSelected(s.id) : navigate(`/structures/${s.id}`))}
                 >
-                  {canManageStructures && (
+                  {selectMode && (
+                    <div className="absolute top-3 left-3 z-10" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedIds.has(s.id)}
+                        onCheckedChange={() => toggleSelected(s.id)}
+                        aria-label={`Select ${s.name}`}
+                      />
+                    </div>
+                  )}
+                  {canManageStructures && !selectMode && (
                     <div className="absolute top-3 right-3 z-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
+
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <button
