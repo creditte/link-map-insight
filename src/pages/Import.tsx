@@ -12,6 +12,8 @@ import { format } from "date-fns";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
 import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
+import { useBilling } from "@/hooks/useBilling";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const SAMPLE_CSV = `Name,Entity Type,ABN,ACN,Relationship Type,Related To
 "Smith Family Trust",Trust,12345678901,,"trustee","Smith Corp Pty Ltd"
@@ -33,6 +35,12 @@ export default function Import() {
   const [importLogs, setImportLogs] = useState<any[]>([]);
   const [showInstructions, setShowInstructions] = useState(false);
   const { reportError: reportXeroError } = useXeroConnection();
+  const { billing } = useBilling();
+
+  const structureLimit = billing?.diagram_limit ?? null;
+  const structureCount = billing?.diagram_count ?? null;
+  const limitReached =
+    structureLimit !== null && structureCount !== null && structureCount >= structureLimit;
 
   /** Monotonic progress — never let the bar jump backwards. */
   const advance = (next: number) => setPercent((prev) => Math.max(prev, Math.min(99, next)));
@@ -70,6 +78,14 @@ export default function Import() {
 
   const handleImport = async () => {
     if (!file || !user) return;
+    if (limitReached) {
+      toast({
+        title: "Structure limit reached",
+        description: `You already have ${structureCount} of ${structureLimit} structures. Delete a structure or upgrade your subscription before importing.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setImporting(true);
     setResult(null);
     setImportError(null);
@@ -258,6 +274,16 @@ export default function Import() {
           <CardDescription>Upload a Client Relationships Report from XPM in CSV or XML format.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {limitReached && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Structure limit reached</AlertTitle>
+              <AlertDescription>
+                You're using all {structureLimit} structures included in your plan. Delete or archive
+                a structure, or upgrade your subscription, before importing another XPM report.
+              </AlertDescription>
+            </Alert>
+          )}
           <label className="flex min-h-[5.5rem] cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-4 text-muted-foreground transition-colors hover:border-primary hover:text-foreground sm:flex-row sm:p-8">
             <Upload className="h-5 w-5 shrink-0" />
             <span className="max-w-full min-w-0 break-words text-center text-sm font-medium sm:text-left">
@@ -268,7 +294,7 @@ export default function Import() {
 
           {!file && <p className="text-xs text-muted-foreground text-center">Select a file above to enable import.</p>}
 
-          <Button onClick={handleImport} disabled={!file || importing} className="w-full">
+          <Button onClick={handleImport} disabled={!file || importing || limitReached} className="w-full">
             {importing ? "Importing..." : "Import"}
           </Button>
 
