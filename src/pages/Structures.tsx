@@ -1023,7 +1023,7 @@ export default function Structures() {
                       </DropdownMenu>
                     </div>
                   )}
-                  <CardContent className="p-4 space-y-3">
+                  <CardContent className={`p-4 space-y-3 ${selectMode ? "pt-10" : ""}`}>
                     <div className="flex items-start gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary shrink-0">
                         <Waypoints className="h-5 w-5 text-foreground" />
