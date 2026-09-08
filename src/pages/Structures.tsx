@@ -15,10 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Search, Users, RefreshCw, AlertCircle, Plus, Settings, FileBox,
   Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine, Star, Clock, Copy,
-  Archive, ArchiveRestore, MoreVertical,
+  Archive, ArchiveRestore, MoreVertical, CheckSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 import { xeroToastPayload } from "@/lib/xeroErrors";
