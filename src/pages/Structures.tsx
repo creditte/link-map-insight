@@ -875,6 +875,17 @@ export default function Structures() {
                   />
                 </div>
               )}
+              {canManageStructures && filteredManual.length > 0 && (
+                <Button
+                  variant={selectMode ? "secondary" : "outline"}
+                  size="sm"
+                  className="h-8 text-xs gap-1.5"
+                  onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                >
+                  <CheckSquare className="h-3.5 w-3.5" />
+                  {selectMode ? "Cancel" : "Select"}
+                </Button>
+              )}
               {canManageStructures && !showArchived && (
                 <Button
                   size="sm"
@@ -887,6 +898,43 @@ export default function Structures() {
               )}
             </div>
           </div>
+
+          {selectMode && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="select-all-structures"
+                  checked={filteredManual.length > 0 && filteredManual.every((s) => selectedIds.has(s.id))}
+                  onCheckedChange={(v) => {
+                    setSelectedIds((prev) => {
+                      const next = new Set(prev);
+                      if (v === true) filteredManual.forEach((s) => next.add(s.id));
+                      else filteredManual.forEach((s) => next.delete(s.id));
+                      return next;
+                    });
+                  }}
+                />
+                <label htmlFor="select-all-structures" className="text-xs font-medium text-foreground">
+                  Select all ({filteredManual.length})
+                </label>
+                <span className="text-xs text-muted-foreground">
+                  {selectedIds.size} selected
+                </span>
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-8 text-xs gap-1.5"
+                disabled={selectedIds.size === 0 || deleting}
+                onClick={() => setBulkDeleteOpen(true)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete selected
+              </Button>
+            </div>
+          )}
+
+
 
           {manualLoading && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
