@@ -78,6 +78,14 @@ export default function Import() {
 
   const handleImport = async () => {
     if (!file || !user) return;
+    if (limitReached) {
+      toast({
+        title: "Structure limit reached",
+        description: `You already have ${structureCount} of ${structureLimit} structures. Delete a structure or upgrade your subscription before importing.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setImporting(true);
     setResult(null);
     setImportError(null);
