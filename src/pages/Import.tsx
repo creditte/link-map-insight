@@ -294,7 +294,7 @@ export default function Import() {
 
           {!file && <p className="text-xs text-muted-foreground text-center">Select a file above to enable import.</p>}
 
-          <Button onClick={handleImport} disabled={!file || importing} className="w-full">
+          <Button onClick={handleImport} disabled={!file || importing || limitReached} className="w-full">
             {importing ? "Importing..." : "Import"}
           </Button>
 
