@@ -274,6 +274,16 @@ export default function Import() {
           <CardDescription>Upload a Client Relationships Report from XPM in CSV or XML format.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {limitReached && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Structure limit reached</AlertTitle>
+              <AlertDescription>
+                You're using all {structureLimit} structures included in your plan. Delete or archive
+                a structure, or upgrade your subscription, before importing another XPM report.
+              </AlertDescription>
+            </Alert>
+          )}
           <label className="flex min-h-[5.5rem] cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-4 text-muted-foreground transition-colors hover:border-primary hover:text-foreground sm:flex-row sm:p-8">
             <Upload className="h-5 w-5 shrink-0" />
             <span className="max-w-full min-w-0 break-words text-center text-sm font-medium sm:text-left">
