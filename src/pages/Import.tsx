@@ -35,6 +35,12 @@ export default function Import() {
   const [importLogs, setImportLogs] = useState<any[]>([]);
   const [showInstructions, setShowInstructions] = useState(false);
   const { reportError: reportXeroError } = useXeroConnection();
+  const { billing } = useBilling();
+
+  const structureLimit = billing?.diagram_limit ?? null;
+  const structureCount = billing?.diagram_count ?? null;
+  const limitReached =
+    structureLimit !== null && structureCount !== null && structureCount >= structureLimit;
 
   /** Monotonic progress — never let the bar jump backwards. */
   const advance = (next: number) => setPercent((prev) => Math.max(prev, Math.min(99, next)));
